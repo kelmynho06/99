@@ -1,10 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-// Lê do ambiente do Vite ou utiliza os valores diretos para garantir funcionamento no APK nativo
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || 'https://qonemlkgaoxolajrcnha.supabase.co/rest/v1/';
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || 'sb_publishable_mx8M_cWJw-UAyMgg1ddt6Q_qJucyBsY';
+// Cole a sua URL do Supabase e a sua Chave Anon entre as aspas abaixo:
+const supabaseUrl = 'https://SEU-PROJETO-AQUI.supabase.co';
+const supabaseAnonKey = 'SUA-CHAVE-ANON-AQUI';
 
-// Força a validação como verdadeira se a URL estiver presente
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
     supabaseAnonKey &&
