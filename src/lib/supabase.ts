@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // Cole a sua URL do Supabase e a sua Chave Anon entre as aspas abaixo:
-const supabaseUrl = 'https://SEU-PROJETO-AQUI.supabase.co';
-const supabaseAnonKey = 'SUA-CHAVE-ANON-AQUI';
+const supabaseUrl = 'https://qonemlkgaoxolajrcnha.supabase.co/rest/v1/';
+const supabaseAnonKey = 'sb_publishable_mx8M_cWJw-UAyMgg1ddt6Q_qJucyBsY';
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
