@@ -18,17 +18,14 @@ jobs:
       with:
         node-version: '22'
 
-
     - name: Install dependencies
       run: npm install --legacy-peer-deps
 
-
     - name: Build web app (Vite)
       env:
-        VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       run: npm run build
-
 
     - name: Set up Java (Temurin)
       uses: actions/setup-java@v5
