@@ -8,6 +8,7 @@ import {
   Home,
   Lock,
   Shield,
+  Star,
   Trash2,
   User,
   X,
@@ -39,7 +40,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [phone, setPhone] = useState(currentUser.phone);
   const [email, setEmail] = useState(currentUser.email);
   const [preferredPayment, setPreferredPayment] = useState<PaymentMethod>(
-    currentUser.preferred_payment || 'pix'
+    currentUser.preferred_payment === 'cash' ? 'cash' : 'pix'
   );
 
   // Saved addresses (Passenger)
@@ -47,8 +48,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [homeAddr, setHomeAddr] = useState<SavedAddress | null>(currentUser.home_address || null);
   const [workQuery, setWorkQuery] = useState(currentUser.work_address?.address || '');
   const [workAddr, setWorkAddr] = useState<SavedAddress | null>(currentUser.work_address || null);
+  const [favorites, setFavorites] = useState<SavedAddress[]>(currentUser.favorites || []);
+  const [favQuery, setFavQuery] = useState('');
   const [addrSuggestions, setAddrSuggestions] = useState<
-    Array<{ target: 'home' | 'work'; address: string; lat: number; lng: number }>
+    Array<{ target: 'home' | 'work' | 'favorite'; address: string; lat: number; lng: number }>
   >([]);
 
   // Driver vehicle & Pix
@@ -82,6 +85,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           preferred_payment: preferredPayment,
           home_address: homeAddr,
           work_address: workAddr,
+          favorites,
           ...(currentUser.driver
             ? {
                 vehicle_type: vehicleType,
@@ -145,9 +149,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
   };
 
-  const searchSavedAddress = async (query: string, target: 'home' | 'work') => {
+  const searchSavedAddress = async (query: string, target: 'home' | 'work' | 'favorite') => {
     if (target === 'home') setHomeQuery(query);
-    else setWorkQuery(query);
+    else if (target === 'work') setWorkQuery(query);
+    else setFavQuery(query);
     if (query.trim().length < 3) {
       setAddrSuggestions([]);
       return;
@@ -157,7 +162,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs">
+    <div className="fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
       <div className="flex h-[88vh] sm:h-auto sm:max-h-[85vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
@@ -359,6 +364,19 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 mb-1">
+                  <Star className="h-3.5 w-3.5" /> Adicionar Local Favorito
+                </label>
+                <input
+                  type="text"
+                  value={favQuery}
+                  onChange={(e) => searchSavedAddress(e.target.value, 'favorite')}
+                  placeholder="Buscar local favorito (academia, shopping, faculdade)..."
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
+                />
+              </div>
+
               {addrSuggestions.length > 0 && (
                 <div className="rounded-2xl border border-neutral-200 divide-y divide-neutral-100 max-h-40 overflow-y-auto">
                   {addrSuggestions.map((s, idx) => (
@@ -367,7 +385,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       type="button"
                       onClick={() => {
                         const saved: SavedAddress = {
-                          label: s.target === 'home' ? 'Casa' : 'Trabalho',
+                          label:
+                            s.target === 'home'
+                              ? 'Casa'
+                              : s.target === 'work'
+                              ? 'Trabalho'
+                              : s.address.split('·')[0].trim(),
                           address: s.address,
                           lat: s.lat,
                           lng: s.lng,
@@ -375,9 +398,14 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         if (s.target === 'home') {
                           setHomeAddr(saved);
                           setHomeQuery(s.address);
-                        } else {
+                        } else if (s.target === 'work') {
                           setWorkAddr(saved);
                           setWorkQuery(s.address);
+                        } else {
+                          setFavorites((prev) =>
+                            prev.some((f) => f.address === saved.address) ? prev : [...prev, saved]
+                          );
+                          setFavQuery('');
                         }
                         setAddrSuggestions([]);
                       }}
@@ -389,15 +417,39 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </div>
               )}
 
+              {favorites.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold text-neutral-500">Favoritos salvos</p>
+                  {favorites.map((fav, idx) => (
+                    <div
+                      key={`${fav.address}-${idx}`}
+                      className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs"
+                    >
+                      <span className="truncate font-semibold text-neutral-800 pr-2">
+                        {fav.label} · {fav.address}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFavorites((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        className="text-red-600 font-bold shrink-0 px-2 py-1"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 mb-2">
                   <CreditCard className="h-3.5 w-3.5" /> Pagamento Preferencial
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: 'pix' as PaymentMethod, label: 'Pix' },
+                    { id: 'pix' as PaymentMethod, label: 'Pix (Plataforma)' },
                     { id: 'cash' as PaymentMethod, label: 'Dinheiro' },
-                    { id: 'card_machine' as PaymentMethod, label: 'Maquininha' },
                   ].map((m) => (
                     <button
                       key={m.id}
@@ -405,7 +457,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => setPreferredPayment(m.id)}
                       className={`min-h-[42px] rounded-xl border text-xs font-bold ${
                         preferredPayment === m.id
-                          ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
+                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
                           : 'bg-neutral-50 text-neutral-700 border-neutral-200'
                       }`}
                     >
@@ -418,7 +470,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950"
+                className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
               >
                 {saving ? 'Salvando...' : 'Salvar Favoritos'}
               </button>

@@ -48,9 +48,9 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/65 p-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FFCC00] text-neutral-950 font-extrabold text-xl">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 font-extrabold text-xl">
           99
         </div>
         <h3 className="mt-4 text-xl font-extrabold text-neutral-950">Corrida finalizada!</h3>

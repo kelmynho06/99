@@ -2,10 +2,22 @@
 -- Velo99 Mobilidade Urbana — Schema Completo e Idempotente (Supabase + RLS Estrito)
 -- ============================================================================
 
--- 1. Extensões necessárias
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 2. Tabela de Perfis de Usuários (Cliente, Motorista/Entregador e Super Admin)
+-- 1. Configurações Globais da Plataforma (Cidade Única + Pix Centralizado do Dono)
+CREATE TABLE IF NOT EXISTS public.platform_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  platform_pix_key TEXT NOT NULL DEFAULT 'pix@velo99.app',
+  platform_pix_receiver TEXT NOT NULL DEFAULT 'Velo99 Mobilidade Ltda',
+  platform_city TEXT NOT NULL DEFAULT 'São Paulo, SP',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO public.platform_settings (id, platform_pix_key, platform_pix_receiver, platform_city)
+VALUES (1, 'pix@velo99.app', 'Velo99 Mobilidade Ltda', 'São Paulo, SP')
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Perfis de Usuários (Passageiro, Motorista/Entregador e Super Admin)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('passenger', 'driver', 'admin')) DEFAULT 'passenger',
@@ -15,13 +27,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT NOT NULL UNIQUE,
   cpf TEXT NOT NULL,
   avatar_url TEXT,
-  home_address TEXT,
-  home_lat DOUBLE PRECISION,
-  home_lng DOUBLE PRECISION,
-  work_address TEXT,
-  work_lat DOUBLE PRECISION,
-  work_lng DOUBLE PRECISION,
-  preferred_payment TEXT NOT NULL CHECK (preferred_payment IN ('pix', 'cash', 'card_machine')) DEFAULT 'pix',
+  home_address JSONB,
+  work_address JSONB,
+  favorites JSONB NOT NULL DEFAULT '[]'::jsonb,
+  preferred_payment TEXT NOT NULL CHECK (preferred_payment IN ('cash', 'pix')) DEFAULT 'pix',
   rating_avg NUMERIC(3,2) NOT NULL DEFAULT 5.00,
   rating_count INTEGER NOT NULL DEFAULT 0,
   wallet_balance NUMERIC(10,2) NOT NULL DEFAULT 0.00,
@@ -31,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. Tabela de Veículos, Documentos & Telemetria do Motorista/Entregador
+-- 3. Perfis e Documentos de Motoristas / Entregadores
 CREATE TABLE IF NOT EXISTS public.driver_profiles (
   user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
   cnh_url TEXT NOT NULL,
@@ -53,9 +62,9 @@ CREATE TABLE IF NOT EXISTS public.driver_profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. Tabela de Tarifas por Categoria (Configurável pelo Super Admin)
+-- 4. Tarifas por Categoria (Moto, Pop, Negocia, Entrega Moto, Entrega Carro)
 CREATE TABLE IF NOT EXISTS public.pricing_settings (
-  category TEXT PRIMARY KEY CHECK (category IN ('pop', 'moto', 'delivery')),
+  category TEXT PRIMARY KEY CHECK (category IN ('moto', 'pop', 'negocia', 'delivery_moto', 'delivery_car')),
   label TEXT NOT NULL,
   description TEXT NOT NULL,
   base_fare NUMERIC(8,2) NOT NULL DEFAULT 4.50,
@@ -67,18 +76,21 @@ CREATE TABLE IF NOT EXISTS public.pricing_settings (
 
 INSERT INTO public.pricing_settings (category, label, description, base_fare, per_km_rate, min_fare)
 VALUES
-  ('pop', 'Viagem Carro', 'Carros econômicos com ar-condicionado', 4.50, 2.20, 8.50),
-  ('moto', 'Viagem Moto', 'Deslocamentos rápidos no trânsito', 3.00, 1.45, 6.00),
-  ('delivery', 'Entrega / Coleta', 'Envio expresso de pacotes com validação PIN', 3.50, 1.65, 7.00)
+  ('moto', 'Moto', 'Deslocamento rápido', 3.00, 1.35, 6.00),
+  ('pop', 'Pop', 'Conforto com ar-condicionado', 4.50, 2.15, 8.50),
+  ('negocia', 'Negocia', 'Sugira o valor da sua viagem', 4.00, 1.90, 7.50),
+  ('delivery_moto', 'Entrega Moto', 'Envio ágil de pacotes com PIN', 3.50, 1.55, 7.00),
+  ('delivery_car', 'Entrega Carro', 'Volumes maiores com código PIN', 5.00, 2.25, 9.50)
 ON CONFLICT (category) DO NOTHING;
 
--- 5. Tabela de Corridas e Entregas
+-- 5. Corridas e Entregas
 CREATE TABLE IF NOT EXISTS public.rides (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   passenger_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  category TEXT NOT NULL CHECK (category IN ('pop', 'moto', 'delivery')),
-  payment_method TEXT NOT NULL CHECK (payment_method IN ('pix', 'cash', 'card_machine')),
+  category TEXT NOT NULL CHECK (category IN ('moto', 'pop', 'negocia', 'delivery_moto', 'delivery_car')),
+  payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'pix')),
+  payment_status TEXT NOT NULL CHECK (payment_status IN ('pending', 'paid_pix', 'paid_cash', 'disputed', 'admin_settled')) DEFAULT 'pending',
   status TEXT NOT NULL CHECK (status IN ('searching', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled')) DEFAULT 'searching',
   origin_address TEXT NOT NULL,
   origin_lat DOUBLE PRECISION NOT NULL,
@@ -88,9 +100,12 @@ CREATE TABLE IF NOT EXISTS public.rides (
   destination_lng DOUBLE PRECISION NOT NULL,
   distance_km NUMERIC(8,2) NOT NULL,
   estimated_fare NUMERIC(10,2) NOT NULL,
+  negotiated_fare NUMERIC(10,2),
   final_fare NUMERIC(10,2),
   pin_code CHAR(4) NOT NULL,
   delivery_notes TEXT,
+  dispute_reason TEXT,
+  pix_declared_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   accepted_at TIMESTAMPTZ,
   arrived_at TIMESTAMPTZ,
@@ -120,13 +135,13 @@ CREATE TABLE IF NOT EXISTS public.ride_ratings (
   UNIQUE (ride_id, from_user_id)
 );
 
--- 8. Carteira e Transações Financeiras
+-- 8. Carteira e Transações (Créditos contábeis do Pix Centralizado e Repasses)
 CREATE TABLE IF NOT EXISTS public.wallet_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   ride_id UUID REFERENCES public.rides(id) ON DELETE SET NULL,
   amount NUMERIC(10,2) NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('ride_earning', 'ride_payment', 'payout')),
+  type TEXT NOT NULL CHECK (type IN ('ride_earning', 'payout', 'dispute_settlement')),
   description TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -136,7 +151,8 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('driver-documents', 'driver-documents', FALSE)
 ON CONFLICT (id) DO NOTHING;
 
--- 10. Habilitar Row Level Security (RLS Estrito)
+-- 10. Row Level Security (RLS Estrito)
+ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.driver_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pricing_settings ENABLE ROW LEVEL SECURITY;
@@ -145,7 +161,6 @@ ALTER TABLE public.ride_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ride_ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallet_transactions ENABLE ROW LEVEL SECURITY;
 
--- Funções auxiliares de segurança (SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
   SELECT EXISTS (
@@ -168,7 +183,6 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
--- Função LGPD de anonimização / exclusão de conta pelo próprio usuário
 CREATE OR REPLACE FUNCTION public.anonymize_own_account()
 RETURNS VOID AS $$
 BEGIN
@@ -193,6 +207,7 @@ BEGIN
     avatar_url = NULL,
     home_address = NULL,
     work_address = NULL,
+    favorites = '[]'::jsonb,
     status = 'suspended',
     is_anonymized = TRUE,
     deleted_at = NOW(),
@@ -201,13 +216,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Limpeza idempotente de políticas anteriores
-DROP POLICY IF EXISTS "Usuário vê próprio perfil ou participantes da corrida" ON public.profiles;
+-- Platform Settings Policies
+DROP POLICY IF EXISTS "Todos leem chave Pix da plataforma" ON public.platform_settings;
+DROP POLICY IF EXISTS "Somente Admin altera config da plataforma" ON public.platform_settings;
+CREATE POLICY "Todos leem chave Pix da plataforma" ON public.platform_settings FOR SELECT USING (TRUE);
+CREATE POLICY "Somente Admin altera config da plataforma" ON public.platform_settings FOR ALL USING (public.is_admin());
+
+-- Profiles Policies
+DROP POLICY IF EXISTS "Usuário vê próprio perfil ou participante em corrida ativa" ON public.profiles;
 DROP POLICY IF EXISTS "Usuário cria próprio perfil" ON public.profiles;
-DROP POLICY IF EXISTS "Usuário cria/atualiza próprio perfil" ON public.profiles;
 DROP POLICY IF EXISTS "Usuário atualiza próprio perfil ou Admin atualiza qualquer perfil" ON public.profiles;
 
--- RLS Estrito: Profiles (Passageiro só vê motorista durante corrida ATIVA)
 CREATE POLICY "Usuário vê próprio perfil ou participante em corrida ativa"
   ON public.profiles FOR SELECT
   USING (
@@ -224,15 +243,13 @@ CREATE POLICY "Usuário vê próprio perfil ou participante em corrida ativa"
   );
 
 CREATE POLICY "Usuário cria próprio perfil"
-  ON public.profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);
+  ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Usuário atualiza próprio perfil ou Admin atualiza qualquer perfil"
-  ON public.profiles FOR UPDATE
-  USING (auth.uid() = id OR public.is_admin());
+  ON public.profiles FOR UPDATE USING (auth.uid() = id OR public.is_admin());
 
--- RLS Estrito: Driver Profiles (Localização/placa visíveis ao passageiro APENAS em corrida ativa)
-DROP POLICY IF EXISTS "Leitura de dados de motorista" ON public.driver_profiles;
+-- Driver Profiles Policies
+DROP POLICY IF EXISTS "Leitura restrita de motorista" ON public.driver_profiles;
 DROP POLICY IF EXISTS "Motorista insere seus documentos" ON public.driver_profiles;
 DROP POLICY IF EXISTS "Motorista atualiza GPS/online ou Admin aprova/reprova" ON public.driver_profiles;
 
@@ -250,27 +267,19 @@ CREATE POLICY "Leitura restrita de motorista"
   );
 
 CREATE POLICY "Motorista insere seus documentos"
-  ON public.driver_profiles FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  ON public.driver_profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Motorista atualiza GPS/online ou Admin aprova/reprova"
-  ON public.driver_profiles FOR UPDATE
-  USING (auth.uid() = user_id OR public.is_admin());
+  ON public.driver_profiles FOR UPDATE USING (auth.uid() = user_id OR public.is_admin());
 
--- RLS: Tarifas
+-- Pricing Policies
 DROP POLICY IF EXISTS "Qualquer usuário autenticado lê tarifas" ON public.pricing_settings;
 DROP POLICY IF EXISTS "Somente Admin altera tarifas" ON public.pricing_settings;
+CREATE POLICY "Qualquer usuário autenticado lê tarifas" ON public.pricing_settings FOR SELECT USING (TRUE);
+CREATE POLICY "Somente Admin altera tarifas" ON public.pricing_settings FOR ALL USING (public.is_admin());
 
-CREATE POLICY "Qualquer usuário autenticado lê tarifas"
-  ON public.pricing_settings FOR SELECT
-  USING (TRUE);
-
-CREATE POLICY "Somente Admin altera tarifas"
-  ON public.pricing_settings FOR ALL
-  USING (public.is_admin());
-
--- RLS Estrito: Corridas (Motorista só vê ofertas se aprovado e ONLINE, e só vê corridas aceitas por ele)
-DROP POLICY IF EXISTS "Passageiro vê suas corridas e motoristas ativos veem corridas abertas" ON public.rides;
+-- Rides Policies
+DROP POLICY IF EXISTS "Visibilidade estrita de corridas e entregas" ON public.rides;
 DROP POLICY IF EXISTS "Passageiro cria corrida" ON public.rides;
 DROP POLICY IF EXISTS "Participantes e Admin atualizam corrida" ON public.rides;
 
@@ -284,8 +293,7 @@ CREATE POLICY "Visibilidade estrita de corridas e entregas"
   );
 
 CREATE POLICY "Passageiro cria corrida"
-  ON public.rides FOR INSERT
-  WITH CHECK (passenger_id = auth.uid());
+  ON public.rides FOR INSERT WITH CHECK (passenger_id = auth.uid());
 
 CREATE POLICY "Participantes e Admin atualizam corrida"
   ON public.rides FOR UPDATE
@@ -296,8 +304,8 @@ CREATE POLICY "Participantes e Admin atualizam corrida"
     OR public.is_admin()
   );
 
--- RLS: Chat da Corrida
-DROP POLICY IF EXISTS "Participantes veem e enviam mensagens da corrida" ON public.ride_messages;
+-- Chat Policies
+DROP POLICY IF EXISTS "Participantes veem mensagens da corrida" ON public.ride_messages;
 DROP POLICY IF EXISTS "Participantes enviam mensagens" ON public.ride_messages;
 
 CREATE POLICY "Participantes veem mensagens da corrida"
@@ -305,8 +313,7 @@ CREATE POLICY "Participantes veem mensagens da corrida"
   USING (
     EXISTS (
       SELECT 1 FROM public.rides r
-      WHERE r.id = ride_id
-        AND (r.passenger_id = auth.uid() OR r.driver_id = auth.uid())
+      WHERE r.id = ride_id AND (r.passenger_id = auth.uid() OR r.driver_id = auth.uid())
     )
     OR public.is_admin()
   );
@@ -323,7 +330,7 @@ CREATE POLICY "Participantes enviam mensagens"
     )
   );
 
--- RLS: Avaliações e Carteira
+-- Ratings & Wallet Policies
 DROP POLICY IF EXISTS "Leitura de avaliações" ON public.ride_ratings;
 DROP POLICY IF EXISTS "Inserir avaliação da própria corrida" ON public.ride_ratings;
 DROP POLICY IF EXISTS "Leitura da própria carteira" ON public.wallet_transactions;
@@ -333,14 +340,12 @@ CREATE POLICY "Leitura de avaliações"
   USING (from_user_id = auth.uid() OR to_user_id = auth.uid() OR public.is_admin());
 
 CREATE POLICY "Inserir avaliação da própria corrida"
-  ON public.ride_ratings FOR INSERT
-  WITH CHECK (from_user_id = auth.uid());
+  ON public.ride_ratings FOR INSERT WITH CHECK (from_user_id = auth.uid());
 
 CREATE POLICY "Leitura da própria carteira"
-  ON public.wallet_transactions FOR SELECT
-  USING (user_id = auth.uid() OR public.is_admin());
+  ON public.wallet_transactions FOR SELECT USING (user_id = auth.uid() OR public.is_admin());
 
--- Políticas de Storage (Bucket privado driver-documents)
+-- Storage Policies
 DROP POLICY IF EXISTS "Motorista envia próprios documentos" ON storage.objects;
 DROP POLICY IF EXISTS "Motorista e Admin visualizam documentos" ON storage.objects;
 
@@ -355,40 +360,25 @@ CREATE POLICY "Motorista e Admin visualizam documentos"
   ON storage.objects FOR SELECT
   USING (
     bucket_id = 'driver-documents'
-    AND (
-      (storage.foldername(name))[1] = auth.uid()::text
-      OR public.is_admin()
-    )
+    AND ((storage.foldername(name))[1] = auth.uid()::text OR public.is_admin())
   );
 
--- 11. Habilitar Supabase Realtime de forma idempotente
+-- Realtime Publication
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'rides'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'rides') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.rides;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'driver_profiles'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'driver_profiles') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.driver_profiles;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ride_messages'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'ride_messages') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.ride_messages;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'profiles'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'profiles') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'platform_settings') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_settings;
   END IF;
 END $$;

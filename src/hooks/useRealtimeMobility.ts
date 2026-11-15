@@ -1,15 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PricingSetting, Ride, RideMessage, UserProfile } from '../types/mobility';
+import type {
+  PlatformConfig,
+  PricingSetting,
+  Ride,
+  RideMessage,
+  UserProfile,
+} from '../types/mobility';
 
 interface WsMessage {
   event: string;
   payload: unknown;
 }
 
+const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
+  platform_pix_key: 'pix@velo99.app',
+  platform_pix_receiver: 'Velo99 Mobilidade Ltda',
+  platform_city: 'São Paulo, SP',
+};
+
 export function useRealtimeMobility(
   currentUser: UserProfile | null,
   onCurrentUserUpdated: (user: UserProfile) => void
 ) {
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(DEFAULT_PLATFORM_CONFIG);
   const [rides, setRides] = useState<Ride[]>([]);
   const [pricing, setPricing] = useState<PricingSetting[]>([]);
   const [onlineDrivers, setOnlineDrivers] = useState<UserProfile[]>([]);
@@ -61,10 +74,12 @@ export function useRealtimeMobility(
         const res = await fetch('/api/bootstrap');
         if (!res.ok || !active) return;
         const data = (await res.json()) as {
+          platformConfig?: PlatformConfig;
           pricing: PricingSetting[];
           rides: Ride[];
           onlineDrivers: UserProfile[];
         };
+        if (data.platformConfig) setPlatformConfig(data.platformConfig);
         setPricing(data.pricing);
         setRides(data.rides);
         setOnlineDrivers(data.onlineDrivers);
@@ -91,13 +106,19 @@ export function useRealtimeMobility(
           switch (parsed.event) {
             case 'sync:init': {
               const init = parsed.payload as {
+                platformConfig?: PlatformConfig;
                 pricing: PricingSetting[];
                 rides: Ride[];
                 onlineDrivers: UserProfile[];
               };
+              if (init.platformConfig) setPlatformConfig(init.platformConfig);
               setPricing(init.pricing);
               setRides(init.rides);
               setOnlineDrivers(init.onlineDrivers);
+              break;
+            }
+            case 'platform:updated': {
+              setPlatformConfig(parsed.payload as PlatformConfig);
               break;
             }
             case 'ride:created':
@@ -222,6 +243,7 @@ export function useRealtimeMobility(
   }, []);
 
   return {
+    platformConfig,
     rides,
     pricing,
     onlineDrivers,

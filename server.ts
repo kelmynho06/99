@@ -7,10 +7,12 @@ import crypto from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import type {
+  PlatformConfig,
   PricingSetting,
   Ride,
   RideCategory,
   RideMessage,
+  SavedAddress,
   UserProfile,
   WalletTransaction,
 } from './src/types/mobility.ts';
@@ -28,6 +30,7 @@ interface StoredUser extends UserProfile {
 }
 
 interface DatabaseSchema {
+  platformConfig: PlatformConfig;
   users: StoredUser[];
   pricing: PricingSetting[];
   rides: Ride[];
@@ -74,6 +77,11 @@ function createSeedDatabase(): DatabaseSchema {
     );
 
   return {
+    platformConfig: {
+      platform_pix_key: 'pix@velo99.app',
+      platform_pix_receiver: 'Velo99 Mobilidade Ltda',
+      platform_city: 'São Paulo, SP',
+    },
     users: [
       {
         id: 'usr-passenger-1',
@@ -96,6 +104,20 @@ function createSeedDatabase(): DatabaseSchema {
           lat: -23.561414,
           lng: -46.655881,
         },
+        favorites: [
+          {
+            label: 'Parque Ibirapuera',
+            address: 'Parque Ibirapuera · Portão 3, Vila Mariana',
+            lat: -23.587416,
+            lng: -46.657634,
+          },
+          {
+            label: 'Estação da Luz',
+            address: 'Praça da Luz, 1 · Bom Retiro, São Paulo',
+            lat: -23.54198,
+            lng: -46.62952,
+          },
+        ],
         preferred_payment: 'pix',
         rating_avg: 4.93,
         rating_count: 42,
@@ -199,30 +221,48 @@ function createSeedDatabase(): DatabaseSchema {
     ],
     pricing: [
       {
-        category: 'pop',
-        label: 'Viagem Carro',
-        description: 'Carros econômicos com ar-condicionado',
-        base_fare: 4.5,
-        per_km_rate: 2.2,
-        min_fare: 8.5,
-        active: true,
-      },
-      {
         category: 'moto',
-        label: 'Viagem Moto',
-        description: 'Viagens rápidas no trânsito urbano',
+        label: 'Moto',
+        description: 'Deslocamento rápido no trânsito',
         base_fare: 3.0,
-        per_km_rate: 1.45,
+        per_km_rate: 1.35,
         min_fare: 6.0,
         active: true,
       },
       {
-        category: 'delivery',
-        label: 'Entrega / Coleta',
-        description: 'Envio expresso de pacotes com código PIN',
+        category: 'pop',
+        label: 'Pop',
+        description: 'Conforto com ar-condicionado',
+        base_fare: 4.5,
+        per_km_rate: 2.15,
+        min_fare: 8.5,
+        active: true,
+      },
+      {
+        category: 'negocia',
+        label: 'Negocia',
+        description: 'Sugira o valor da sua viagem',
+        base_fare: 4.0,
+        per_km_rate: 1.9,
+        min_fare: 7.5,
+        active: true,
+      },
+      {
+        category: 'delivery_moto',
+        label: 'Entrega Moto',
+        description: 'Pacotes rápidos com código PIN',
         base_fare: 3.5,
-        per_km_rate: 1.65,
+        per_km_rate: 1.55,
         min_fare: 7.0,
+        active: true,
+      },
+      {
+        category: 'delivery_car',
+        label: 'Entrega Carro',
+        description: 'Volumes maiores com código PIN',
+        base_fare: 5.0,
+        per_km_rate: 2.25,
+        min_fare: 9.5,
         active: true,
       },
     ],
@@ -249,6 +289,9 @@ function createSeedDatabase(): DatabaseSchema {
   };
 }
 
+const DEFAULT_PRICING = createSeedDatabase().pricing;
+const DEFAULT_PLATFORM_CONFIG = createSeedDatabase().platformConfig;
+
 function loadDatabase(): DatabaseSchema {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -261,11 +304,20 @@ function loadDatabase(): DatabaseSchema {
   try {
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as DatabaseSchema;
-    // Backwards-compatible field hydration
+    parsed.platformConfig = parsed.platformConfig ?? { ...DEFAULT_PLATFORM_CONFIG };
+    const existingCats = new Set((parsed.pricing || []).map((p) => p.category));
+    const hasAllFive = DEFAULT_PRICING.every((p) => existingCats.has(p.category));
+    if (!hasAllFive) {
+      parsed.pricing = DEFAULT_PRICING.map((def) => {
+        const match = (parsed.pricing || []).find((p) => p.category === def.category);
+        return match ?? def;
+      });
+    }
     parsed.users = parsed.users.map((u) => ({
       ...u,
+      favorites: Array.isArray(u.favorites) ? u.favorites : [],
       is_anonymized: u.is_anonymized ?? false,
-      preferred_payment: u.preferred_payment ?? 'pix',
+      preferred_payment: u.preferred_payment === 'cash' ? 'cash' : 'pix',
       driver: u.driver
         ? {
             ...u.driver,
@@ -273,6 +325,11 @@ function loadDatabase(): DatabaseSchema {
             completion_rate: u.driver.completion_rate ?? 100,
           }
         : u.driver,
+    }));
+    parsed.rides = (parsed.rides || []).map((r) => ({
+      ...r,
+      payment_method: r.payment_method === 'cash' ? 'cash' : 'pix',
+      payment_status: r.payment_status ?? (r.status === 'completed' ? 'paid_cash' : 'pending'),
     }));
     return parsed;
   } catch {
@@ -436,6 +493,7 @@ async function startServer() {
       JSON.stringify({
         event: 'sync:init',
         payload: {
+          platformConfig: db.platformConfig,
           pricing: db.pricing,
           rides: db.rides.map(enrichRide),
           onlineDrivers: db.users
@@ -501,6 +559,7 @@ async function startServer() {
       )
       .map(sanitizeOnlineDriverPublic);
     res.json({
+      platformConfig: db.platformConfig,
       pricing: db.pricing,
       rides: db.rides.map(enrichRide),
       onlineDrivers,
@@ -565,6 +624,7 @@ async function startServer() {
       email: normalizedEmail,
       cpf: String(cpf).trim(),
       avatar_url: null,
+      favorites: [],
       preferred_payment: 'pix',
       rating_avg: 5.0,
       rating_count: 0,
@@ -634,6 +694,7 @@ async function startServer() {
       email,
       home_address,
       work_address,
+      favorites,
       preferred_payment,
       vehicle_model,
       vehicle_plate,
@@ -653,7 +714,8 @@ async function startServer() {
     }
     if (home_address !== undefined) user.home_address = home_address;
     if (work_address !== undefined) user.work_address = work_address;
-    if (preferred_payment && ['pix', 'cash', 'card_machine'].includes(preferred_payment)) {
+    if (Array.isArray(favorites)) user.favorites = favorites as SavedAddress[];
+    if (preferred_payment && ['pix', 'cash'].includes(preferred_payment)) {
       user.preferred_payment = preferred_payment;
     }
 
@@ -703,6 +765,7 @@ async function startServer() {
     user.avatar_url = null;
     user.home_address = null;
     user.work_address = null;
+    user.favorites = [];
     user.status = 'suspended';
     user.is_anonymized = true;
     user.password_hash = hashPassword(crypto.randomUUID());
@@ -782,6 +845,7 @@ async function startServer() {
       destination_lat,
       destination_lng,
       distance_km: clientDistanceKm,
+      negotiated_fare,
       delivery_notes,
     } = req.body;
 
@@ -797,15 +861,21 @@ async function startServer() {
         : Math.max(0.8, haversineKm(origin_lat, origin_lng, destination_lat, destination_lng));
 
     const computedFare = Math.max(pricing.min_fare, pricing.base_fare + dist * pricing.per_km_rate);
-    const fare = Number(computedFare.toFixed(2));
+    const hasNegotiated =
+      category === 'negocia' && typeof negotiated_fare === 'number' && negotiated_fare > 0;
+    const fare = Number(
+      (hasNegotiated ? Math.max(pricing.min_fare, negotiated_fare) : computedFare).toFixed(2)
+    );
     const pin = String(Math.floor(1000 + Math.random() * 9000));
+    const safePaymentMethod = payment_method === 'cash' ? 'cash' : 'pix';
 
     const ride: Ride = {
       id: `ride-${crypto.randomUUID().slice(0, 8)}`,
       passenger_id,
       driver_id: null,
       category: category as RideCategory,
-      payment_method,
+      payment_method: safePaymentMethod,
+      payment_status: 'pending',
       status: 'searching',
       origin_address: String(origin_address),
       origin_lat: Number(origin_lat),
@@ -815,9 +885,12 @@ async function startServer() {
       destination_lng: Number(destination_lng),
       distance_km: dist,
       estimated_fare: fare,
+      negotiated_fare: hasNegotiated ? fare : null,
       final_fare: null,
       pin_code: pin,
       delivery_notes: delivery_notes ? String(delivery_notes).trim() : null,
+      dispute_reason: null,
+      pix_declared_at: null,
       created_at: new Date().toISOString(),
       accepted_at: null,
       arrived_at: null,
@@ -904,12 +977,12 @@ async function startServer() {
     if (!ride || ride.driver_id !== driver_id) {
       return res.status(404).json({ error: 'Corrida não encontrada.' });
     }
+    const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
     if (String(pin_code || '').trim() !== ride.pin_code) {
       return res.status(403).json({
-        error:
-          ride.category === 'delivery'
-            ? 'Código PIN de coleta incorreto. Confirme os 4 dígitos com o remetente.'
-            : 'Código PIN incorreto. Confirme os 4 dígitos com o passageiro.',
+        error: isDelivery
+          ? 'Código PIN de coleta incorreto. Confirme os 4 dígitos com o remetente.'
+          : 'Código PIN incorreto. Confirme os 4 dígitos com o passageiro.',
       });
     }
     const driver = db.users.find((u) => u.id === driver_id);
@@ -928,7 +1001,7 @@ async function startServer() {
     return res.json({ ride: enriched });
   });
 
-  // Complete Ride / Delivery (For 'delivery', ALSO validates 4-digit PIN at destination!)
+  // Complete Ride / Delivery (For delivery categories, ALSO validates 4-digit PIN at destination!)
   app.post('/api/rides/:id/complete', (req, res) => {
     const { driver_id, pin_code } = req.body;
     const ride = db.rides.find((r) => r.id === req.params.id);
@@ -939,7 +1012,8 @@ async function startServer() {
       return res.json({ ride: enrichRide(ride) });
     }
 
-    if (ride.category === 'delivery') {
+    const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+    if (isDelivery) {
       if (String(pin_code || '').trim() !== ride.pin_code) {
         return res.status(403).json({
           error: 'PIN de entrega incorreto. Peça o código de 4 dígitos no destino para concluir.',
@@ -950,28 +1024,65 @@ async function startServer() {
     ride.status = 'completed';
     ride.final_fare = ride.estimated_fare;
     ride.completed_at = new Date().toISOString();
+    if (ride.payment_method === 'cash' && ride.payment_status === 'pending') {
+      ride.payment_status = 'paid_cash';
+    }
 
     const driver = db.users.find((u) => u.id === driver_id);
     if (driver) {
-      driver.wallet_balance = Number((driver.wallet_balance + ride.final_fare).toFixed(2));
-      if (driver.driver) {
-        driver.rides_completed = (driver.rides_completed || 0) + 1;
-        const started = Math.max(driver.rides_started || 1, driver.rides_completed);
-        driver.driver.completion_rate = Math.round((driver.rides_completed / started) * 100);
+      const alreadyCredited = db.transactions.some(
+        (t) => t.ride_id === ride.id && t.user_id === driver.id && t.type === 'ride_earning'
+      );
+      if (!alreadyCredited) {
+        driver.wallet_balance = Number((driver.wallet_balance + ride.final_fare).toFixed(2));
+        if (driver.driver) {
+          driver.rides_completed = (driver.rides_completed || 0) + 1;
+          const started = Math.max(driver.rides_started || 1, driver.rides_completed);
+          driver.driver.completion_rate = Math.round((driver.rides_completed / started) * 100);
+        }
+        const tx: WalletTransaction = {
+          id: `tx-${crypto.randomUUID().slice(0, 8)}`,
+          user_id: driver.id,
+          ride_id: ride.id,
+          amount: ride.final_fare,
+          type: 'ride_earning',
+          description: `${isDelivery ? 'Entrega' : 'Corrida'} #${ride.id.slice(-4)} · ${ride.destination_address.split(',')[0]}`,
+          created_at: new Date().toISOString(),
+        };
+        db.transactions.unshift(tx);
+        broadcast('user:updated', sanitizeUser(driver));
       }
-      const tx: WalletTransaction = {
-        id: `tx-${crypto.randomUUID().slice(0, 8)}`,
-        user_id: driver.id,
-        ride_id: ride.id,
-        amount: ride.final_fare,
-        type: 'ride_earning',
-        description: `${ride.category === 'delivery' ? 'Entrega' : 'Corrida'} #${ride.id.slice(-4)} · ${ride.destination_address.split(',')[0]}`,
-        created_at: new Date().toISOString(),
-      };
-      db.transactions.unshift(tx);
-      broadcast('user:updated', sanitizeUser(driver));
     }
 
+    saveDatabase();
+    const enriched = enrichRide(ride);
+    broadcast('ride:updated', enriched);
+    return res.json({ ride: enriched });
+  });
+
+  // Passenger declares Pix payment to Platform Owner's official Pix Key
+  app.post('/api/rides/:id/declare-pix', (req, res) => {
+    const ride = db.rides.find((r) => r.id === req.params.id);
+    if (!ride) return res.status(404).json({ error: 'Corrida não encontrada.' });
+    ride.payment_method = 'pix';
+    ride.payment_status = 'paid_pix';
+    ride.pix_declared_at = new Date().toISOString();
+    saveDatabase();
+    const enriched = enrichRide(ride);
+    broadcast('ride:updated', enriched);
+    return res.json({ ride: enriched });
+  });
+
+  // Driver reports passenger non-payment / "calote"
+  app.post('/api/rides/:id/report-unpaid', (req, res) => {
+    const { reason } = req.body as { reason?: string };
+    const ride = db.rides.find((r) => r.id === req.params.id);
+    if (!ride) return res.status(404).json({ error: 'Corrida não encontrada.' });
+    ride.payment_status = 'disputed';
+    ride.dispute_reason =
+      reason && reason.trim()
+        ? reason.trim()
+        : 'Motorista informou que o passageiro não efetuou o pagamento.';
     saveDatabase();
     const enriched = enrichRide(ride);
     broadcast('ride:updated', enriched);
@@ -1051,7 +1162,9 @@ async function startServer() {
     const totalRevenue = Number(
       completedRides.reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0).toFixed(2)
     );
+    const disputedCount = db.rides.filter((r) => r.payment_status === 'disputed').length;
     res.json({
+      platformConfig: db.platformConfig,
       users: db.users.map(sanitizeUser),
       rides: db.rides.map(enrichRide),
       pricing: db.pricing,
@@ -1065,8 +1178,98 @@ async function startServer() {
         pendingDriversCount: db.users.filter(
           (u) => u.role === 'driver' && u.status === 'pending' && !u.is_anonymized
         ).length,
+        disputedCount,
       },
     });
+  });
+
+  app.put('/api/admin/platform', (req, res) => {
+    const { platform_pix_key, platform_pix_receiver, platform_city } =
+      req.body as Partial<PlatformConfig>;
+    if (!platform_pix_key || !platform_pix_receiver || !platform_city) {
+      return res
+        .status(400)
+        .json({ error: 'Informe a chave Pix, favorecido e cidade da operação.' });
+    }
+    db.platformConfig = {
+      platform_pix_key: String(platform_pix_key).trim(),
+      platform_pix_receiver: String(platform_pix_receiver).trim(),
+      platform_city: String(platform_city).trim(),
+    };
+    saveDatabase();
+    broadcast('platform:updated', db.platformConfig);
+    return res.json({ platformConfig: db.platformConfig });
+  });
+
+  app.post('/api/admin/rides/:id/settle-dispute', (req, res) => {
+    const ride = db.rides.find((r) => r.id === req.params.id);
+    if (!ride) return res.status(404).json({ error: 'Corrida não encontrada.' });
+
+    const fareAmount = ride.final_fare ?? ride.estimated_fare;
+    ride.payment_status = 'admin_settled';
+    if (ride.status !== 'completed') {
+      ride.status = 'completed';
+      ride.final_fare = fareAmount;
+      ride.completed_at = new Date().toISOString();
+    }
+
+    if (ride.driver_id) {
+      const driver = db.users.find((u) => u.id === ride.driver_id);
+      if (driver) {
+        const alreadyCredited = db.transactions.some(
+          (t) =>
+            t.ride_id === ride.id &&
+            t.user_id === driver.id &&
+            (t.type === 'ride_earning' || t.type === 'dispute_settlement')
+        );
+        if (!alreadyCredited) {
+          driver.wallet_balance = Number((driver.wallet_balance + fareAmount).toFixed(2));
+        }
+        const tx: WalletTransaction = {
+          id: `tx-${crypto.randomUUID().slice(0, 8)}`,
+          user_id: driver.id,
+          ride_id: ride.id,
+          amount: alreadyCredited ? 0 : fareAmount,
+          type: 'dispute_settlement',
+          description: `Garantia Admin (disputa #${ride.id.slice(-4)})`,
+          created_at: new Date().toISOString(),
+        };
+        db.transactions.unshift(tx);
+        broadcast('user:updated', sanitizeUser(driver));
+      }
+    }
+
+    saveDatabase();
+    const enriched = enrichRide(ride);
+    broadcast('ride:updated', enriched);
+    return res.json({ ride: enriched });
+  });
+
+  app.post('/api/admin/drivers/:userId/payout', (req, res) => {
+    const driver = db.users.find((u) => u.id === req.params.userId && u.role === 'driver');
+    if (!driver) return res.status(404).json({ error: 'Motorista não encontrado.' });
+
+    const requested = Number(req.body?.amount ?? driver.wallet_balance);
+    const payoutAmount = Math.min(driver.wallet_balance, Math.max(0, requested));
+    if (payoutAmount <= 0) {
+      return res.status(400).json({ error: 'Motorista sem saldo disponível para repasse.' });
+    }
+
+    driver.wallet_balance = Number((driver.wallet_balance - payoutAmount).toFixed(2));
+    const tx: WalletTransaction = {
+      id: `tx-${crypto.randomUUID().slice(0, 8)}`,
+      user_id: driver.id,
+      ride_id: null,
+      amount: -payoutAmount,
+      type: 'payout',
+      description: `Repasse Pix enviado para ${driver.driver?.pix_key || driver.email}`,
+      created_at: new Date().toISOString(),
+    };
+    db.transactions.unshift(tx);
+    saveDatabase();
+    const safe = sanitizeUser(driver);
+    broadcast('user:updated', safe);
+    return res.json({ user: safe, transaction: tx });
   });
 
   app.post('/api/admin/drivers/:userId/review', (req, res) => {

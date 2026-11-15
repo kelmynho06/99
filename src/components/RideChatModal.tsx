@@ -53,7 +53,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+    <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
       <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-950 px-5 py-4 text-white">
           <div>

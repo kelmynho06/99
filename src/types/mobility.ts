@@ -2,9 +2,16 @@ export type UserRole = 'passenger' | 'driver' | 'admin';
 
 export type AccountStatus = 'active' | 'pending' | 'rejected' | 'suspended';
 
-export type RideCategory = 'pop' | 'moto' | 'delivery';
+export type RideCategory = 'moto' | 'pop' | 'negocia' | 'delivery_moto' | 'delivery_car';
 
-export type PaymentMethod = 'pix' | 'cash' | 'card_machine';
+export type PaymentMethod = 'cash' | 'pix';
+
+export type PaymentStatus =
+  | 'pending'
+  | 'paid_pix'
+  | 'paid_cash'
+  | 'disputed'
+  | 'admin_settled';
 
 export type RideStatus =
   | 'searching'
@@ -19,6 +26,12 @@ export interface SavedAddress {
   address: string;
   lat: number;
   lng: number;
+}
+
+export interface PlatformConfig {
+  platform_pix_key: string;
+  platform_pix_receiver: string;
+  platform_city: string;
 }
 
 export interface DriverDetails {
@@ -51,6 +64,7 @@ export interface UserProfile {
   avatar_url?: string | null;
   home_address?: SavedAddress | null;
   work_address?: SavedAddress | null;
+  favorites?: SavedAddress[];
   preferred_payment?: PaymentMethod;
   rating_avg: number;
   rating_count: number;
@@ -76,6 +90,7 @@ export interface Ride {
   driver_id: string | null;
   category: RideCategory;
   payment_method: PaymentMethod;
+  payment_status: PaymentStatus;
   status: RideStatus;
   origin_address: string;
   origin_lat: number;
@@ -85,9 +100,12 @@ export interface Ride {
   destination_lng: number;
   distance_km: number;
   estimated_fare: number;
+  negotiated_fare?: number | null;
   final_fare: number | null;
   pin_code: string;
   delivery_notes?: string | null;
+  dispute_reason?: string | null;
+  pix_declared_at?: string | null;
   created_at: string;
   accepted_at: string | null;
   arrived_at: string | null;
@@ -113,7 +131,7 @@ export interface WalletTransaction {
   user_id: string;
   ride_id?: string | null;
   amount: number;
-  type: 'ride_earning' | 'ride_payment' | 'payout';
+  type: 'ride_earning' | 'payout' | 'dispute_settlement';
   description: string;
   created_at: string;
 }

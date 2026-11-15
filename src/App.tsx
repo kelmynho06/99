@@ -47,6 +47,7 @@ export default function App() {
   }, []);
 
   const {
+    platformConfig,
     rides,
     pricing,
     onlineDrivers,
@@ -77,6 +78,7 @@ export default function App() {
       ) : (
         <PassengerView
           currentUser={currentUser}
+          platformConfig={platformConfig}
           rides={rides}
           pricing={pricing}
           onlineDrivers={onlineDrivers}

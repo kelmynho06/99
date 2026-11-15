@@ -15,6 +15,7 @@ import {
   Power,
   RefreshCw,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Star,
   Wallet,
@@ -22,7 +23,13 @@ import {
 } from 'lucide-react';
 import { buildGoogleMapsDirectionsUrl, fetchRouteGeometry, formatBRL } from '../lib/geo';
 import { playOfferAlertSound } from '../lib/sound';
-import type { Ride, RideMessage, UserProfile, WalletTransaction } from '../types/mobility';
+import type {
+  Ride,
+  RideCategory,
+  RideMessage,
+  UserProfile,
+  WalletTransaction,
+} from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
 import { LiveMap } from './LiveMap';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -39,6 +46,17 @@ interface DriverViewProps {
   onEmitLocation: (userId: string, lat: number, lng: number, heading?: number) => void;
   onLogout: () => void;
 }
+
+const CATEGORY_LABELS: Record<RideCategory, string> = {
+  moto: 'Moto',
+  pop: 'Pop (Carro)',
+  negocia: 'Negocia',
+  delivery_moto: 'Entrega Moto',
+  delivery_car: 'Entrega Carro',
+};
+
+const isDeliveryCategory = (cat: RideCategory) =>
+  cat === 'delivery_moto' || cat === 'delivery_car';
 
 export const DriverView: React.FC<DriverViewProps> = ({
   currentUser,
@@ -72,6 +90,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [pinError, setPinError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Non-payment dispute reporting modal
+  const [disputeRide, setDisputeRide] = useState<Ride | null>(null);
+  const [disputeReason, setDisputeReason] = useState('');
+
   const [chatOpen, setChatOpen] = useState(false);
   const [dismissedRatingRideId, setDismissedRatingRideId] = useState<string | null>(null);
 
@@ -101,7 +123,6 @@ export const DriverView: React.FC<DriverViewProps> = ({
     );
   }, [isOnline, activeRide, currentUser.status, rides, declinedRideIds]);
 
-  // Play audible alert when a new ride/delivery offer arrives
   useEffect(() => {
     if (incomingRide && incomingRide.id !== lastAlertedRideIdRef.current) {
       lastAlertedRideIdRef.current = incomingRide.id;
@@ -316,7 +337,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
   const completeRideDirect = async () => {
     if (!activeRide) return;
-    if (activeRide.category === 'delivery') {
+    if (isDeliveryCategory(activeRide.category)) {
       setPinError(null);
       setPinInput('');
       setPinModalMode('delivery');
@@ -339,6 +360,27 @@ export const DriverView: React.FC<DriverViewProps> = ({
     }
   };
 
+  const submitDispute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disputeRide) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/rides/${disputeRide.id}/report-unpaid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: disputeReason }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { ride: Ride };
+        onRideUpsert(data.ride);
+        setDisputeRide(null);
+        setDisputeReason('');
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const googleMapsUrl = activeRide
     ? buildGoogleMapsDirectionsUrl(
         activeRide.status === 'in_progress'
@@ -351,6 +393,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
     : '#';
 
   const currentChatMessages = activeRide ? messagesByRide[activeRide.id] || [] : [];
+  const activeIsDelivery = activeRide ? isDeliveryCategory(activeRide.category) : false;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-100">
@@ -395,7 +438,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
-          className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-neutral-950 shadow-lg border border-neutral-200/80 active:scale-95 transition"
+          className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-neutral-950 shadow-lg border border-neutral-200 active:scale-95 transition"
           aria-label="Abrir menu do motorista"
         >
           <Menu className="h-6 w-6" />
@@ -419,7 +462,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
           disabled={togglingOnline || currentUser.status !== 'active'}
           onClick={toggleOnline}
           className={`pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-full px-4 text-xs font-extrabold shadow-lg transition active:scale-95 disabled:opacity-50 ${
-            isOnline ? 'bg-emerald-600 text-white' : 'bg-[#FFCC00] text-neutral-950'
+            isOnline ? 'bg-emerald-600 text-white' : 'bg-[#FFD100] text-neutral-950'
           }`}
         >
           <Power className="h-4 w-4" />
@@ -429,7 +472,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {/* Bottom Floating Driver Card */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-3 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
-        <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-2xl border border-neutral-200/80">
+        <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-2xl border border-neutral-200 max-h-[76vh] overflow-y-auto">
           {statusError && (
             <div className="mb-3 rounded-2xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs font-semibold text-red-700">
               {statusError}
@@ -463,46 +506,70 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={refreshProfile}
-                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-xs font-bold text-[#FFCC00]"
+                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-xs font-bold text-[#FFD100]"
               >
                 <RefreshCw className="h-4 w-4" />
                 Verificar aprovação agora
               </button>
             </div>
           ) : activeRide ? (
-            <div className="space-y-4">
+            <div className="space-y-3.5">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="min-w-0 pr-2">
                   <span className="text-xs font-bold text-amber-700">
                     {activeRide.status === 'accepted' &&
-                      (activeRide.category === 'delivery'
+                      (activeIsDelivery
                         ? 'Indo para o local de coleta'
                         : 'Indo buscar o passageiro')}
                     {activeRide.status === 'arrived' &&
-                      (activeRide.category === 'delivery'
+                      (activeIsDelivery
                         ? 'No local de coleta · Peça o PIN'
                         : 'Aguardando embarque · Peça o PIN')}
                     {activeRide.status === 'in_progress' &&
-                      (activeRide.category === 'delivery'
+                      (activeIsDelivery
                         ? 'Entrega em trânsito · PIN no destino'
                         : 'Viagem em andamento')}
                   </span>
-                  <h3 className="font-display text-lg font-extrabold text-neutral-950">
-                    {activeRide.passenger?.full_name || 'Cliente'}
+                  <h3 className="font-display text-lg font-extrabold text-neutral-950 truncate">
+                    {activeRide.passenger?.full_name || 'Cliente'} ·{' '}
+                    {CATEGORY_LABELS[activeRide.category]}
                   </h3>
                 </div>
-                <div className="text-right">
-                  <span className="block text-[11px] font-medium text-neutral-500">Repasse</span>
+                <div className="text-right shrink-0">
+                  <span className="block text-[11px] font-medium text-neutral-500">
+                    {activeRide.payment_method === 'pix' ? 'Pix Plataforma' : 'Dinheiro'}
+                  </span>
                   <span className="font-mono-num text-lg font-extrabold text-neutral-950">
                     {formatBRL(activeRide.estimated_fare)}
                   </span>
                 </div>
               </div>
 
+              {/* Payment Status Banner */}
+              <div
+                className={`rounded-xl px-3 py-2 text-xs font-bold flex items-center justify-between ${
+                  activeRide.payment_status === 'paid_pix'
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : activeRide.payment_status === 'disputed'
+                    ? 'bg-red-50 text-red-700 border border-red-200'
+                    : 'bg-neutral-100 text-neutral-700'
+                }`}
+              >
+                <span>
+                  {activeRide.payment_status === 'paid_pix'
+                    ? 'Pix confirmado pela plataforma'
+                    : activeRide.payment_status === 'disputed'
+                    ? 'Disputa de pagamento aberta ao Admin'
+                    : activeRide.payment_method === 'pix'
+                    ? 'Aguardando Pix do passageiro'
+                    : 'Receber em dinheiro do passageiro'}
+                </span>
+              </div>
+
               <div className="rounded-2xl bg-neutral-50 p-3 text-xs space-y-1.5 border border-neutral-100">
                 <p className="text-neutral-700">
                   <strong className="text-neutral-950">
-                    {activeRide.category === 'delivery' ? 'Coleta:' : 'Embarque:'}
+                    {activeIsDelivery ? 'Coleta:' : 'Embarque:'}
                   </strong>{' '}
                   {activeRide.origin_address}
                 </p>
@@ -529,7 +596,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   Abrir Rota no Google Maps (
                   {activeRide.status === 'in_progress'
                     ? 'Destino'
-                    : activeRide.category === 'delivery'
+                    : activeIsDelivery
                     ? 'Coleta'
                     : 'Embarque'}
                   )
@@ -551,7 +618,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         : activeRide.origin_lng
                     )
                   }
-                  className="rounded-lg bg-neutral-950 px-2.5 py-1 font-bold text-[#FFCC00] active:scale-95"
+                  className="rounded-lg bg-neutral-950 px-2.5 py-1 font-bold text-[#FFD100] active:scale-95"
                 >
                   Avançar veículo no mapa
                 </button>
@@ -563,9 +630,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     type="button"
                     disabled={actionLoading}
                     onClick={markArrived}
-                    className="min-h-[52px] flex-1 rounded-2xl bg-[#FFCC00] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
+                    className="min-h-[52px] flex-1 rounded-2xl bg-[#FFD100] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
                   >
-                    {activeRide.category === 'delivery'
+                    {activeIsDelivery
                       ? 'Cheguei no local de coleta'
                       : 'Cheguei no local de embarque'}
                   </button>
@@ -580,12 +647,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       setPinInput('');
                       setPinModalMode('pickup');
                     }}
-                    className="min-h-[52px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-[#FFCC00] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
+                    className="min-h-[52px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-[#FFD100] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
                   >
                     <KeyRound className="h-4 w-4" />
-                    {activeRide.category === 'delivery'
-                      ? 'Confirmar Coleta (PIN)'
-                      : 'Iniciar Viagem (PIN)'}
+                    {activeIsDelivery ? 'Confirmar Coleta (PIN)' : 'Iniciar Viagem (PIN)'}
                   </button>
                 )}
 
@@ -597,21 +662,33 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     className="min-h-[52px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 text-sm font-extrabold text-white shadow-md active:scale-[0.98] transition"
                   >
                     <CheckCircle2 className="h-5 w-5" />
-                    {activeRide.category === 'delivery'
-                      ? 'Confirmar Entrega (PIN)'
-                      : 'Finalizar Corrida'}
+                    {activeIsDelivery ? 'Confirmar Entrega (PIN)' : 'Finalizar Corrida'}
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={() => setChatOpen(true)}
-                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFCC00]"
+                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100]"
                   aria-label="Abrir chat com cliente"
                 >
                   <MessageSquare className="h-5 w-5" />
                 </button>
               </div>
+
+              {activeRide.payment_status !== 'disputed' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDisputeRide(activeRide);
+                    setDisputeReason('');
+                  }}
+                  className="flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 text-xs font-bold text-red-700 hover:bg-red-100"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  Passageiro não pagou / Relatar problema
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-between gap-4">
@@ -633,7 +710,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 onClick={toggleOnline}
                 disabled={togglingOnline}
                 className={`min-h-[48px] shrink-0 rounded-2xl px-5 text-sm font-extrabold shadow-sm transition active:scale-95 ${
-                  isOnline ? 'bg-neutral-200 text-neutral-900' : 'bg-[#FFCC00] text-neutral-950'
+                  isOnline ? 'bg-neutral-200 text-neutral-900' : 'bg-[#FFD100] text-neutral-950'
                 }`}
               >
                 {isOnline ? 'Pausar' : 'Conectar'}
@@ -645,16 +722,19 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {/* Incoming Ride / Delivery Offer Modal */}
       {incomingRide && (
-        <div className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-black/55 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border-2 border-[#FFCC00]">
+        <div className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border-2 border-[#FFD100]">
             <div className="flex items-center justify-between">
               <span className="text-xs font-extrabold uppercase tracking-wider text-amber-700">
-                {incomingRide.category === 'delivery'
-                  ? 'Nova Entrega / Coleta'
-                  : `Nova Corrida · ${incomingRide.category.toUpperCase()}`}
+                {isDeliveryCategory(incomingRide.category)
+                  ? `Nova ${CATEGORY_LABELS[incomingRide.category]}`
+                  : incomingRide.category === 'negocia'
+                  ? 'Oferta Negocia (Proposta)'
+                  : `Nova Corrida · ${CATEGORY_LABELS[incomingRide.category]}`}
               </span>
               <span className="font-mono-num text-xs font-bold text-neutral-600">
-                {incomingRide.distance_km} km · {incomingRide.payment_method.toUpperCase()}
+                {incomingRide.distance_km} km ·{' '}
+                {incomingRide.payment_method === 'pix' ? 'PIX PLATAFORMA' : 'DINHEIRO'}
               </span>
             </div>
 
@@ -672,7 +752,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <MapPin className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
                 <div>
                   <span className="block font-bold text-neutral-500">
-                    {incomingRide.category === 'delivery' ? 'Local de Coleta' : 'Embarque'}
+                    {isDeliveryCategory(incomingRide.category) ? 'Local de Coleta' : 'Embarque'}
                   </span>
                   <span className="font-semibold text-neutral-950">
                     {incomingRide.origin_address}
@@ -707,7 +787,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 type="button"
                 disabled={actionLoading}
                 onClick={() => acceptRide(incomingRide.id)}
-                className="min-h-[52px] flex-1 rounded-2xl bg-[#FFCC00] text-base font-extrabold text-neutral-950 shadow-md hover:bg-[#f5c400] active:scale-[0.98] transition"
+                className="min-h-[52px] flex-1 rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
               >
                 {actionLoading ? 'Aceitando...' : 'Aceitar Corrida'}
               </button>
@@ -718,7 +798,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {/* 4-Digit PIN Modal (Pickup or Final Delivery) */}
       {pinModalMode && activeRide && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/65 p-4">
           <form
             onSubmit={submitPinAction}
             className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl"
@@ -727,7 +807,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
                 {pinModalMode === 'delivery'
                   ? 'PIN de Entrega Final'
-                  : activeRide.category === 'delivery'
+                  : activeIsDelivery
                   ? 'PIN de Retirada / Coleta'
                   : 'Confirmar Código PIN'}
               </h3>
@@ -768,7 +848,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             <button
               type="submit"
               disabled={pinInput.length !== 4 || actionLoading}
-              className="mt-4 min-h-[50px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950 disabled:opacity-40"
+              className="mt-4 min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 disabled:opacity-40"
             >
               {actionLoading
                 ? 'Validando PIN...'
@@ -780,9 +860,51 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* Dark Graphite Driver Drawer (inspired by 99 Motorista dark menu screenshot) */}
+      {/* Non-Payment Dispute Modal */}
+      {disputeRide && (
+        <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/65 p-4">
+          <form
+            onSubmit={submitDispute}
+            className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                Relatar não pagamento
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDisputeRide(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              Ao relatar um problema de pagamento, a corrida #{disputeRide.id.slice(-4)} (
+              {formatBRL(disputeRide.final_fare ?? disputeRide.estimated_fare)}) é enviada ao Super
+              Admin para auditoria e quitação garantida.
+            </p>
+            <textarea
+              rows={3}
+              value={disputeReason}
+              onChange={(e) => setDisputeReason(e.target.value)}
+              placeholder="Descreva o ocorrido (ex: passageiro desembarcou sem pagar)"
+              className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-xs outline-none focus:border-neutral-950"
+            />
+            <button
+              type="submit"
+              disabled={actionLoading}
+              className="min-h-[48px] w-full rounded-2xl bg-red-600 text-sm font-extrabold text-white"
+            >
+              {actionLoading ? 'Enviando...' : 'Enviar Disputa ao Super Admin'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Dark Graphite Driver Drawer */}
       {menuOpen && (
-        <div className="fixed inset-0 z-[1000] flex bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1000] flex bg-black/65">
           <div className="flex h-full w-80 max-w-[85vw] flex-col bg-[#0F1115] p-6 text-white shadow-2xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -794,7 +916,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     className="h-12 w-12 rounded-full object-cover border border-white/15"
                   />
                 ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFCC00] text-neutral-950 font-extrabold text-lg">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg">
                     {currentUser.full_name.slice(0, 1)}
                   </div>
                 )}
@@ -803,7 +925,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     {currentUser.full_name}
                   </h3>
                   <p className="text-xs font-semibold text-neutral-300 flex items-center gap-1">
-                    <Star className="h-3.5 w-3.5 fill-[#FFCC00] text-[#FFCC00]" />
+                    <Star className="h-3.5 w-3.5 fill-[#FFD100] text-[#FFD100]" />
                     <span className="font-mono-num">{currentUser.rating_avg.toFixed(2)}</span>
                     <span>· {completedCount} viagens</span>
                   </p>
@@ -818,7 +940,6 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </button>
             </div>
 
-            {/* Acceptance & Completion Rates Card */}
             <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl bg-[#1A1D24] p-4 border border-white/5 text-center">
               <div>
                 <p className="text-[11px] text-neutral-400">Taxa de Aceitação</p>
@@ -845,7 +966,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
               >
                 <span className="flex items-center gap-3">
-                  <Wallet className="h-5 w-5 text-[#FFCC00]" />
+                  <Wallet className="h-5 w-5 text-[#FFD100]" />
                   Ganhos e Carteira Pix
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-500" />
@@ -906,7 +1027,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {/* Wallet Modal */}
       {walletOpen && (
-        <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
@@ -923,7 +1044,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
             <div className="mt-4 rounded-2xl bg-neutral-950 p-4 text-white">
               <p className="text-xs text-neutral-400">Saldo disponível para repasse</p>
-              <p className="mt-1 font-mono-num text-3xl font-extrabold text-[#FFCC00]">
+              <p className="mt-1 font-mono-num text-3xl font-extrabold text-[#FFD100]">
                 {formatBRL(currentUser.wallet_balance)}
               </p>
               <p className="mt-2 text-xs text-neutral-300">
@@ -945,8 +1066,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     <span className="font-medium text-neutral-800 truncate pr-3">
                       {tx.description}
                     </span>
-                    <span className="font-mono-num font-bold text-emerald-700 shrink-0">
-                      + {formatBRL(tx.amount)}
+                    <span
+                      className={`font-mono-num font-bold shrink-0 ${
+                        tx.amount < 0 ? 'text-neutral-700' : 'text-emerald-700'
+                      }`}
+                    >
+                      {tx.amount < 0 ? `- ${formatBRL(Math.abs(tx.amount))}` : `+ ${formatBRL(tx.amount)}`}
                     </span>
                   </div>
                 ))
@@ -958,7 +1083,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {/* Driver Ride History Modal */}
       {historyOpen && (
-        <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
@@ -981,11 +1106,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 myDriverRides.map((r) => (
                   <div
                     key={r.id}
-                    className="rounded-2xl border border-neutral-200 p-3.5 text-xs space-y-1"
+                    className="rounded-2xl border border-neutral-200 p-3.5 text-xs space-y-1.5"
                   >
                     <div className="flex items-center justify-between font-bold text-neutral-950">
                       <span>
-                        {r.category.toUpperCase()} · {r.status}
+                        {CATEGORY_LABELS[r.category]} · {r.status}
                       </span>
                       <span className="font-mono-num text-emerald-700">
                         {formatBRL(r.final_fare ?? r.estimated_fare)}
@@ -995,6 +1120,24 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     <p className="text-neutral-900 font-medium truncate">
                       Para: {r.destination_address}
                     </p>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] font-semibold text-neutral-500">
+                        {r.payment_method === 'pix' ? 'Pix' : 'Dinheiro'} · {r.payment_status}
+                      </span>
+                      {r.payment_status !== 'disputed' && r.payment_status !== 'admin_settled' && r.status === 'completed' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistoryOpen(false);
+                            setDisputeRide(r);
+                            setDisputeReason('');
+                          }}
+                          className="text-[11px] font-bold text-red-700 hover:underline"
+                        >
+                          Relatar problema de pagamento
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               )}

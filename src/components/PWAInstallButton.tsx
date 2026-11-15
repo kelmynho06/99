@@ -38,7 +38,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'menu' }> = ({
           className={
             variant === 'menu'
               ? 'flex w-full items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold text-neutral-900 transition hover:bg-neutral-100'
-              : 'flex min-h-[44px] items-center gap-2 rounded-full border border-neutral-300 bg-white/95 px-3.5 py-2 text-xs font-semibold text-neutral-900 shadow-sm backdrop-blur whitespace-nowrap shrink-0'
+              : 'flex min-h-[44px] items-center gap-2 rounded-full border border-neutral-300 bg-white px-3.5 py-2 text-xs font-semibold text-neutral-900 shadow-sm whitespace-nowrap shrink-0'
           }
         >
           <Smartphone className="h-4 w-4" />
@@ -46,7 +46,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'menu' }> = ({
         </button>
 
         {showIOSGuide && (
-          <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/65 p-4">
             <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-neutral-950">Instalar no iPhone / iPad</h3>

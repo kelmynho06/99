@@ -171,7 +171,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
         </div>
 
         <div className="mt-8 hidden lg:grid grid-cols-1 gap-4">
-          <div className="rounded-2xl bg-neutral-950/8 p-4 backdrop-blur-sm">
+          <div className="rounded-2xl bg-neutral-950/10 p-4">
             <div className="flex items-center gap-3 text-neutral-950">
               <MapPin className="h-5 w-5 shrink-0" />
               <p className="text-sm font-bold">Mapa aberto com GPS ao vivo</p>
@@ -180,7 +180,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               OpenStreetMap interativo sem barreiras de toque e rotas diretas pelo Google Maps para o motorista.
             </p>
           </div>
-          <div className="rounded-2xl bg-neutral-950/8 p-4 backdrop-blur-sm">
+          <div className="rounded-2xl bg-neutral-950/10 p-4">
             <div className="flex items-center gap-3 text-neutral-950">
               <ShieldCheck className="h-5 w-5 shrink-0" />
               <p className="text-sm font-bold">Segurança com PIN e CNH verificada</p>
