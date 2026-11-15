@@ -14,6 +14,11 @@ import {
   X,
 } from 'lucide-react';
 import { searchAddresses } from '../lib/geo';
+import {
+  anonymizeUserAccount,
+  changeUserPassword,
+  updateUserProfileSettings,
+} from '../lib/mobilityApi';
 import type { PaymentMethod, SavedAddress, UserProfile } from '../types/mobility';
 
 interface AccountSettingsModalProps {
@@ -64,7 +69,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [pixKey, setPixKey] = useState(currentUser.driver?.pix_key || '');
 
   // Password change
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
   // LGPD delete confirmation
@@ -75,35 +79,31 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setFeedback(null);
     setSaving(true);
     try {
-      const res = await fetch(`/api/users/${currentUser.id}/profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_name: fullName,
-          phone,
-          email,
-          preferred_payment: preferredPayment,
-          home_address: homeAddr,
-          work_address: workAddr,
-          favorites,
-          ...(currentUser.driver
-            ? {
-                vehicle_type: vehicleType,
-                vehicle_model: vehicleModel,
-                vehicle_plate: vehiclePlate,
-                vehicle_color: vehicleColor,
-                pix_key: pixKey,
-              }
-            : {}),
-        }),
+      const updated = await updateUserProfileSettings(currentUser, {
+        full_name: fullName,
+        phone,
+        email,
+        preferred_payment: preferredPayment,
+        home_address: homeAddr,
+        work_address: workAddr,
+        favorites,
+        ...(currentUser.driver
+          ? {
+              vehicle_type: vehicleType,
+              vehicle_model: vehicleModel,
+              vehicle_plate: vehiclePlate,
+              vehicle_color: vehicleColor,
+              pix_key: pixKey,
+            }
+          : {}),
       });
-      const data = (await res.json()) as { user?: UserProfile; error?: string };
-      if (!res.ok || !data.user) {
-        setFeedback({ type: 'err', msg: data.error || 'Erro ao salvar alterações.' });
-        return;
-      }
-      onUserUpdated(data.user);
+      onUserUpdated(updated);
       setFeedback({ type: 'ok', msg: 'Configurações atualizadas com sucesso.' });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Erro ao salvar alterações.',
+      });
     } finally {
       setSaving(false);
     }
@@ -114,22 +114,14 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setFeedback(null);
     setSaving(true);
     try {
-      const res = await fetch(`/api/users/${currentUser.id}/password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-        }),
-      });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok) {
-        setFeedback({ type: 'err', msg: data.error || 'Falha ao alterar senha.' });
-        return;
-      }
-      setCurrentPassword('');
+      await changeUserPassword(newPassword);
       setNewPassword('');
       setFeedback({ type: 'ok', msg: 'Senha alterada com segurança.' });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Falha ao alterar senha.',
+      });
     } finally {
       setSaving(false);
     }
@@ -138,12 +130,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const handleAnonymizeAccount = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/users/${currentUser.id}/account`, {
-        method: 'DELETE',
+      await anonymizeUserAccount();
+      onAccountDeleted();
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Falha ao anonimizar conta.',
       });
-      if (res.ok) {
-        onAccountDeleted();
-      }
     } finally {
       setSaving(false);
     }
@@ -230,7 +223,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 >
                   <span className="flex items-center gap-3 text-sm font-bold text-neutral-900">
                     <User className="h-4 w-4 text-neutral-600" />
-                    Editar nome, telefone e e-mail
+                    Editar nome e telefone
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>
@@ -329,7 +322,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950"
+                className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
               >
                 {saving ? 'Salvando...' : 'Salvar Dados'}
               </button>
@@ -485,7 +478,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   {[
                     { id: 'car' as const, label: 'Carro' },
                     { id: 'moto' as const, label: 'Moto' },
-                    { id: 'delivery' as const, label: 'Entrega' },
+                    { id: 'delivery' as const, label: 'Entregador' },
                   ].map((vt) => (
                     <button
                       key={vt.id}
@@ -493,7 +486,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => setVehicleType(vt.id)}
                       className={`min-h-[42px] rounded-xl border text-xs font-bold ${
                         vehicleType === vt.id
-                          ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
+                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
                           : 'bg-neutral-50 text-neutral-700 border-neutral-200'
                       }`}
                     >
@@ -543,7 +536,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950"
+                className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
               >
                 {saving ? 'Salvando...' : 'Atualizar Veículo & Pix'}
               </button>
@@ -552,16 +545,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
           {section === 'password' && (
             <form onSubmit={handleChangePassword} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Senha atual</label>
-                <input
-                  type="password"
-                  required
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm"
-                />
-              </div>
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1">
                   Nova senha (mínimo 6 caracteres)
@@ -578,7 +561,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-neutral-950 text-sm font-bold text-[#FFCC00]"
+                className="min-h-[48px] w-full rounded-2xl bg-neutral-950 text-sm font-bold text-[#FFD100]"
               >
                 {saving ? 'Alterando...' : 'Confirmar Nova Senha'}
               </button>

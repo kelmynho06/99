@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Banknote,
-  Bike,
   Briefcase,
   Car,
   ChevronRight,
@@ -30,6 +29,10 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import deliveryCarImg from '../assets/images/vehicle_delivery_car_99_1794777202799.jpg';
+import deliveryMotoImg from '../assets/images/vehicle_delivery_moto_99_1794777202546.jpg';
+import motoImg from '../assets/images/vehicle_moto_99_1794777201679.jpg';
+import popCarImg from '../assets/images/vehicle_pop_99_1794777203734.jpg';
 import {
   fetchRouteGeometry,
   formatBRL,
@@ -37,6 +40,7 @@ import {
   reverseGeocode,
   searchAddresses,
 } from '../lib/geo';
+import { cancelRide, createRideRequest } from '../lib/mobilityApi';
 import type {
   GeoPoint,
   PaymentMethod,
@@ -64,6 +68,7 @@ interface PassengerViewProps {
   messagesByRide: Record<string, RideMessage[]>;
   onUserUpdated: (user: UserProfile) => void;
   onLoadMessages: (rideId: string) => void;
+  onAppendMessage: (msg: RideMessage) => void;
   onRideUpsert: (ride: Ride) => void;
   onLogout: () => void;
 }
@@ -71,14 +76,14 @@ interface PassengerViewProps {
 const DEFAULT_ORIGIN: GeoPoint = {
   lat: -23.55052,
   lng: -46.633308,
-  address: 'Praça da Sé · Centro, São Paulo',
+  address: 'Centro · Localização inicial',
 };
 
 const QUICK_DESTINATIONS: GeoPoint[] = [
-  { lat: -23.561414, lng: -46.655881, address: 'Av. Paulista, 1578 · MASP' },
-  { lat: -23.587416, lng: -46.657634, address: 'Parque Ibirapuera · Portão 3' },
-  { lat: -23.54198, lng: -46.62952, address: 'Estação da Luz · Bom Retiro' },
-  { lat: -23.5673, lng: -46.6931, address: 'Pinheiros · Largo da Batata' },
+  { lat: -23.561414, lng: -46.655881, address: 'Av. Paulista, 1578 · Centro Empresarial' },
+  { lat: -23.587416, lng: -46.657634, address: 'Parque Municipal · Portão Principal' },
+  { lat: -23.54198, lng: -46.62952, address: 'Terminal Rodoviário Central' },
+  { lat: -23.5673, lng: -46.6931, address: 'Shopping Plaza · Entrada Norte' },
 ];
 
 const CATEGORY_LABELS: Record<RideCategory, string> = {
@@ -87,6 +92,14 @@ const CATEGORY_LABELS: Record<RideCategory, string> = {
   negocia: 'Negocia',
   delivery_moto: 'Entrega Moto',
   delivery_car: 'Entrega Carro',
+};
+
+const CATEGORY_IMAGES: Record<RideCategory, string> = {
+  moto: motoImg,
+  pop: popCarImg,
+  negocia: popCarImg,
+  delivery_moto: deliveryMotoImg,
+  delivery_car: deliveryCarImg,
 };
 
 export const PassengerView: React.FC<PassengerViewProps> = ({
@@ -98,6 +111,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   messagesByRide,
   onUserUpdated,
   onLoadMessages,
+  onAppendMessage,
   onRideUpsert,
   onLogout,
 }) => {
@@ -107,7 +121,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [infoModal, setInfoModal] = useState<'help' | 'discounts' | 'wallet' | 'security' | 'become_driver' | null>(null);
+  const [infoModal, setInfoModal] = useState<
+    'help' | 'discounts' | 'wallet' | 'security' | 'become_driver' | null
+  >(null);
   const [pixModalRide, setPixModalRide] = useState<Ride | null>(null);
 
   const [origin, setOrigin] = useState<GeoPoint>(DEFAULT_ORIGIN);
@@ -124,6 +140,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [distanceKm, setDistanceKm] = useState<number>(0);
   const [durationMin, setDurationMin] = useState<number>(0);
 
+  const [serviceTab, setServiceTab] = useState<'rides' | 'delivery'>('rides');
   const [category, setCategory] = useState<RideCategory>('pop');
   const [negotiatedFare, setNegotiatedFare] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
@@ -292,53 +309,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     setAddressScreenOpen(false);
   };
 
-  const handleRequestRide = async () => {
-    if (!destination || submitting) return;
-    setErrorMsg(null);
-    setSubmitting(true);
-    try {
-      const isDelivery = category === 'delivery_moto' || category === 'delivery_car';
-      const res = await fetch('/api/rides', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          passenger_id: currentUser.id,
-          category,
-          payment_method: paymentMethod,
-          origin_address: origin.address,
-          origin_lat: origin.lat,
-          origin_lng: origin.lng,
-          destination_address: destination.address,
-          destination_lat: destination.lat,
-          destination_lng: destination.lng,
-          distance_km: distanceKm,
-          negotiated_fare: category === 'negocia' ? activeNegociaFare : undefined,
-          delivery_notes: isDelivery ? deliveryNotes : null,
-        }),
-      });
-      const data = (await res.json()) as { ride?: Ride; error?: string };
-      if (!res.ok || !data.ride) {
-        setErrorMsg(data.error || 'Erro ao solicitar corrida.');
-        return;
-      }
-      setDeliveryNotes('');
-      onRideUpsert(data.ride);
-    } catch {
-      setErrorMsg('Falha de rede ao chamar motorista.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCancelRide = async () => {
-    if (!activeRide) return;
-    const res = await fetch(`/api/rides/${activeRide.id}/cancel`, { method: 'POST' });
-    if (res.ok) {
-      const data = (await res.json()) as { ride: Ride };
-      onRideUpsert(data.ride);
-    }
-  };
-
   const selectedCategoryObj = pricing.find((p) => p.category === category);
   const selectedCategoryFare =
     category === 'negocia'
@@ -346,6 +316,56 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       : selectedCategoryObj
       ? getFareForCategory(selectedCategoryObj)
       : 0;
+
+  const handleRequestRide = async () => {
+    if (!destination || submitting) return;
+    setErrorMsg(null);
+    setSubmitting(true);
+    try {
+      const isDelivery = category === 'delivery_moto' || category === 'delivery_car';
+      const created = await createRideRequest({
+        passenger_id: currentUser.id,
+        category,
+        payment_method: paymentMethod,
+        origin,
+        destination,
+        distance_km: Math.max(0.6, distanceKm),
+        estimated_fare: selectedCategoryFare,
+        negotiated_fare: category === 'negocia' ? activeNegociaFare : null,
+        delivery_notes: isDelivery ? deliveryNotes : null,
+      });
+      setDeliveryNotes('');
+      onRideUpsert(created);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Falha de rede ao chamar motorista.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancelRide = async () => {
+    if (!activeRide) return;
+    try {
+      const updated = await cancelRide(activeRide.id);
+      if (updated) onRideUpsert(updated);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Erro ao cancelar corrida.');
+    }
+  };
+
+  const visiblePricingList = useMemo(() => {
+    const activeOnes = pricing.filter((c) => c.active !== false);
+    if (serviceTab === 'delivery') {
+      return activeOnes.filter(
+        (c) => c.category === 'delivery_moto' || c.category === 'delivery_car'
+      );
+    }
+    return activeOnes.filter(
+      (c) => c.category === 'pop' || c.category === 'moto' || c.category === 'negocia'
+    );
+  }, [pricing, serviceTab]);
 
   const activeDriverPos =
     activeRide?.driver?.driver?.current_lat && activeRide?.driver?.driver?.current_lng
@@ -370,7 +390,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         center={[origin.lat, origin.lng]}
         origin={
           activeRide
-            ? { lat: activeRide.origin_lat, lng: activeRide.origin_lng, address: activeRide.origin_address }
+            ? {
+                lat: activeRide.origin_lat,
+                lng: activeRide.origin_lng,
+                address: activeRide.origin_address,
+              }
             : origin
         }
         destination={
@@ -413,7 +437,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </button>
           ) : destination && !activeRide ? (
             <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-neutral-950 shadow-lg border border-neutral-200 font-mono-num">
-              <span>{distanceKm} km · {durationMin} min</span>
+              <span>
+                {distanceKm} km · {durationMin} min
+              </span>
             </div>
           ) : null}
           <PWAInstallButton />
@@ -422,10 +448,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
       {/* Bottom Sheet / Floating Card */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-0 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
-        <div className="pointer-events-auto rounded-t-3xl sm:rounded-3xl bg-white p-5 pb-safe shadow-2xl border-t sm:border border-neutral-200 max-h-[76vh] overflow-y-auto">
+        <div className="pointer-events-auto rounded-t-3xl sm:rounded-3xl bg-white p-5 pb-safe shadow-2xl border-t sm:border border-neutral-200 max-h-[78vh] overflow-y-auto">
           {!activeRide ? (
             !destination ? (
-              /* HOME CARD ("Para onde vamos?" + Casa / Trabalho / Favoritos) */
+              /* HOME CARD ("Para onde vamos?" + Viagem / Entrega + Casa / Trabalho / Favoritos) */
               <div className="space-y-3.5">
                 <div className="mx-auto h-1 w-10 rounded-full bg-neutral-200 sm:hidden" />
 
@@ -438,6 +464,57 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       ? `${onlineDrivers.length} online agora`
                       : 'Mapa em tempo real'}
                   </span>
+                </div>
+
+                {/* Mode quick selector: Viagem vs 99 Entrega */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('rides');
+                      setCategory('pop');
+                      setActiveSearchField('destination');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-left hover:border-neutral-950 transition active:scale-[0.98]"
+                  >
+                    <img
+                      src={popCarImg}
+                      alt="Corridas"
+                      className="h-11 w-11 rounded-xl object-contain bg-white p-0.5 shrink-0"
+                    />
+                    <div>
+                      <p className="font-display text-sm font-extrabold text-neutral-950">
+                        Corrida
+                      </p>
+                      <p className="text-[11px] text-neutral-500">Carro e Moto</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('delivery');
+                      setCategory('delivery_moto');
+                      setActiveSearchField('destination');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-left hover:border-neutral-950 transition active:scale-[0.98]"
+                  >
+                    <img
+                      src={deliveryMotoImg}
+                      alt="Entregas"
+                      className="h-11 w-11 rounded-xl object-contain bg-white p-0.5 shrink-0"
+                    />
+                    <div>
+                      <p className="font-display text-sm font-extrabold text-neutral-950">
+                        Entrega
+                      </p>
+                      <p className="text-[11px] text-neutral-500">Moto e Carro</p>
+                    </div>
+                  </button>
                 </div>
 
                 <button
@@ -507,7 +584,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         Pix pendente da última viagem
                       </p>
                       <p className="text-[11px] text-neutral-700 font-mono-num">
-                        {formatBRL(unpaidCompletedPixRide.final_fare ?? unpaidCompletedPixRide.estimated_fare)}
+                        {formatBRL(
+                          unpaidCompletedPixRide.final_fare ??
+                            unpaidCompletedPixRide.estimated_fare
+                        )}
                       </p>
                     </div>
                     <button
@@ -521,7 +601,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 )}
               </div>
             ) : (
-              /* CATEGORY & FARE SELECTION BOTTOM SHEET */
+              /* CATEGORY & FARE SELECTION BOTTOM SHEET (Matching 99 Screenshots) */
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2 pb-2 border-b border-neutral-100">
                   <button
@@ -556,116 +636,149 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   </button>
                 </div>
 
+                {/* Service Switch: Viagens vs Entregas */}
+                <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-neutral-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('rides');
+                      if (category === 'delivery_moto' || category === 'delivery_car') {
+                        setCategory('pop');
+                      }
+                    }}
+                    className={`min-h-[38px] rounded-xl text-xs font-extrabold transition ${
+                      serviceTab === 'rides'
+                        ? 'bg-white text-neutral-950 shadow-xs'
+                        : 'text-neutral-600'
+                    }`}
+                  >
+                    Viagens (Carro / Moto)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('delivery');
+                      if (category !== 'delivery_moto' && category !== 'delivery_car') {
+                        setCategory('delivery_moto');
+                      }
+                    }}
+                    className={`min-h-[38px] rounded-xl text-xs font-extrabold transition ${
+                      serviceTab === 'delivery'
+                        ? 'bg-white text-neutral-950 shadow-xs'
+                        : 'text-neutral-600'
+                    }`}
+                  >
+                    Entregas (Pacotes)
+                  </button>
+                </div>
+
                 {errorMsg && (
                   <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">
                     {errorMsg}
                   </div>
                 )}
 
-                {/* 5-Category Vertical 99-Style List */}
-                <div className="space-y-1.5 max-h-[34vh] overflow-y-auto pr-0.5">
-                  {pricing
-                    .filter((c) => c.active !== false)
-                    .map((cat) => {
-                      const selected = category === cat.category;
-                      const fare =
-                        cat.category === 'negocia' && selected
-                          ? activeNegociaFare
-                          : getFareForCategory(cat);
-                      const isMoto =
-                        cat.category === 'moto' || cat.category === 'delivery_moto';
-                      const isDeliveryCat =
-                        cat.category === 'delivery_moto' || cat.category === 'delivery_car';
+                {/* Vehicle List with 3D Vehicle Assets */}
+                <div className="space-y-1.5 max-h-[32vh] overflow-y-auto pr-0.5">
+                  {visiblePricingList.map((cat) => {
+                    const selected = category === cat.category;
+                    const fare =
+                      cat.category === 'negocia' && selected
+                        ? activeNegociaFare
+                        : getFareForCategory(cat);
+                    const isMoto =
+                      cat.category === 'moto' || cat.category === 'delivery_moto';
+                    const imgSrc = CATEGORY_IMAGES[cat.category];
 
-                      return (
-                        <div
-                          key={cat.category}
-                          className={`rounded-2xl border-2 transition ${
-                            selected
-                              ? 'border-neutral-950 bg-[#FFD100]/15'
-                              : 'border-neutral-100 bg-neutral-50 hover:border-neutral-300'
-                          }`}
+                    return (
+                      <div
+                        key={cat.category}
+                        className={`rounded-2xl border-2 transition ${
+                          selected
+                            ? 'border-neutral-950 bg-[#FFD100]/15'
+                            : 'border-neutral-100 bg-white hover:border-neutral-300'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setCategory(cat.category)}
+                          className="flex min-h-[64px] w-full items-center justify-between gap-3 px-3 py-2 text-left"
                         >
-                          <button
-                            type="button"
-                            onClick={() => setCategory(cat.category)}
-                            className="flex min-h-[58px] w-full items-center justify-between gap-3 px-3.5 py-2 text-left"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div
-                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                                  selected
-                                    ? 'bg-neutral-950 text-[#FFD100]'
-                                    : 'bg-white text-neutral-900 border border-neutral-200'
-                                }`}
-                              >
-                                {isDeliveryCat ? (
-                                  <Package className="h-5 w-5" />
-                                ) : isMoto ? (
-                                  <Bike className="h-5 w-5" />
-                                ) : (
-                                  <Car className="h-5 w-5" />
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-extrabold text-neutral-950 truncate">
-                                  {cat.label}
-                                </p>
-                                <p className="text-[11px] text-neutral-600 truncate">
-                                  {cat.description}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="font-mono-num text-sm font-extrabold text-neutral-950">
-                                {formatBRL(fare)}
+                          <div className="flex items-center gap-3 min-w-0">
+                            <img
+                              src={imgSrc}
+                              alt={cat.label}
+                              className="h-12 w-14 shrink-0 rounded-xl object-contain bg-white"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-extrabold text-neutral-950 truncate">
+                                {cat.label}
                               </p>
-                              <p className="text-[10px] text-neutral-500 font-mono-num">
-                                ~{Math.max(2, isMoto ? Math.round(durationMin * 0.75) : durationMin)} min
+                              <p className="text-[11px] text-neutral-600 truncate">
+                                {cat.description}
                               </p>
                             </div>
-                          </button>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-mono-num text-sm font-extrabold text-neutral-950">
+                              {formatBRL(fare)}
+                            </p>
+                            <p className="text-[10px] text-neutral-500 font-mono-num">
+                              ~
+                              {Math.max(
+                                2,
+                                isMoto ? Math.round(durationMin * 0.75) : durationMin
+                              )}{' '}
+                              min
+                            </p>
+                          </div>
+                        </button>
 
-                          {/* Interactive Fare Negotiation Stepper for Negocia */}
-                          {cat.category === 'negocia' && selected && (
-                            <div className="flex items-center justify-between border-t border-neutral-950/10 px-3.5 py-2 bg-white/80 rounded-b-2xl">
-                              <span className="text-[11px] font-bold text-neutral-700">
-                                Sua oferta (mín. {formatBRL(cat.min_fare)}):
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setNegotiatedFare(
-                                      Number(
-                                        Math.max(cat.min_fare, activeNegociaFare - 1).toFixed(2)
-                                      )
+                        {/* Interactive Fare Negotiation Stepper for Negocia */}
+                        {cat.category === 'negocia' && selected && (
+                          <div className="flex items-center justify-between border-t border-neutral-950/10 px-3.5 py-2 bg-white rounded-b-2xl">
+                            <span className="text-[11px] font-bold text-neutral-700">
+                              Sua oferta (mín. {formatBRL(cat.min_fare)}):
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNegotiatedFare(
+                                    Number(
+                                      Math.max(
+                                        cat.min_fare,
+                                        activeNegociaFare - 1
+                                      ).toFixed(2)
                                     )
-                                  }
-                                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-300 bg-white text-neutral-950 active:scale-95"
-                                  aria-label="Diminuir oferta"
-                                >
-                                  <Minus className="h-4 w-4" />
-                                </button>
-                                <span className="min-w-[74px] text-center font-mono-num text-sm font-extrabold text-neutral-950">
-                                  {formatBRL(activeNegociaFare)}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setNegotiatedFare(Number((activeNegociaFare + 1).toFixed(2)))
-                                  }
-                                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-950 text-[#FFD100] active:scale-95"
-                                  aria-label="Aumentar oferta"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
-                              </div>
+                                  )
+                                }
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-300 bg-white text-neutral-950 active:scale-95"
+                                aria-label="Diminuir oferta"
+                              >
+                                <Minus className="h-4 w-4" />
+                              </button>
+                              <span className="min-w-[74px] text-center font-mono-num text-sm font-extrabold text-neutral-950">
+                                {formatBRL(activeNegociaFare)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNegotiatedFare(
+                                    Number((activeNegociaFare + 1).toFixed(2))
+                                  )
+                                }
+                                className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-950 text-[#FFD100] active:scale-95"
+                                aria-label="Aumentar oferta"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {(category === 'delivery_moto' || category === 'delivery_car') && (
@@ -800,18 +913,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               {/* Driver Info & Fare */}
               <div className="flex items-center justify-between rounded-2xl bg-neutral-50 p-3 border border-neutral-100">
                 <div className="flex items-center gap-3 min-w-0">
-                  {activeRide.driver?.avatar_url ? (
-                    <img
-                      src={activeRide.driver.avatar_url}
-                      alt={activeRide.driver.full_name}
-                      referrerPolicy="no-referrer"
-                      className="h-12 w-12 rounded-full object-cover border border-neutral-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-bold shrink-0">
-                      {activeRide.driver?.full_name.slice(0, 1) || 'M'}
-                    </div>
-                  )}
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-bold shrink-0">
+                    {activeRide.driver?.full_name.slice(0, 1) || 'M'}
+                  </div>
                   <div className="min-w-0">
                     <p className="text-sm font-extrabold text-neutral-950 truncate">
                       {activeRide.driver?.full_name}
@@ -900,7 +1004,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </h2>
             </div>
 
-            {/* Origin + Destination Bars */}
             <div className="mt-3 space-y-2.5">
               <div className="flex items-center gap-2.5 rounded-2xl border border-neutral-200 bg-white px-3.5 py-1.5 focus-within:border-neutral-950">
                 <span className="h-3 w-3 shrink-0 rounded-full bg-[#FFD100] border-2 border-neutral-950" />
@@ -964,7 +1067,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </div>
             </div>
 
-            {/* Casa | Trabalho | Favoritos Row */}
             <div className="mt-3 grid grid-cols-3 divide-x divide-neutral-200 pt-1">
               <button
                 type="button"
@@ -1007,7 +1109,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
           </div>
 
-          {/* Results List with KM distances */}
           <div className="flex-1 overflow-y-auto divide-y divide-neutral-100">
             {activeSearchField === 'origin' && originSuggestions.length > 0 ? (
               originSuggestions.map((item, i) => {
@@ -1115,7 +1216,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             )}
           </div>
 
-          {/* Footer "Marque o local no mapa" */}
           <div className="border-t border-neutral-100 p-4 pb-safe bg-white">
             <button
               type="button"
@@ -1132,7 +1232,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       )}
 
-      {/* 99-STYLE PASSENGER DRAWER (3x2 Icon Grid + "Outros recursos") */}
+      {/* 99-STYLE PASSENGER DRAWER */}
       {menuOpen && (
         <div className="fixed inset-0 z-[1000] flex bg-black/55">
           <div className="flex h-full w-80 max-w-[86vw] flex-col bg-white p-5 shadow-2xl overflow-y-auto">
@@ -1164,39 +1264,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             </div>
 
-            {/* 3-Column Icon Shortcut Grid */}
             <div className="mt-6 grid grid-cols-3 gap-y-5 gap-x-2 text-center">
               {[
-                {
-                  label: 'Atividade',
-                  icon: History,
-                  action: () => setHistoryOpen(true),
-                },
-                {
-                  label: 'Ajuda',
-                  icon: HelpCircle,
-                  action: () => setInfoModal('help'),
-                },
-                {
-                  label: 'Descontos',
-                  icon: Tag,
-                  action: () => setInfoModal('discounts'),
-                },
-                {
-                  label: 'Carteira',
-                  icon: Wallet,
-                  action: () => setInfoModal('wallet'),
-                },
-                {
-                  label: 'Configurações',
-                  icon: Settings,
-                  action: () => setSettingsOpen(true),
-                },
-                {
-                  label: 'Segurança',
-                  icon: Shield,
-                  action: () => setInfoModal('security'),
-                },
+                { label: 'Atividade', icon: History, action: () => setHistoryOpen(true) },
+                { label: 'Ajuda', icon: HelpCircle, action: () => setInfoModal('help') },
+                { label: 'Descontos', icon: Tag, action: () => setInfoModal('discounts') },
+                { label: 'Carteira', icon: Wallet, action: () => setInfoModal('wallet') },
+                { label: 'Configurações', icon: Settings, action: () => setSettingsOpen(true) },
+                { label: 'Segurança', icon: Shield, action: () => setInfoModal('security') },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -1218,7 +1293,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
             <div className="my-5 border-t border-neutral-100" />
 
-            {/* Outros recursos */}
             <div className="flex-1 space-y-1">
               <h4 className="font-display text-sm font-extrabold text-neutral-950 mb-2">
                 Outros recursos
@@ -1272,14 +1346,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       )}
 
-      {/* Drawer Shortcut Modals (Ajuda, Descontos, Carteira, Segurança, Seja Motorista) */}
+      {/* Drawer Shortcut Modals */}
       {infoModal && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
                 {infoModal === 'help' && 'Ajuda e Suporte'}
-                {infoModal === 'discounts' && 'Descontos e Cupons'}
+                {infoModal === 'discounts' && 'Descontos e Negocia'}
                 {infoModal === 'wallet' && 'Carteira e Pagamentos'}
                 {infoModal === 'security' && 'Central de Segurança'}
                 {infoModal === 'become_driver' && 'Seja Motorista / Entregador'}
@@ -1295,20 +1369,27 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
             {infoModal === 'help' && (
               <div className="text-xs text-neutral-700 space-y-2.5 leading-relaxed">
-                <p className="font-bold text-neutral-950">Atendimento local Velo99 ({platformConfig.platform_city})</p>
-                <p>• Esquecimento de objeto ou dúvida sobre cobrança? Use o chat da viagem ou informe o número da corrida.</p>
-                <p>• Pagamentos via Pix vão diretamente para a conta oficial <strong>{platformConfig.platform_pix_receiver}</strong>.</p>
+                <p className="font-bold text-neutral-950">
+                  Atendimento local Velo99 ({platformConfig.platform_city})
+                </p>
+                <p>
+                  • Esquecimento de objeto ou dúvida sobre cobrança? Use o chat da viagem ou informe
+                  o código da corrida ao suporte.
+                </p>
+                <p>
+                  • Pagamentos via Pix vão diretamente para a conta oficial{' '}
+                  <strong>{platformConfig.platform_pix_receiver}</strong>.
+                </p>
               </div>
             )}
 
             {infoModal === 'discounts' && (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-xs font-extrabold text-neutral-950">Modo Negocia ativo!</p>
-                  <p className="mt-1 text-xs text-neutral-700">
-                    Escolha a categoria <strong>Negocia</strong> ao selecionar seu destino para sugerir o valor ideal da sua corrida.
-                  </p>
-                </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-extrabold text-neutral-950">Modo Negocia ativo!</p>
+                <p className="mt-1 text-xs text-neutral-700">
+                  Escolha a categoria <strong>Negocia</strong> ao selecionar seu destino para sugerir
+                  o valor ideal da sua corrida.
+                </p>
               </div>
             )}
 
@@ -1323,7 +1404,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
                 <p>
                   Pagamento preferencial configurado:{' '}
-                  <strong>{currentUser.preferred_payment === 'cash' ? 'Dinheiro' : 'Pix (Plataforma)'}</strong>
+                  <strong>
+                    {currentUser.preferred_payment === 'cash' ? 'Dinheiro' : 'Pix (Plataforma)'}
+                  </strong>
                 </p>
               </div>
             )}
@@ -1332,10 +1415,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <div className="space-y-2.5 text-xs text-neutral-700 leading-relaxed">
                 <p className="font-bold text-neutral-950">Verificação com PIN de 4 dígitos</p>
                 <p>
-                  • Em todas as corridas, o motorista precisa digitar o seu código PIN de 4 dígitos para iniciar a viagem.
+                  • Em todas as corridas, o motorista precisa digitar o seu código PIN de 4 dígitos
+                  para iniciar a viagem.
                 </p>
                 <p>
-                  • Em entregas (Moto ou Carro), o PIN protege tanto a coleta quanto a entrega final no destinatário.
+                  • Em entregas (Moto ou Carro), o PIN protege tanto a coleta quanto a entrega final
+                  no destinatário.
                 </p>
               </div>
             )}
@@ -1343,8 +1428,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             {infoModal === 'become_driver' && (
               <div className="space-y-3 text-xs text-neutral-700 leading-relaxed">
                 <p>
-                  Quer dirigir ou fazer entregas na sua cidade? Saia da sua conta atual e crie um cadastro escolhendo{' '}
-                  <strong>Opção B · Motorista</strong> enviando CNH, CRLV e sua chave Pix para aprovação.
+                  Quer dirigir ou fazer entregas na sua cidade? Saia da sua conta atual e crie um
+                  cadastro escolhendo <strong>Opção B · Motorista / Entregador</strong> enviando
+                  CNH, CRLV e sua chave Pix para aprovação.
                 </p>
                 <button
                   type="button"
@@ -1403,20 +1489,23 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     </p>
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] font-semibold text-neutral-500">
-                        {r.payment_method === 'pix' ? 'Pix Plataforma' : 'Dinheiro'} · {r.payment_status}
+                        {r.payment_method === 'pix' ? 'Pix Plataforma' : 'Dinheiro'} ·{' '}
+                        {r.payment_status}
                       </span>
-                      {r.payment_method === 'pix' && r.payment_status === 'pending' && r.status !== 'cancelled' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHistoryOpen(false);
-                            setPixModalRide(r);
-                          }}
-                          className="rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
-                        >
-                          Pagar Pix
-                        </button>
-                      )}
+                      {r.payment_method === 'pix' &&
+                        r.payment_status === 'pending' &&
+                        r.status !== 'cancelled' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHistoryOpen(false);
+                              setPixModalRide(r);
+                            }}
+                            className="rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
+                          >
+                            Pagar Pix
+                          </button>
+                        )}
                     </div>
                   </div>
                 ))
@@ -1453,6 +1542,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           currentUser={currentUser}
           peerName={activeRide.driver.full_name}
           messages={currentChatMessages}
+          onMessageSent={onAppendMessage}
           onClose={() => setChatOpen(false)}
         />
       )}

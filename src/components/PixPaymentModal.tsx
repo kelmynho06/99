@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Check, Copy, QrCode, ShieldCheck, X } from 'lucide-react';
 import { formatBRL } from '../lib/geo';
+import { declarePixPaid } from '../lib/mobilityApi';
 import type { PlatformConfig, Ride } from '../types/mobility';
 
 interface PixPaymentModalProps {
@@ -103,7 +104,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         setTimeout(() => setCopiedCode(false), 2000);
       }
     } catch {
-      // Clipboard blocked in non-HTTPS context
+      // Clipboard blocked in restricted context
     }
   };
 
@@ -111,18 +112,10 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     setError(null);
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/rides/${ride.id}/declare-pix`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = (await res.json()) as { ride?: Ride; error?: string };
-      if (!res.ok || !data.ride) {
-        setError(data.error || 'Não foi possível confirmar o Pix.');
-        return;
-      }
-      onDeclared(data.ride);
-    } catch {
-      setError('Falha de conexão ao registrar pagamento Pix.');
+      const updated = await declarePixPaid(ride);
+      onDeclared(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha de conexão ao registrar pagamento Pix.');
     } finally {
       setSubmitting(false);
     }
@@ -219,8 +212,8 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-900">
           <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-amber-700" />
           <span>
-            Pagamento centralizado com proteção Velo99. O repasse ao motorista é garantido pela
-            plataforma.
+            Pagamento centralizado na conta oficial de {platformConfig.platform_pix_receiver}. O
+            repasse ao motorista é feito pela administração após a corrida.
           </span>
         </div>
 

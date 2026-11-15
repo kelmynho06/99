@@ -16,6 +16,11 @@ import {
   Upload,
   User,
 } from 'lucide-react';
+import {
+  compressImageFileToDataUrl,
+  loginUser,
+  registerUser,
+} from '../lib/mobilityApi';
 import type { UserProfile } from '../types/mobility';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -23,23 +28,14 @@ interface AuthScreenProps {
   onAuthenticated: (user: UserProfile) => void;
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-    reader.readAsDataURL(file);
-  });
-}
-
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [accountGoal, setAccountGoal] = useState<'passenger' | 'driver'>('passenger');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Login form
-  const [loginEmail, setLoginEmail] = useState('gabriel@velo99.app');
-  const [loginPassword, setLoginPassword] = useState('123456');
+  // Login form (zero prefilled fictitious credentials)
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
 
   // Registration form
   const [fullName, setFullName] = useState('');
@@ -59,28 +55,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoNotice, setInfoNotice] = useState<string | null>(null);
 
-  const handleLogin = async (e?: React.FormEvent, overrideEmail?: string, overridePassword?: string) => {
-    if (e) e.preventDefault();
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
+    setInfoNotice(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: overrideEmail ?? loginEmail,
-          password: overridePassword ?? loginPassword,
-        }),
-      });
-      const data = (await res.json()) as { user?: UserProfile; error?: string };
-      if (!res.ok || !data.user) {
-        setError(data.error || 'Erro ao fazer login.');
-        return;
-      }
-      onAuthenticated(data.user);
-    } catch {
-      setError('Não foi possível conectar ao servidor.');
+      const user = await loginUser(loginEmail, loginPassword);
+      onAuthenticated(user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao entrar na conta.');
     } finally {
       setLoading(false);
     }
@@ -92,14 +78,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    if (target === 'cnh') setCnhPreview(dataUrl);
-    else setCrlvPreview(dataUrl);
+    try {
+      const compressed = await compressImageFileToDataUrl(file);
+      if (target === 'cnh') setCnhPreview(compressed);
+      else setCrlvPreview(compressed);
+    } catch {
+      setError('Não foi possível processar a imagem selecionada.');
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfoNotice(null);
 
     if (accountGoal === 'driver' && (!cnhPreview || !crlvPreview)) {
       setError('Envie as fotos da sua CNH e do documento do veículo (CRLV).');
@@ -108,38 +99,40 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: accountGoal,
-          full_name: fullName,
-          phone,
-          email,
-          cpf,
-          password,
-          ...(accountGoal === 'driver'
-            ? {
-                cnh_url: cnhPreview,
-                crlv_url: crlvPreview,
-                vehicle_type: vehicleType,
-                vehicle_model: vehicleModel,
-                vehicle_plate: vehiclePlate,
-                vehicle_color: vehicleColor,
-                pix_key: pixKey,
-              }
-            : {}),
-        }),
+      const result = await registerUser({
+        role: accountGoal,
+        full_name: fullName,
+        phone,
+        email,
+        cpf,
+        password,
+        ...(accountGoal === 'driver'
+          ? {
+              cnh_url: cnhPreview,
+              crlv_url: crlvPreview,
+              vehicle_type: vehicleType,
+              vehicle_model: vehicleModel,
+              vehicle_plate: vehiclePlate,
+              vehicle_color: vehicleColor,
+              pix_key: pixKey,
+            }
+          : {}),
       });
 
-      const data = (await res.json()) as { user?: UserProfile; error?: string };
-      if (!res.ok || !data.user) {
-        setError(data.error || 'Erro ao concluir cadastro.');
+      if (result.pendingEmailConfirmation) {
+        setInfoNotice(
+          'Cadastro realizado! Confirme o link enviado ao seu e-mail (ou desative "Confirm email" no painel do Supabase Auth) e faça login.'
+        );
+        setMode('login');
+        setLoginEmail(email.trim().toLowerCase());
         return;
       }
-      onAuthenticated(data.user);
-    } catch {
-      setError('Erro de conexão ao registrar conta.');
+
+      if (result.user) {
+        onAuthenticated(result.user);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao registrar conta.');
     } finally {
       setLoading(false);
     }
@@ -148,11 +141,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col lg:flex-row">
       {/* Brand showcase column */}
-      <div className="bg-[#FFCC00] px-6 py-8 lg:w-[44%] lg:px-12 lg:py-12 flex flex-col justify-between">
+      <div className="bg-[#FFD100] px-6 py-8 lg:w-[44%] lg:px-12 lg:py-12 flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFCC00] font-display text-2xl font-extrabold tracking-tight shadow-md">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100] font-display text-2xl font-extrabold tracking-tight shadow-md">
                 99
               </div>
               <span className="font-display text-2xl font-extrabold tracking-tight text-neutral-950">
@@ -183,10 +176,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
           <div className="rounded-2xl bg-neutral-950/10 p-4">
             <div className="flex items-center gap-3 text-neutral-950">
               <ShieldCheck className="h-5 w-5 shrink-0" />
-              <p className="text-sm font-bold">Segurança com PIN e CNH verificada</p>
+              <p className="text-sm font-bold">Segurança com PIN, Pix oficial e CNH verificada</p>
             </div>
             <p className="mt-1 pl-8 text-xs text-neutral-900/75">
-              Motoristas passam por validação de CNH e CRLV no painel administrativo antes de ficar online.
+              Motoristas e entregadores passam por validação de CNH e CRLV antes de ficar online.
             </p>
           </div>
         </div>
@@ -209,7 +202,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               }}
               className={`min-h-[44px] rounded-xl text-sm font-bold transition ${
                 mode === 'login'
-                  ? 'bg-neutral-950 text-[#FFCC00] shadow-sm'
+                  ? 'bg-neutral-950 text-[#FFD100] shadow-sm'
                   : 'text-neutral-600 hover:text-neutral-950'
               }`}
             >
@@ -223,7 +216,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               }}
               className={`min-h-[44px] rounded-xl text-sm font-bold transition ${
                 mode === 'register'
-                  ? 'bg-neutral-950 text-[#FFCC00] shadow-sm'
+                  ? 'bg-neutral-950 text-[#FFD100] shadow-sm'
                   : 'text-neutral-600 hover:text-neutral-950'
               }`}
             >
@@ -237,8 +230,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
             </div>
           )}
 
+          {infoNotice && (
+            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+              {infoNotice}
+            </div>
+          )}
+
           {mode === 'login' ? (
-            <form onSubmit={(e) => handleLogin(e)} className="mt-6 space-y-4">
+            <form onSubmit={handleLogin} className="mt-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1.5">E-mail</label>
                 <div className="relative">
@@ -263,7 +262,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••"
+                    placeholder="Digite sua senha"
                     className="min-h-[48px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 pl-10 pr-12 text-sm outline-none focus:border-neutral-950 focus:bg-white transition"
                   />
                   <button
@@ -280,51 +279,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="min-h-[52px] w-full rounded-2xl bg-[#FFCC00] text-base font-extrabold text-neutral-950 shadow-sm hover:bg-[#f5c400] active:scale-[0.99] transition disabled:opacity-50"
+                className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm hover:bg-[#f5c400] active:scale-[0.99] transition disabled:opacity-50"
               >
-                {loading ? 'Entrando...' : 'Próximo'}
+                {loading ? 'Entrando...' : 'Entrar'}
               </button>
 
-              {/* Quick Demo Access */}
-              <div className="pt-4 border-t border-neutral-100">
-                <p className="text-xs font-bold text-neutral-500 mb-2.5">
-                  Acesso rápido para testar perfis em tempo real:
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleLogin(undefined, 'gabriel@velo99.app', '123456')}
-                    className="min-h-[46px] rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-left hover:border-neutral-950 transition"
-                  >
-                    <span className="block text-xs font-extrabold text-neutral-950">Passageiro</span>
-                    <span className="block text-[11px] text-neutral-500 truncate">Gabriel Oliveira</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLogin(undefined, 'rikelmy@velo99.app', '123456')}
-                    className="min-h-[46px] rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-left hover:border-neutral-950 transition"
-                  >
-                    <span className="block text-xs font-extrabold text-neutral-950">Motorista Ativo</span>
-                    <span className="block text-[11px] text-neutral-500 truncate">Rikelmy · Fiat Argo</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLogin(undefined, 'mariana.driver@velo99.app', '123456')}
-                    className="min-h-[46px] rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-left hover:border-neutral-950 transition"
-                  >
-                    <span className="block text-xs font-extrabold text-neutral-950">Motorista Pendente</span>
-                    <span className="block text-[11px] text-neutral-500 truncate">Mariana · Em análise</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLogin(undefined, 'admin@velo99.app', 'admin123')}
-                    className="min-h-[46px] rounded-2xl border border-neutral-950/15 bg-neutral-950 px-3 py-2 text-left hover:bg-neutral-800 transition"
-                  >
-                    <span className="block text-xs font-extrabold text-[#FFCC00]">Super Admin</span>
-                    <span className="block text-[11px] text-neutral-300 truncate">Aprovar & Tarifas</span>
-                  </button>
-                </div>
-              </div>
+              <p className="text-center text-xs text-neutral-500 pt-2">
+                Ainda não possui conta?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('register');
+                    setError(null);
+                  }}
+                  className="font-extrabold text-neutral-950 underline"
+                >
+                  Criar cadastro agora
+                </button>
+              </p>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="mt-5 space-y-4">
@@ -339,7 +311,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                     onClick={() => setAccountGoal('passenger')}
                     className={`min-h-[68px] rounded-2xl border-2 p-3 text-left transition ${
                       accountGoal === 'passenger'
-                        ? 'border-neutral-950 bg-[#FFCC00]/20'
+                        ? 'border-neutral-950 bg-[#FFD100]/20'
                         : 'border-neutral-200 bg-white hover:border-neutral-300'
                     }`}
                   >
@@ -361,13 +333,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                     onClick={() => setAccountGoal('driver')}
                     className={`min-h-[68px] rounded-2xl border-2 p-3 text-left transition ${
                       accountGoal === 'driver'
-                        ? 'border-neutral-950 bg-[#FFCC00]/20'
+                        ? 'border-neutral-950 bg-[#FFD100]/20'
                         : 'border-neutral-200 bg-white hover:border-neutral-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold text-neutral-950">
-                        Opção B · Motorista
+                        Opção B · Motorista / Entregador
                       </span>
                       {accountGoal === 'driver' && (
                         <CheckCircle2 className="h-4 w-4 text-neutral-950 shrink-0" />
@@ -469,7 +441,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                       onClick={() => setVehicleType('car')}
                       className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'car'
-                          ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
+                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
                           : 'bg-white text-neutral-700 border-neutral-200'
                       }`}
                     >
@@ -480,7 +452,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                       onClick={() => setVehicleType('moto')}
                       className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'moto'
-                          ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
+                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
                           : 'bg-white text-neutral-700 border-neutral-200'
                       }`}
                     >
@@ -491,11 +463,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                       onClick={() => setVehicleType('delivery')}
                       className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'delivery'
-                          ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
+                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
                           : 'bg-white text-neutral-700 border-neutral-200'
                       }`}
                     >
-                      <Package className="h-4 w-4" /> Entrega
+                      <Package className="h-4 w-4" /> Entregador
                     </button>
                   </div>
 
@@ -528,7 +500,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
 
                   <div>
                     <label className="block text-[11px] font-bold text-neutral-700 mb-1">
-                      Chave Pix para repasses
+                      Sua Chave Pix para receber repasses do Admin
                     </label>
                     <input
                       type="text"
@@ -597,7 +569,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="min-h-[52px] w-full rounded-2xl bg-[#FFCC00] text-base font-extrabold text-neutral-950 shadow-sm hover:bg-[#f5c400] active:scale-[0.99] transition disabled:opacity-50"
+                className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm hover:bg-[#f5c400] active:scale-[0.99] transition disabled:opacity-50"
               >
                 {loading
                   ? 'Criando conta...'

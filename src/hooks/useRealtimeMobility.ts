@@ -1,4 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  DEFAULT_PLATFORM_CONFIG,
+  DEFAULT_PRICING_LIST,
+  fetchEnrichedRides,
+  fetchOnlineDriversPublic,
+  fetchPlatformConfig,
+  fetchPricingList,
+  fetchRideByIdEnriched,
+  fetchRideMessages,
+  fetchUserProfileById,
+  pushDriverLocation,
+} from '../lib/mobilityApi';
+import { supabase } from '../lib/supabase';
 import type {
   PlatformConfig,
   PricingSetting,
@@ -7,29 +20,16 @@ import type {
   UserProfile,
 } from '../types/mobility';
 
-interface WsMessage {
-  event: string;
-  payload: unknown;
-}
-
-const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
-  platform_pix_key: 'pix@velo99.app',
-  platform_pix_receiver: 'Velo99 Mobilidade Ltda',
-  platform_city: 'São Paulo, SP',
-};
-
 export function useRealtimeMobility(
   currentUser: UserProfile | null,
   onCurrentUserUpdated: (user: UserProfile) => void
 ) {
   const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(DEFAULT_PLATFORM_CONFIG);
   const [rides, setRides] = useState<Ride[]>([]);
-  const [pricing, setPricing] = useState<PricingSetting[]>([]);
+  const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [onlineDrivers, setOnlineDrivers] = useState<UserProfile[]>([]);
   const [messagesByRide, setMessagesByRide] = useState<Record<string, RideMessage[]>>({});
-  const [wsConnected, setWsConnected] = useState(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
   const userRef = useRef<UserProfile | null>(currentUser);
   userRef.current = currentUser;
 
@@ -56,191 +56,172 @@ export function useRealtimeMobility(
 
   const loadRideMessages = useCallback(async (rideId: string) => {
     try {
-      const res = await fetch(`/api/rides/${rideId}/messages`);
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages: RideMessage[] };
-      setMessagesByRide((prev) => ({ ...prev, [rideId]: data.messages }));
+      const msgs = await fetchRideMessages(rideId);
+      setMessagesByRide((prev) => ({ ...prev, [rideId]: msgs }));
     } catch {
       // Ignore network hiccup
     }
   }, []);
 
+  const refreshAll = useCallback(async () => {
+    try {
+      const [cfg, pr, rd, drvs] = await Promise.all([
+        fetchPlatformConfig(),
+        fetchPricingList(),
+        userRef.current ? fetchEnrichedRides() : Promise.resolve([]),
+        fetchOnlineDriversPublic(),
+      ]);
+      setPlatformConfig(cfg);
+      setPricing(pr);
+      if (userRef.current) setRides(rd);
+      setOnlineDrivers(drvs);
+    } catch {
+      // Ignore transient network hiccup
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const bootstrap = async () => {
-      try {
-        const res = await fetch('/api/bootstrap');
-        if (!res.ok || !active) return;
-        const data = (await res.json()) as {
-          platformConfig?: PlatformConfig;
-          pricing: PricingSetting[];
-          rides: Ride[];
-          onlineDrivers: UserProfile[];
-        };
-        if (data.platformConfig) setPlatformConfig(data.platformConfig);
-        setPricing(data.pricing);
-        setRides(data.rides);
-        setOnlineDrivers(data.onlineDrivers);
-      } catch {
-        // Retry via WS
-      }
-    };
-
-    const connect = () => {
+    const loadInitial = async () => {
       if (!active) return;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!active) return;
-        setWsConnected(true);
-      };
-
-      ws.onmessage = (evt) => {
-        if (!active) return;
-        try {
-          const parsed = JSON.parse(evt.data) as WsMessage;
-          switch (parsed.event) {
-            case 'sync:init': {
-              const init = parsed.payload as {
-                platformConfig?: PlatformConfig;
-                pricing: PricingSetting[];
-                rides: Ride[];
-                onlineDrivers: UserProfile[];
-              };
-              if (init.platformConfig) setPlatformConfig(init.platformConfig);
-              setPricing(init.pricing);
-              setRides(init.rides);
-              setOnlineDrivers(init.onlineDrivers);
-              break;
-            }
-            case 'platform:updated': {
-              setPlatformConfig(parsed.payload as PlatformConfig);
-              break;
-            }
-            case 'ride:created':
-            case 'ride:updated': {
-              upsertRide(parsed.payload as Ride);
-              break;
-            }
-            case 'pricing:updated': {
-              setPricing(parsed.payload as PricingSetting[]);
-              break;
-            }
-            case 'driver:status': {
-              const drv = parsed.payload as UserProfile;
-              setOnlineDrivers((prev) => {
-                const filtered = prev.filter((d) => d.id !== drv.id);
-                return drv.driver?.is_online ? [...filtered, drv] : filtered;
-              });
-              if (userRef.current?.id === drv.id) {
-                onCurrentUserUpdated(drv);
-              }
-              break;
-            }
-            case 'driver:location': {
-              const loc = parsed.payload as {
-                userId: string;
-                lat: number;
-                lng: number;
-                heading: number;
-              };
-              setOnlineDrivers((prev) =>
-                prev.map((d) =>
-                  d.id === loc.userId && d.driver
-                    ? {
-                        ...d,
-                        driver: {
-                          ...d.driver,
-                          current_lat: loc.lat,
-                          current_lng: loc.lng,
-                          heading: loc.heading,
-                        },
-                      }
-                    : d
-                )
-              );
-              setRides((prev) =>
-                prev.map((r) =>
-                  r.driver_id === loc.userId && r.driver && r.driver.driver
-                    ? {
-                        ...r,
-                        driver: {
-                          ...r.driver,
-                          driver: {
-                            ...r.driver.driver,
-                            current_lat: loc.lat,
-                            current_lng: loc.lng,
-                            heading: loc.heading,
-                          },
-                        },
-                      }
-                    : r
-                )
-              );
-              break;
-            }
-            case 'user:updated': {
-              const updated = parsed.payload as UserProfile;
-              if (userRef.current?.id === updated.id) {
-                onCurrentUserUpdated(updated);
-              }
-              setRides((prev) =>
-                prev.map((r) => {
-                  if (r.driver_id === updated.id) return { ...r, driver: updated };
-                  if (r.passenger_id === updated.id) return { ...r, passenger: updated };
-                  return r;
-                })
-              );
-              break;
-            }
-            case 'chat:message': {
-              appendMessage(parsed.payload as RideMessage);
-              break;
-            }
-          }
-        } catch {
-          // Ignore invalid socket frames
-        }
-      };
-
-      ws.onclose = () => {
-        if (!active) return;
-        setWsConnected(false);
-        reconnectTimer = setTimeout(connect, 2000);
-      };
+      await refreshAll();
     };
+    loadInitial();
 
-    bootstrap();
-    connect();
+    // Realtime subscriptions via Supabase
+    const channel = supabase
+      .channel('velo99-realtime-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rides' },
+        async (payload) => {
+          if (!active) return;
+          const row = payload.new as { id?: string } | undefined;
+          if (row?.id) {
+            const enriched = await fetchRideByIdEnriched(row.id);
+            if (enriched && active) upsertRide(enriched);
+          } else {
+            const list = await fetchEnrichedRides();
+            if (active) setRides(list);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'driver_profiles' },
+        async (payload) => {
+          if (!active) return;
+          const row = payload.new as {
+            user_id?: string;
+            current_lat?: number | null;
+            current_lng?: number | null;
+            heading?: number;
+            is_online?: boolean;
+          };
+
+          if (row?.user_id && typeof row.current_lat === 'number' && typeof row.current_lng === 'number') {
+            setRides((prev) =>
+              prev.map((r) =>
+                r.driver_id === row.user_id && r.driver?.driver
+                  ? {
+                      ...r,
+                      driver: {
+                        ...r.driver,
+                        driver: {
+                          ...r.driver.driver,
+                          current_lat: row.current_lat ?? null,
+                          current_lng: row.current_lng ?? null,
+                          heading: Number(row.heading ?? 0),
+                          is_online: Boolean(row.is_online),
+                        },
+                      },
+                    }
+                  : r
+              )
+            );
+          }
+
+          if (userRef.current?.id && row?.user_id === userRef.current.id) {
+            const refreshed = await fetchUserProfileById(userRef.current.id);
+            if (refreshed && active) onCurrentUserUpdated(refreshed);
+          }
+
+          const drvs = await fetchOnlineDriversPublic();
+          if (active) setOnlineDrivers(drvs);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        async (payload) => {
+          if (!active) return;
+          const row = payload.new as { id?: string } | undefined;
+          if (userRef.current?.id && row?.id === userRef.current.id) {
+            const refreshed = await fetchUserProfileById(userRef.current.id);
+            if (refreshed && active) onCurrentUserUpdated(refreshed);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'platform_settings' },
+        async () => {
+          if (!active) return;
+          const cfg = await fetchPlatformConfig();
+          if (active) setPlatformConfig(cfg);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pricing_settings' },
+        async () => {
+          if (!active) return;
+          const pr = await fetchPricingList();
+          if (active) setPricing(pr);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ride_messages' },
+        (payload) => {
+          if (!active) return;
+          const m = payload.new as Record<string, unknown>;
+          if (m?.id && m?.ride_id) {
+            appendMessage({
+              id: String(m.id),
+              ride_id: String(m.ride_id),
+              sender_id: String(m.sender_id),
+              sender_name: String(m.sender_name),
+              content: String(m.content),
+              created_at: String(m.created_at),
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    // Gentle mobile-network backup poll every 8s when logged in
+    const poll = setInterval(() => {
+      if (active && userRef.current) {
+        fetchEnrichedRides().then((rd) => active && setRides(rd)).catch(() => {});
+        fetchOnlineDriversPublic().then((d) => active && setOnlineDrivers(d)).catch(() => {});
+      }
+    }, 8000);
 
     return () => {
       active = false;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      wsRef.current?.close();
+      clearInterval(poll);
+      supabase.removeChannel(channel);
     };
-  }, [appendMessage, onCurrentUserUpdated, upsertRide]);
+  }, [appendMessage, currentUser?.id, onCurrentUserUpdated, refreshAll, upsertRide]);
 
-  const emitDriverLocation = useCallback((userId: string, lat: number, lng: number, heading = 0) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          event: 'driver:location',
-          payload: { userId, lat, lng, heading },
-        })
-      );
-    } else {
-      fetch('/api/driver/location', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, lat, lng, heading }),
-      }).catch(() => {});
-    }
-  }, []);
+  const emitDriverLocation = useCallback(
+    (userId: string, lat: number, lng: number, heading = 0) => {
+      pushDriverLocation(userId, lat, lng, heading).catch(() => {});
+    },
+    []
+  );
 
   return {
     platformConfig,
@@ -248,9 +229,10 @@ export function useRealtimeMobility(
     pricing,
     onlineDrivers,
     messagesByRide,
-    wsConnected,
     upsertRide,
+    appendMessage,
     loadRideMessages,
     emitDriverLocation,
+    refreshAll,
   };
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
+import { sendRideMessage } from '../lib/mobilityApi';
 import type { RideMessage, UserProfile } from '../types/mobility';
 
 interface RideChatModalProps {
@@ -7,6 +8,7 @@ interface RideChatModalProps {
   currentUser: UserProfile;
   peerName: string;
   messages: RideMessage[];
+  onMessageSent?: (msg: RideMessage) => void;
   onClose: () => void;
 }
 
@@ -22,6 +24,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
   currentUser,
   peerName,
   messages,
+  onMessageSent,
   onClose,
 }) => {
   const [text, setText] = useState('');
@@ -37,15 +40,8 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
     if (!clean || sending) return;
     setSending(true);
     try {
-      await fetch(`/api/rides/${rideId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sender_id: currentUser.id,
-          sender_name: currentUser.full_name,
-          content: clean,
-        }),
-      });
+      const sent = await sendRideMessage(rideId, currentUser.id, currentUser.full_name, clean);
+      onMessageSent?.(sent);
       setText('');
     } finally {
       setSending(false);
@@ -83,7 +79,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
                   <div
                     className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
                       mine
-                        ? 'bg-[#FFCC00] text-neutral-950 font-medium rounded-br-sm'
+                        ? 'bg-[#FFD100] text-neutral-950 font-medium rounded-br-sm'
                         : 'bg-white text-neutral-900 border border-neutral-200 rounded-bl-sm'
                     }`}
                   >
@@ -132,7 +128,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
             <button
               type="submit"
               disabled={!text.trim() || sending}
-              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFCC00] disabled:opacity-40 transition active:scale-95"
+              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100] disabled:opacity-40 transition active:scale-95"
               aria-label="Enviar mensagem"
             >
               <Send className="h-5 w-5" />

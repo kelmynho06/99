@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Star } from 'lucide-react';
 import { formatBRL } from '../lib/geo';
+import { submitRideRating } from '../lib/mobilityApi';
 import type { Ride, UserProfile } from '../types/mobility';
 
 interface RatingModalProps {
@@ -27,21 +28,10 @@ export const RatingModal: React.FC<RatingModalProps> = ({
     if (!targetId || submitting) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/rides/${ride.id}/rate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from_user_id: currentUser.id,
-          to_user_id: targetId,
-          stars,
-        }),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { ride: Ride };
-        onSubmitted(data.ride);
-      } else {
-        onSkip();
-      }
+      const updated = await submitRideRating(ride, currentUser.id, targetId, stars);
+      onSubmitted(updated);
+    } catch {
+      onSkip();
     } finally {
       setSubmitting(false);
     }
@@ -63,7 +53,8 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
         <div className="mt-5 rounded-2xl bg-neutral-50 p-4 border border-neutral-100">
           <p className="text-xs font-medium text-neutral-500">
-            Como foi sua experiência com {targetUser?.full_name || (isPassenger ? 'o motorista' : 'o passageiro')}?
+            Como foi sua experiência com{' '}
+            {targetUser?.full_name || (isPassenger ? 'o motorista' : 'o passageiro')}?
           </p>
           <div className="mt-3 flex items-center justify-center gap-2">
             {[1, 2, 3, 4, 5].map((n) => (
@@ -76,7 +67,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
               >
                 <Star
                   className={`h-8 w-8 ${
-                    n <= stars ? 'fill-[#FFCC00] text-[#F59E0B]' : 'text-neutral-300'
+                    n <= stars ? 'fill-[#FFD100] text-[#F59E0B]' : 'text-neutral-300'
                   }`}
                 />
               </button>
@@ -89,7 +80,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
           type="button"
           onClick={submitRating}
           disabled={submitting}
-          className="mt-5 min-h-[48px] w-full rounded-2xl bg-neutral-950 text-sm font-bold text-[#FFCC00] shadow-lg transition active:scale-[0.98]"
+          className="mt-5 min-h-[48px] w-full rounded-2xl bg-neutral-950 text-sm font-bold text-[#FFD100] shadow-lg transition active:scale-[0.98]"
         >
           {submitting ? 'Enviando avaliação...' : 'Enviar Avaliação'}
         </button>
