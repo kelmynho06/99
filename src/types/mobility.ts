@@ -14,11 +14,18 @@ export type RideStatus =
   | 'completed'
   | 'cancelled';
 
+export interface SavedAddress {
+  label: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
 export interface DriverDetails {
   user_id: string;
   cnh_url: string;
   crlv_url: string;
-  vehicle_type: 'car' | 'moto';
+  vehicle_type: 'car' | 'moto' | 'delivery';
   vehicle_model: string;
   vehicle_plate: string;
   vehicle_color: string;
@@ -27,6 +34,8 @@ export interface DriverDetails {
   current_lat: number | null;
   current_lng: number | null;
   heading: number;
+  acceptance_rate: number;
+  completion_rate: number;
   rejection_reason?: string | null;
   updated_at: string;
 }
@@ -40,9 +49,13 @@ export interface UserProfile {
   email: string;
   cpf: string;
   avatar_url?: string | null;
+  home_address?: SavedAddress | null;
+  work_address?: SavedAddress | null;
+  preferred_payment?: PaymentMethod;
   rating_avg: number;
   rating_count: number;
   wallet_balance: number;
+  is_anonymized?: boolean;
   created_at: string;
   driver?: DriverDetails | null;
 }
@@ -74,6 +87,7 @@ export interface Ride {
   estimated_fare: number;
   final_fare: number | null;
   pin_code: string;
+  delivery_notes?: string | null;
   created_at: string;
   accepted_at: string | null;
   arrived_at: string | null;
@@ -108,11 +122,4 @@ export interface GeoPoint {
   lat: number;
   lng: number;
   address: string;
-}
-
-export interface ServerStateSnapshot {
-  rides: Ride[];
-  pricing: PricingSetting[];
-  onlineDrivers: UserProfile[];
-  messagesByRide: Record<string, RideMessage[]>;
 }

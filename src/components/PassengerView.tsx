@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Banknote,
   Bike,
+  Briefcase,
   Car,
   CreditCard,
   Crosshair,
   History,
+  Home,
   LogOut,
   MapPin,
   Menu,
@@ -14,6 +16,7 @@ import {
   Package,
   QrCode,
   Search,
+  Settings,
   ShieldCheck,
   Star,
   X,
@@ -33,10 +36,11 @@ import type {
   RideMessage,
   UserProfile,
 } from '../types/mobility';
+import { AccountSettingsModal } from './AccountSettingsModal';
 import { LiveMap } from './LiveMap';
 import { PWAInstallButton } from './PWAInstallButton';
-import { RideChatModal } from './RideChatModal';
 import { RatingModal } from './RatingModal';
+import { RideChatModal } from './RideChatModal';
 
 interface PassengerViewProps {
   currentUser: UserProfile;
@@ -44,6 +48,7 @@ interface PassengerViewProps {
   pricing: PricingSetting[];
   onlineDrivers: UserProfile[];
   messagesByRide: Record<string, RideMessage[]>;
+  onUserUpdated: (user: UserProfile) => void;
   onLoadMessages: (rideId: string) => void;
   onRideUpsert: (ride: Ride) => void;
   onLogout: () => void;
@@ -67,12 +72,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   pricing,
   onlineDrivers,
   messagesByRide,
+  onUserUpdated,
   onLoadMessages,
   onRideUpsert,
   onLogout,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [origin, setOrigin] = useState<GeoPoint>(DEFAULT_ORIGIN);
   const [destination, setDestination] = useState<GeoPoint | null>(null);
@@ -89,14 +96,16 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [durationMin, setDurationMin] = useState<number>(0);
 
   const [category, setCategory] = useState<RideCategory>('pop');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    currentUser.preferred_payment || 'pix'
+  );
+  const [deliveryNotes, setDeliveryNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [dismissedCompletedRideId, setDismissedCompletedRideId] = useState<string | null>(null);
 
-  // Active or most recent passenger ride
   const myRides = useMemo(
     () => rides.filter((r) => r.passenger_id === currentUser.id),
     [rides, currentUser.id]
@@ -121,7 +130,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     [myRides, dismissedCompletedRideId]
   );
 
-  // Detect current GPS on mount
   const detectMyGps = useCallback(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
@@ -131,9 +139,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         setOrigin({ lat: latitude, lng: longitude, address: addr });
         setOriginQuery(addr);
       },
-      () => {
-        // Keep default coordinates if user denies GPS
-      },
+      () => {},
       { enableHighAccuracy: true, timeout: 6000 }
     );
   }, []);
@@ -142,14 +148,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     detectMyGps();
   }, [detectMyGps]);
 
-  // Load chat messages when ride becomes active
   useEffect(() => {
     if (activeRide && activeRide.driver_id) {
       onLoadMessages(activeRide.id);
     }
   }, [activeRide, onLoadMessages]);
 
-  // Debounced Nominatim autocomplete
   useEffect(() => {
     if (activeSearchField !== 'origin') return;
     const timer = setTimeout(async () => {
@@ -176,7 +180,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     return () => clearTimeout(timer);
   }, [destQuery, activeSearchField, destination, origin.lat, origin.lng]);
 
-  // Compute OSRM route whenever origin & destination change or ride is active
   useEffect(() => {
     const o = activeRide
       ? { lat: activeRide.origin_lat, lng: activeRide.origin_lng }
@@ -241,6 +244,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           destination_lat: destination.lat,
           destination_lng: destination.lng,
           distance_km: distanceKm,
+          delivery_notes: category === 'delivery' ? deliveryNotes : null,
         }),
       });
       const data = (await res.json()) as { ride?: Ride; error?: string };
@@ -248,6 +252,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         setErrorMsg(data.error || 'Erro ao solicitar corrida.');
         return;
       }
+      setDeliveryNotes('');
       onRideUpsert(data.ride);
     } catch {
       setErrorMsg('Falha de rede ao chamar motorista.');
@@ -280,7 +285,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-100">
-      {/* Full-viewport interactive Leaflet Map */}
       <LiveMap
         center={[origin.lat, origin.lng]}
         origin={
@@ -331,7 +335,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       </div>
 
-      {/* Bottom Floating Card / Desktop Left Floating Sheet */}
+      {/* Bottom Floating Card */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-3 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
         <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-2xl border border-neutral-200/80 max-h-[78vh] overflow-y-auto">
           {!activeRide ? (
@@ -342,7 +346,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </h2>
                 <span className="text-xs font-semibold text-neutral-500">
                   {onlineDrivers.length > 0
-                    ? `${onlineDrivers.length} motorista${onlineDrivers.length > 1 ? 's' : ''} online`
+                    ? `${onlineDrivers.length} parceiro${onlineDrivers.length > 1 ? 's' : ''} online`
                     : 'Mapa ao vivo'}
                 </span>
               </div>
@@ -363,7 +367,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       value={originQuery}
                       onFocus={() => setActiveSearchField('origin')}
                       onChange={(e) => setOriginQuery(e.target.value)}
-                      placeholder="Local de embarque"
+                      placeholder="Local de embarque / coleta"
                       className="min-h-[38px] flex-1 bg-transparent text-sm font-medium text-neutral-900 outline-none"
                     />
                     <button
@@ -464,36 +468,82 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
               </div>
 
-              {/* Quick Suggestions when no destination selected */}
+              {/* Saved Home / Work + Quick Suggestions */}
               {!destination ? (
-                <div className="mt-4">
-                  <p className="text-xs font-bold text-neutral-500 mb-2">Destinos sugeridos</p>
-                  <div className="space-y-1.5">
-                    {QUICK_DESTINATIONS.map((qd) => (
-                      <button
-                        key={qd.address}
-                        type="button"
-                        onClick={() => {
-                          setDestination(qd);
-                          setDestQuery(qd.address);
-                          setActiveSearchField(null);
-                        }}
-                        className="flex min-h-[44px] w-full items-center gap-3 rounded-2xl bg-neutral-50 px-3.5 py-2 text-left hover:bg-neutral-100 transition"
-                      >
-                        <MapPin className="h-4 w-4 shrink-0 text-neutral-700" />
-                        <span className="text-xs font-semibold text-neutral-900 truncate">
-                          {qd.address}
-                        </span>
-                      </button>
-                    ))}
+                <div className="mt-4 space-y-3">
+                  {(currentUser.home_address || currentUser.work_address) && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {currentUser.home_address && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestination(currentUser.home_address!);
+                            setDestQuery(currentUser.home_address!.address);
+                          }}
+                          className="flex min-h-[46px] items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 text-left hover:border-neutral-950 transition"
+                        >
+                          <Home className="h-4 w-4 shrink-0 text-neutral-950" />
+                          <div className="min-w-0">
+                            <span className="block text-xs font-extrabold text-neutral-950">
+                              Casa
+                            </span>
+                            <span className="block text-[10px] text-neutral-500 truncate">
+                              {currentUser.home_address.address}
+                            </span>
+                          </div>
+                        </button>
+                      )}
+                      {currentUser.work_address && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestination(currentUser.work_address!);
+                            setDestQuery(currentUser.work_address!.address);
+                          }}
+                          className="flex min-h-[46px] items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 text-left hover:border-neutral-950 transition"
+                        >
+                          <Briefcase className="h-4 w-4 shrink-0 text-neutral-950" />
+                          <div className="min-w-0">
+                            <span className="block text-xs font-extrabold text-neutral-950">
+                              Trabalho
+                            </span>
+                            <span className="block text-[10px] text-neutral-500 truncate">
+                              {currentUser.work_address.address}
+                            </span>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-bold text-neutral-500 mb-2">Destinos sugeridos</p>
+                    <div className="space-y-1.5">
+                      {QUICK_DESTINATIONS.map((qd) => (
+                        <button
+                          key={qd.address}
+                          type="button"
+                          onClick={() => {
+                            setDestination(qd);
+                            setDestQuery(qd.address);
+                            setActiveSearchField(null);
+                          }}
+                          className="flex min-h-[44px] w-full items-center gap-3 rounded-2xl bg-neutral-50 px-3.5 py-2 text-left hover:bg-neutral-100 transition"
+                        >
+                          <MapPin className="h-4 w-4 shrink-0 text-neutral-700" />
+                          <span className="text-xs font-semibold text-neutral-900 truncate">
+                            {qd.address}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : (
                 <>
-                  {/* Route Summary */}
                   <div className="mt-3 flex items-center justify-between text-xs text-neutral-600 px-1">
                     <span>
-                      Distância estimada:{' '}
+                      Distância:{' '}
                       <strong className="text-neutral-950 font-mono-num">{distanceKm} km</strong>
                     </span>
                     <span>
@@ -536,6 +586,16 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     })}
                   </div>
 
+                  {category === 'delivery' && (
+                    <input
+                      type="text"
+                      value={deliveryNotes}
+                      onChange={(e) => setDeliveryNotes(e.target.value)}
+                      placeholder="Detalhes do pacote ou destinatário (opcional)"
+                      className="mt-2.5 min-h-[42px] w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs outline-none focus:border-neutral-950"
+                    />
+                  )}
+
                   {/* Payment Method Selector */}
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     {[
@@ -569,23 +629,32 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     disabled={submitting}
                     className="mt-4 min-h-[52px] w-full rounded-2xl bg-[#FFCC00] text-base font-extrabold text-neutral-950 shadow-md hover:bg-[#f5c400] active:scale-[0.98] transition disabled:opacity-50"
                   >
-                    {submitting ? 'Solicitando...' : 'Chamar Corrida Agora'}
+                    {submitting
+                      ? 'Solicitando...'
+                      : category === 'delivery'
+                      ? 'Solicitar Entrega Rápida'
+                      : 'Chamar Corrida Agora'}
                   </button>
                 </>
               )}
             </>
           ) : activeRide.status === 'searching' ? (
-            /* Radar Searching State */
             <div className="py-4 text-center">
               <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
                 <span className="absolute inset-0 rounded-full bg-[#FFCC00]/50 animate-radar-ring" />
                 <span className="absolute inset-0 rounded-full bg-[#FFCC00]/40 animate-radar-ring-delayed" />
                 <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFCC00] shadow-lg">
-                  <Car className="h-7 w-7" />
+                  {activeRide.category === 'delivery' ? (
+                    <Package className="h-7 w-7" />
+                  ) : (
+                    <Car className="h-7 w-7" />
+                  )}
                 </div>
               </div>
               <h3 className="mt-4 font-display text-lg font-extrabold text-neutral-950">
-                Procurando motorista...
+                {activeRide.category === 'delivery'
+                  ? 'Procurando entregador...'
+                  : 'Procurando motorista...'}
               </h3>
               <p className="mt-1 text-xs text-neutral-600">
                 {activeRide.origin_address} → {activeRide.destination_address}
@@ -602,14 +671,22 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             </div>
           ) : (
-            /* Active Matched Ride Card */
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-xs font-bold text-amber-700">
-                    {activeRide.status === 'accepted' && 'Motorista a caminho do embarque'}
-                    {activeRide.status === 'arrived' && 'Motorista chegou no local de embarque!'}
-                    {activeRide.status === 'in_progress' && 'Em viagem para o destino'}
+                    {activeRide.status === 'accepted' &&
+                      (activeRide.category === 'delivery'
+                        ? 'Entregador a caminho da coleta'
+                        : 'Motorista a caminho do embarque')}
+                    {activeRide.status === 'arrived' &&
+                      (activeRide.category === 'delivery'
+                        ? 'Entregador chegou para retirar o pacote!'
+                        : 'Motorista chegou no local de embarque!')}
+                    {activeRide.status === 'in_progress' &&
+                      (activeRide.category === 'delivery'
+                        ? 'Pacote em rota de entrega'
+                        : 'Em viagem para o destino')}
                   </span>
                   <h3 className="font-display text-lg font-extrabold text-neutral-950">
                     {activeRide.driver?.driver?.vehicle_model || 'Veículo'}
@@ -628,8 +705,16 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <div className="flex items-center gap-2.5">
                   <ShieldCheck className="h-5 w-5 text-neutral-950 shrink-0" />
                   <div>
-                    <p className="text-xs font-extrabold text-neutral-950">PIN de segurança</p>
-                    <p className="text-[11px] text-neutral-700">Informe ao motorista ao embarcar</p>
+                    <p className="text-xs font-extrabold text-neutral-950">
+                      {activeRide.category === 'delivery'
+                        ? 'PIN de Coleta e Entrega'
+                        : 'PIN de segurança'}
+                    </p>
+                    <p className="text-[11px] text-neutral-700">
+                      {activeRide.category === 'delivery'
+                        ? 'Valida a retirada e a entrega final'
+                        : 'Informe ao motorista ao embarcar'}
+                    </p>
                   </div>
                 </div>
                 <div className="rounded-xl bg-neutral-950 px-3.5 py-1.5 font-mono-num text-xl font-extrabold tracking-widest text-[#FFCC00]">
@@ -670,7 +755,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </span>
               </div>
 
-              {/* Chat + Cancel Actions */}
               <div className="flex items-center gap-2.5">
                 <button
                   type="button"
@@ -695,7 +779,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       </div>
 
-      {/* Left Slide-out Drawer (inspired by 99 screenshot) */}
+      {/* Left Slide-out Drawer */}
       {menuOpen && (
         <div className="fixed inset-0 z-[1000] flex bg-black/50 backdrop-blur-xs">
           <div className="flex h-full w-80 max-w-[85vw] flex-col bg-white p-6 shadow-2xl">
@@ -735,7 +819,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 className="flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3.5 text-sm font-bold text-neutral-800 hover:bg-neutral-100"
               >
                 <History className="h-5 w-5 text-neutral-600" />
-                Atividade e Corridas ({myRides.length})
+                Histórico de Corridas ({myRides.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsOpen(true);
+                  setMenuOpen(false);
+                }}
+                className="flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3.5 text-sm font-bold text-neutral-800 hover:bg-neutral-100"
+              >
+                <Settings className="h-5 w-5 text-neutral-600" />
+                Configurações, Endereços e LGPD
               </button>
 
               <div className="pt-2">
@@ -756,13 +852,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       )}
 
-      {/* Ride History Modal */}
+      {/* History Modal */}
       {historyOpen && (
         <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
-                Suas Corridas
+                Histórico de Viagens e Entregas
               </h3>
               <button
                 type="button"
@@ -775,7 +871,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             <div className="mt-3 flex-1 overflow-y-auto space-y-3">
               {myRides.length === 0 ? (
                 <p className="py-8 text-center text-sm text-neutral-500">
-                  Você ainda não realizou corridas.
+                  Você ainda não realizou corridas ou entregas.
                 </p>
               ) : (
                 myRides.map((r) => (
@@ -784,11 +880,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     className="rounded-2xl border border-neutral-200 p-3.5 text-xs space-y-1"
                   >
                     <div className="flex items-center justify-between font-bold text-neutral-950">
-                      <span>{r.category.toUpperCase()} · {r.status}</span>
-                      <span className="font-mono-num">{formatBRL(r.final_fare ?? r.estimated_fare)}</span>
+                      <span>
+                        {r.category.toUpperCase()} · {r.status}
+                      </span>
+                      <span className="font-mono-num">
+                        {formatBRL(r.final_fare ?? r.estimated_fare)}
+                      </span>
                     </div>
                     <p className="text-neutral-600 truncate">De: {r.origin_address}</p>
-                    <p className="text-neutral-900 font-medium truncate">Para: {r.destination_address}</p>
+                    <p className="text-neutral-900 font-medium truncate">
+                      Para: {r.destination_address}
+                    </p>
                   </div>
                 ))
               )}
@@ -797,7 +899,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       )}
 
-      {/* Chat Modal */}
+      {settingsOpen && (
+        <AccountSettingsModal
+          currentUser={currentUser}
+          onUserUpdated={onUserUpdated}
+          onAccountDeleted={onLogout}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
       {chatOpen && activeRide && activeRide.driver && (
         <RideChatModal
           rideId={activeRide.id}
@@ -808,7 +918,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         />
       )}
 
-      {/* Mutual Rating Modal */}
       {pendingRatingRide && (
         <RatingModal
           ride={pendingRatingRide}

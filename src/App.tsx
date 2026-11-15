@@ -81,6 +81,7 @@ export default function App() {
           pricing={pricing}
           onlineDrivers={onlineDrivers}
           messagesByRide={messagesByRide}
+          onUserUpdated={handleUserUpdated}
           onLoadMessages={loadRideMessages}
           onRideUpsert={upsertRide}
           onLogout={handleLogout}

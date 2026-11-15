@@ -9,7 +9,13 @@ interface LiveMapProps {
   origin?: GeoPoint | null;
   destination?: GeoPoint | null;
   routeCoords?: [number, number][];
-  driverPosition?: { lat: number; lng: number; heading?: number; vehicleType?: 'car' | 'moto'; label?: string } | null;
+  driverPosition?: {
+    lat: number;
+    lng: number;
+    heading?: number;
+    vehicleType?: 'car' | 'moto' | 'delivery';
+    label?: string;
+  } | null;
   nearbyDrivers?: UserProfile[];
   pickOnMapMode?: 'origin' | 'destination' | null;
   onMapPick?: (lat: number, lng: number) => void;
@@ -122,14 +128,18 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     []
   );
 
-  const makeVehicleIcon = (vehicleType: 'car' | 'moto' = 'car', heading = 0, active = true) =>
+  const makeVehicleIcon = (
+    vehicleType: 'car' | 'moto' | 'delivery' = 'car',
+    heading = 0,
+    active = true
+  ) =>
     L.divIcon({
       className: 'velo-smooth-marker',
       html: `<div style="transform:rotate(${heading}deg);width:40px;height:40px;border-radius:9999px;background:${
         active ? '#111827' : '#ffffff'
       };border:3px solid ${active ? '#FFCC00' : '#111827'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,0.35);">
         ${
-          vehicleType === 'moto'
+          vehicleType === 'moto' || vehicleType === 'delivery'
             ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${
                 active ? '#FFCC00' : '#111827'
               }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h3"/></svg>`

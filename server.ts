@@ -21,6 +21,10 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 interface StoredUser extends UserProfile {
   password_hash: string;
+  offers_seen?: number;
+  offers_accepted?: number;
+  rides_started?: number;
+  rides_completed?: number;
 }
 
 interface DatabaseSchema {
@@ -50,7 +54,6 @@ function createSeedDatabase(): DatabaseSchema {
   const now = new Date().toISOString();
   const sampleCnh = '/assets/images/cnh_doc_sample_1794712286034.jpg';
   const sampleAvatar = '/assets/images/driver_avatar_sample_1794712284790.jpg';
-  // Clean SVG data URI fallback for sample CRLV
   const sampleCrlv =
     'data:image/svg+xml;utf8,' +
     encodeURIComponent(
@@ -81,9 +84,23 @@ function createSeedDatabase(): DatabaseSchema {
         email: 'gabriel@velo99.app',
         cpf: '384.291.028-11',
         avatar_url: null,
+        home_address: {
+          label: 'Casa',
+          address: 'Rua Augusta, 1420 · Consolação, São Paulo',
+          lat: -23.5567,
+          lng: -46.6587,
+        },
+        work_address: {
+          label: 'Trabalho',
+          address: 'Av. Paulista, 1578 · Bela Vista, São Paulo',
+          lat: -23.561414,
+          lng: -46.655881,
+        },
+        preferred_payment: 'pix',
         rating_avg: 4.93,
         rating_count: 42,
         wallet_balance: 0,
+        is_anonymized: false,
         created_at: now,
         password_hash: hashPassword('123456'),
       },
@@ -96,11 +113,17 @@ function createSeedDatabase(): DatabaseSchema {
         email: 'rikelmy@velo99.app',
         cpf: '412.883.190-45',
         avatar_url: sampleAvatar,
+        preferred_payment: 'pix',
         rating_avg: 4.98,
         rating_count: 184,
         wallet_balance: 148.5,
+        is_anonymized: false,
         created_at: now,
         password_hash: hashPassword('123456'),
+        offers_seen: 25,
+        offers_accepted: 24,
+        rides_started: 24,
+        rides_completed: 24,
         driver: {
           user_id: 'usr-driver-1',
           cnh_url: sampleCnh,
@@ -114,6 +137,8 @@ function createSeedDatabase(): DatabaseSchema {
           current_lat: -23.55052,
           current_lng: -46.633308,
           heading: 45,
+          acceptance_rate: 96,
+          completion_rate: 100,
           updated_at: now,
         },
       },
@@ -126,11 +151,17 @@ function createSeedDatabase(): DatabaseSchema {
         email: 'mariana.driver@velo99.app',
         cpf: '987.654.321-00',
         avatar_url: null,
+        preferred_payment: 'pix',
         rating_avg: 5.0,
         rating_count: 0,
         wallet_balance: 0,
+        is_anonymized: false,
         created_at: now,
         password_hash: hashPassword('123456'),
+        offers_seen: 0,
+        offers_accepted: 0,
+        rides_started: 0,
+        rides_completed: 0,
         driver: {
           user_id: 'usr-driver-pending-1',
           cnh_url: sampleCnh,
@@ -144,6 +175,8 @@ function createSeedDatabase(): DatabaseSchema {
           current_lat: -23.558,
           current_lng: -46.639,
           heading: 0,
+          acceptance_rate: 100,
+          completion_rate: 100,
           updated_at: now,
         },
       },
@@ -159,6 +192,7 @@ function createSeedDatabase(): DatabaseSchema {
         rating_avg: 5.0,
         rating_count: 1,
         wallet_balance: 0,
+        is_anonymized: false,
         created_at: now,
         password_hash: hashPassword('admin123'),
       },
@@ -166,7 +200,7 @@ function createSeedDatabase(): DatabaseSchema {
     pricing: [
       {
         category: 'pop',
-        label: 'Pop Carro',
+        label: 'Viagem Carro',
         description: 'Carros econômicos com ar-condicionado',
         base_fare: 4.5,
         per_km_rate: 2.2,
@@ -175,7 +209,7 @@ function createSeedDatabase(): DatabaseSchema {
       },
       {
         category: 'moto',
-        label: 'Moto Táxi',
+        label: 'Viagem Moto',
         description: 'Viagens rápidas no trânsito urbano',
         base_fare: 3.0,
         per_km_rate: 1.45,
@@ -184,8 +218,8 @@ function createSeedDatabase(): DatabaseSchema {
       },
       {
         category: 'delivery',
-        label: 'Entrega Rápida',
-        description: 'Envio expresso de pacotes e documentos',
+        label: 'Entrega / Coleta',
+        description: 'Envio expresso de pacotes com código PIN',
         base_fare: 3.5,
         per_km_rate: 1.65,
         min_fare: 7.0,
@@ -226,7 +260,21 @@ function loadDatabase(): DatabaseSchema {
   }
   try {
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(raw) as DatabaseSchema;
+    const parsed = JSON.parse(raw) as DatabaseSchema;
+    // Backwards-compatible field hydration
+    parsed.users = parsed.users.map((u) => ({
+      ...u,
+      is_anonymized: u.is_anonymized ?? false,
+      preferred_payment: u.preferred_payment ?? 'pix',
+      driver: u.driver
+        ? {
+            ...u.driver,
+            acceptance_rate: u.driver.acceptance_rate ?? 100,
+            completion_rate: u.driver.completion_rate ?? 100,
+          }
+        : u.driver,
+    }));
+    return parsed;
   } catch {
     const seed = createSeedDatabase();
     fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
@@ -241,8 +289,109 @@ function saveDatabase() {
 }
 
 function sanitizeUser(u: StoredUser): UserProfile {
-  const { password_hash: _pw, ...safe } = u;
+  const {
+    password_hash: _pw,
+    offers_seen: _os,
+    offers_accepted: _oa,
+    rides_started: _rs,
+    rides_completed: _rc,
+    ...safe
+  } = u;
   return safe;
+}
+
+// Strict privacy sanitization when embedding driver inside a Ride object
+function sanitizeDriverForRide(driver: StoredUser, rideStatus: Ride['status']): UserProfile {
+  const isActive = ['accepted', 'arrived', 'in_progress'].includes(rideStatus);
+  return {
+    id: driver.id,
+    role: driver.role,
+    status: driver.status,
+    full_name: driver.full_name,
+    phone: isActive ? driver.phone : '',
+    email: '',
+    cpf: '',
+    avatar_url: driver.avatar_url,
+    rating_avg: driver.rating_avg,
+    rating_count: driver.rating_count,
+    wallet_balance: 0,
+    created_at: driver.created_at,
+    driver: driver.driver
+      ? {
+          user_id: driver.driver.user_id,
+          cnh_url: '',
+          crlv_url: '',
+          vehicle_type: driver.driver.vehicle_type,
+          vehicle_model: driver.driver.vehicle_model,
+          // Plate and live GPS strictly visible ONLY during active rides
+          vehicle_plate: isActive ? driver.driver.vehicle_plate : '***-****',
+          vehicle_color: driver.driver.vehicle_color,
+          pix_key: '',
+          is_online: driver.driver.is_online,
+          current_lat: isActive ? driver.driver.current_lat : null,
+          current_lng: isActive ? driver.driver.current_lng : null,
+          heading: isActive ? driver.driver.heading : 0,
+          acceptance_rate: driver.driver.acceptance_rate,
+          completion_rate: driver.driver.completion_rate,
+          updated_at: driver.driver.updated_at,
+        }
+      : null,
+  };
+}
+
+function sanitizePassengerForRide(passenger: StoredUser, rideStatus: Ride['status']): UserProfile {
+  const isActive = ['accepted', 'arrived', 'in_progress'].includes(rideStatus);
+  return {
+    id: passenger.id,
+    role: passenger.role,
+    status: passenger.status,
+    full_name: passenger.full_name,
+    phone: isActive ? passenger.phone : '',
+    email: '',
+    cpf: '',
+    avatar_url: passenger.avatar_url,
+    rating_avg: passenger.rating_avg,
+    rating_count: passenger.rating_count,
+    wallet_balance: 0,
+    created_at: passenger.created_at,
+    driver: null,
+  };
+}
+
+function sanitizeOnlineDriverPublic(driver: StoredUser): UserProfile {
+  return {
+    id: driver.id,
+    role: driver.role,
+    status: driver.status,
+    full_name: driver.full_name,
+    phone: '',
+    email: '',
+    cpf: '',
+    avatar_url: driver.avatar_url,
+    rating_avg: driver.rating_avg,
+    rating_count: driver.rating_count,
+    wallet_balance: 0,
+    created_at: driver.created_at,
+    driver: driver.driver
+      ? {
+          user_id: driver.driver.user_id,
+          cnh_url: '',
+          crlv_url: '',
+          vehicle_type: driver.driver.vehicle_type,
+          vehicle_model: driver.driver.vehicle_model,
+          vehicle_plate: '***-****',
+          vehicle_color: driver.driver.vehicle_color,
+          pix_key: '',
+          is_online: driver.driver.is_online,
+          current_lat: driver.driver.current_lat,
+          current_lng: driver.driver.current_lng,
+          heading: driver.driver.heading,
+          acceptance_rate: driver.driver.acceptance_rate,
+          completion_rate: driver.driver.completion_rate,
+          updated_at: driver.driver.updated_at,
+        }
+      : null,
+  };
 }
 
 function enrichRide(ride: Ride): Ride {
@@ -250,8 +399,8 @@ function enrichRide(ride: Ride): Ride {
   const driver = ride.driver_id ? db.users.find((u) => u.id === ride.driver_id) : undefined;
   return {
     ...ride,
-    passenger: passenger ? sanitizeUser(passenger) : undefined,
-    driver: driver ? sanitizeUser(driver) : undefined,
+    passenger: passenger ? sanitizePassengerForRide(passenger, ride.status) : undefined,
+    driver: driver ? sanitizeDriverForRide(driver, ride.status) : undefined,
   };
 }
 
@@ -290,21 +439,32 @@ async function startServer() {
           pricing: db.pricing,
           rides: db.rides.map(enrichRide),
           onlineDrivers: db.users
-            .filter((u) => u.role === 'driver' && u.status === 'active' && u.driver?.is_online)
-            .map(sanitizeUser),
+            .filter(
+              (u) =>
+                u.role === 'driver' &&
+                u.status === 'active' &&
+                !u.is_anonymized &&
+                u.driver?.is_online
+            )
+            .map(sanitizeOnlineDriverPublic),
         },
       })
     );
 
     ws.on('message', (raw) => {
       try {
-        const parsed = JSON.parse(raw.toString()) as { event?: string; payload?: Record<string, unknown> };
+        const parsed = JSON.parse(raw.toString()) as {
+          event?: string;
+          payload?: Record<string, unknown>;
+        };
         if (parsed.event === 'driver:location' && parsed.payload) {
           const userId = String(parsed.payload.userId || '');
           const lat = Number(parsed.payload.lat);
           const lng = Number(parsed.payload.lng);
           const heading = Number(parsed.payload.heading || 0);
-          const driver = db.users.find((u) => u.id === userId && u.driver);
+          const driver = db.users.find(
+            (u) => u.id === userId && u.driver && u.status === 'active' && u.driver.is_online
+          );
           if (driver && driver.driver && Number.isFinite(lat) && Number.isFinite(lng)) {
             driver.driver.current_lat = lat;
             driver.driver.current_lng = lng;
@@ -315,7 +475,7 @@ async function startServer() {
           }
         }
       } catch {
-        // Ignore malformed socket frames
+        // Ignore malformed frames
       }
     });
 
@@ -324,10 +484,7 @@ async function startServer() {
     });
   });
 
-  // Expose generated assets during both dev and prod
   app.use('/assets/images', express.static(path.resolve(process.cwd(), 'src/assets/images')));
-
-  // --- API ROUTES ---
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
@@ -335,8 +492,14 @@ async function startServer() {
 
   app.get('/api/bootstrap', (_req, res) => {
     const onlineDrivers = db.users
-      .filter((u) => u.role === 'driver' && u.status === 'active' && u.driver?.is_online)
-      .map(sanitizeUser);
+      .filter(
+        (u) =>
+          u.role === 'driver' &&
+          u.status === 'active' &&
+          !u.is_anonymized &&
+          u.driver?.is_online
+      )
+      .map(sanitizeOnlineDriverPublic);
     res.json({
       pricing: db.pricing,
       rides: db.rides.map(enrichRide),
@@ -382,7 +545,7 @@ async function startServer() {
     if (role === 'driver') {
       if (!cnh_url || !crlv_url || !vehicle_model || !vehicle_plate || !vehicle_color || !pix_key) {
         return res.status(400).json({
-          error: 'Motoristas precisam enviar CNH, CRLV, dados do veículo e chave Pix.',
+          error: 'Motoristas/Entregadores precisam enviar CNH, CRLV, dados do veículo e chave Pix.',
         });
       }
     }
@@ -390,6 +553,9 @@ async function startServer() {
     const now = new Date().toISOString();
     const userId = `usr-${crypto.randomUUID().slice(0, 8)}`;
     const userRole = role === 'driver' ? 'driver' : 'passenger';
+    const validVehicleType =
+      vehicle_type === 'moto' ? 'moto' : vehicle_type === 'delivery' ? 'delivery' : 'car';
+
     const newUser: StoredUser = {
       id: userId,
       role: userRole,
@@ -399,18 +565,24 @@ async function startServer() {
       email: normalizedEmail,
       cpf: String(cpf).trim(),
       avatar_url: null,
+      preferred_payment: 'pix',
       rating_avg: 5.0,
       rating_count: 0,
       wallet_balance: 0,
+      is_anonymized: false,
       created_at: now,
       password_hash: hashPassword(String(password)),
+      offers_seen: 0,
+      offers_accepted: 0,
+      rides_started: 0,
+      rides_completed: 0,
       driver:
         userRole === 'driver'
           ? {
               user_id: userId,
               cnh_url: String(cnh_url),
               crlv_url: String(crlv_url),
-              vehicle_type: vehicle_type === 'moto' ? 'moto' : 'car',
+              vehicle_type: validVehicleType,
               vehicle_model: String(vehicle_model).trim(),
               vehicle_plate: String(vehicle_plate).trim().toUpperCase(),
               vehicle_color: String(vehicle_color).trim(),
@@ -419,6 +591,8 @@ async function startServer() {
               current_lat: -23.55052,
               current_lng: -46.633308,
               heading: 0,
+              acceptance_rate: 100,
+              completion_rate: 100,
               updated_at: now,
             }
           : null,
@@ -435,23 +609,122 @@ async function startServer() {
     const { email, password } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const user = db.users.find((u) => u.email.toLowerCase() === normalizedEmail);
-    if (!user || user.password_hash !== hashPassword(String(password || ''))) {
-      return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+    if (!user || user.is_anonymized || user.password_hash !== hashPassword(String(password || ''))) {
+      return res.status(401).json({ error: 'E-mail, senha inválidos ou conta encerrada.' });
     }
     return res.json({ user: sanitizeUser(user) });
   });
 
   app.get('/api/users/:id', (req, res) => {
-    const user = db.users.find((u) => u.id === req.params.id);
+    const user = db.users.find((u) => u.id === req.params.id && !u.is_anonymized);
     if (!user) {
       return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
     return res.json({ user: sanitizeUser(user) });
   });
 
+  // Update Profile, Saved Addresses, Payment & Vehicle Settings
+  app.put('/api/users/:id/profile', (req, res) => {
+    const user = db.users.find((u) => u.id === req.params.id && !u.is_anonymized);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    const {
+      full_name,
+      phone,
+      email,
+      home_address,
+      work_address,
+      preferred_payment,
+      vehicle_model,
+      vehicle_plate,
+      vehicle_color,
+      vehicle_type,
+      pix_key,
+    } = req.body;
+
+    if (full_name) user.full_name = String(full_name).trim();
+    if (phone) user.phone = String(phone).trim();
+    if (email) {
+      const nextEmail = String(email).trim().toLowerCase();
+      if (db.users.some((other) => other.id !== user.id && other.email.toLowerCase() === nextEmail)) {
+        return res.status(409).json({ error: 'Este e-mail já está em uso por outra conta.' });
+      }
+      user.email = nextEmail;
+    }
+    if (home_address !== undefined) user.home_address = home_address;
+    if (work_address !== undefined) user.work_address = work_address;
+    if (preferred_payment && ['pix', 'cash', 'card_machine'].includes(preferred_payment)) {
+      user.preferred_payment = preferred_payment;
+    }
+
+    if (user.driver) {
+      if (vehicle_model) user.driver.vehicle_model = String(vehicle_model).trim();
+      if (vehicle_plate) user.driver.vehicle_plate = String(vehicle_plate).trim().toUpperCase();
+      if (vehicle_color) user.driver.vehicle_color = String(vehicle_color).trim();
+      if (vehicle_type && ['car', 'moto', 'delivery'].includes(vehicle_type)) {
+        user.driver.vehicle_type = vehicle_type;
+      }
+      if (pix_key) user.driver.pix_key = String(pix_key).trim();
+      user.driver.updated_at = new Date().toISOString();
+    }
+
+    saveDatabase();
+    const safe = sanitizeUser(user);
+    broadcast('user:updated', safe);
+    return res.json({ user: safe });
+  });
+
+  // Change Password
+  app.post('/api/users/:id/password', (req, res) => {
+    const user = db.users.find((u) => u.id === req.params.id && !u.is_anonymized);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    const { current_password, new_password } = req.body;
+    if (user.password_hash !== hashPassword(String(current_password || ''))) {
+      return res.status(403).json({ error: 'Senha atual incorreta.' });
+    }
+    if (!new_password || String(new_password).length < 6) {
+      return res.status(400).json({ error: 'A nova senha deve ter pelo menos 6 caracteres.' });
+    }
+    user.password_hash = hashPassword(String(new_password));
+    saveDatabase();
+    return res.json({ ok: true });
+  });
+
+  // LGPD Account Deletion / Anonymization
+  app.delete('/api/users/:id/account', (req, res) => {
+    const user = db.users.find((u) => u.id === req.params.id);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    user.full_name = 'Usuário Anonimizado';
+    user.phone = '(00) 00000-0000';
+    user.email = `deleted_${user.id}@anon.local`;
+    user.cpf = '000.000.000-00';
+    user.avatar_url = null;
+    user.home_address = null;
+    user.work_address = null;
+    user.status = 'suspended';
+    user.is_anonymized = true;
+    user.password_hash = hashPassword(crypto.randomUUID());
+
+    if (user.driver) {
+      user.driver.is_online = false;
+      user.driver.cnh_url = '';
+      user.driver.crlv_url = '';
+      user.driver.vehicle_plate = 'REDACTED';
+      user.driver.pix_key = 'REDACTED';
+      user.driver.current_lat = null;
+      user.driver.current_lng = null;
+    }
+
+    saveDatabase();
+    broadcast('driver:status', sanitizeOnlineDriverPublic(user));
+    return res.json({ ok: true });
+  });
+
   app.post('/api/driver/online', (req, res) => {
     const { userId, is_online, lat, lng } = req.body;
-    const user = db.users.find((u) => u.id === userId && u.role === 'driver');
+    const user = db.users.find((u) => u.id === userId && u.role === 'driver' && !u.is_anonymized);
     if (!user || !user.driver) {
       return res.status(404).json({ error: 'Motorista não encontrado.' });
     }
@@ -471,16 +744,17 @@ async function startServer() {
     }
     user.driver.updated_at = new Date().toISOString();
     saveDatabase();
-    const safe = sanitizeUser(user);
-    broadcast('driver:status', safe);
-    return res.json({ user: safe });
+    broadcast('driver:status', sanitizeOnlineDriverPublic(user));
+    return res.json({ user: sanitizeUser(user) });
   });
 
   app.post('/api/driver/location', (req, res) => {
     const { userId, lat, lng, heading } = req.body;
-    const user = db.users.find((u) => u.id === userId && u.driver);
+    const user = db.users.find(
+      (u) => u.id === userId && u.driver && u.status === 'active' && u.driver.is_online
+    );
     if (!user || !user.driver) {
-      return res.status(404).json({ error: 'Motorista não encontrado.' });
+      return res.status(404).json({ error: 'Motorista offline ou não encontrado.' });
     }
     user.driver.current_lat = Number(lat);
     user.driver.current_lng = Number(lng);
@@ -508,11 +782,12 @@ async function startServer() {
       destination_lat,
       destination_lng,
       distance_km: clientDistanceKm,
+      delivery_notes,
     } = req.body;
 
-    const passenger = db.users.find((u) => u.id === passenger_id);
+    const passenger = db.users.find((u) => u.id === passenger_id && !u.is_anonymized);
     if (!passenger) {
-      return res.status(404).json({ error: 'Passageiro não encontrado.' });
+      return res.status(404).json({ error: 'Cliente não encontrado.' });
     }
 
     const pricing = db.pricing.find((p) => p.category === category) || db.pricing[0];
@@ -542,6 +817,7 @@ async function startServer() {
       estimated_fare: fare,
       final_fare: null,
       pin_code: pin,
+      delivery_notes: delivery_notes ? String(delivery_notes).trim() : null,
       created_at: new Date().toISOString(),
       accepted_at: null,
       arrived_at: null,
@@ -559,14 +835,27 @@ async function startServer() {
   app.post('/api/rides/:id/accept', (req, res) => {
     const { driver_id } = req.body;
     const ride = db.rides.find((r) => r.id === req.params.id);
-    if (!ride) return res.status(404).json({ error: 'Corrida não encontrada.' });
+    if (!ride) return res.status(404).json({ error: 'Solicitação não encontrada.' });
     if (ride.status !== 'searching') {
-      return res.status(409).json({ error: 'Esta corrida já foi aceita ou cancelada.' });
+      return res.status(409).json({ error: 'Esta solicitação já foi aceita ou cancelada.' });
     }
-    const driver = db.users.find((u) => u.id === driver_id && u.role === 'driver' && u.status === 'active');
-    if (!driver) {
-      return res.status(403).json({ error: 'Motorista inválido ou pendente de aprovação.' });
+    const driver = db.users.find(
+      (u) =>
+        u.id === driver_id &&
+        u.role === 'driver' &&
+        u.status === 'active' &&
+        !u.is_anonymized &&
+        u.driver?.is_online
+    );
+    if (!driver || !driver.driver) {
+      return res.status(403).json({ error: 'Motorista precisa estar aprovado e Online.' });
     }
+
+    driver.offers_seen = (driver.offers_seen || 0) + 1;
+    driver.offers_accepted = (driver.offers_accepted || 0) + 1;
+    driver.driver.acceptance_rate = Math.round(
+      (driver.offers_accepted / driver.offers_seen) * 100
+    );
 
     ride.driver_id = driver_id;
     ride.status = 'accepted';
@@ -575,7 +864,23 @@ async function startServer() {
 
     const enriched = enrichRide(ride);
     broadcast('ride:updated', enriched);
+    broadcast('user:updated', sanitizeUser(driver));
     return res.json({ ride: enriched });
+  });
+
+  app.post('/api/rides/:id/decline', (req, res) => {
+    const { driver_id } = req.body;
+    const driver = db.users.find((u) => u.id === driver_id && u.driver);
+    if (driver && driver.driver) {
+      driver.offers_seen = (driver.offers_seen || 0) + 1;
+      driver.offers_accepted = driver.offers_accepted || 0;
+      driver.driver.acceptance_rate = Math.round(
+        (driver.offers_accepted / driver.offers_seen) * 100
+      );
+      saveDatabase();
+      return res.json({ user: sanitizeUser(driver) });
+    }
+    return res.json({ ok: true });
   });
 
   app.post('/api/rides/:id/arrive', (req, res) => {
@@ -592,6 +897,7 @@ async function startServer() {
     return res.json({ ride: enriched });
   });
 
+  // Start Ride / Confirm Pickup (Always validates 4-digit PIN)
   app.post('/api/rides/:id/start', (req, res) => {
     const { driver_id, pin_code } = req.body;
     const ride = db.rides.find((r) => r.id === req.params.id);
@@ -599,8 +905,21 @@ async function startServer() {
       return res.status(404).json({ error: 'Corrida não encontrada.' });
     }
     if (String(pin_code || '').trim() !== ride.pin_code) {
-      return res.status(403).json({ error: 'Código PIN incorreto. Confirme os 4 dígitos com o passageiro.' });
+      return res.status(403).json({
+        error:
+          ride.category === 'delivery'
+            ? 'Código PIN de coleta incorreto. Confirme os 4 dígitos com o remetente.'
+            : 'Código PIN incorreto. Confirme os 4 dígitos com o passageiro.',
+      });
     }
+    const driver = db.users.find((u) => u.id === driver_id);
+    if (driver && driver.driver) {
+      driver.rides_started = (driver.rides_started || 0) + 1;
+      driver.driver.completion_rate = Math.round(
+        ((driver.rides_completed || 0) / driver.rides_started) * 100
+      );
+    }
+
     ride.status = 'in_progress';
     ride.started_at = new Date().toISOString();
     saveDatabase();
@@ -609,8 +928,9 @@ async function startServer() {
     return res.json({ ride: enriched });
   });
 
+  // Complete Ride / Delivery (For 'delivery', ALSO validates 4-digit PIN at destination!)
   app.post('/api/rides/:id/complete', (req, res) => {
-    const { driver_id } = req.body;
+    const { driver_id, pin_code } = req.body;
     const ride = db.rides.find((r) => r.id === req.params.id);
     if (!ride || ride.driver_id !== driver_id) {
       return res.status(404).json({ error: 'Corrida não encontrada.' });
@@ -618,6 +938,15 @@ async function startServer() {
     if (ride.status === 'completed') {
       return res.json({ ride: enrichRide(ride) });
     }
+
+    if (ride.category === 'delivery') {
+      if (String(pin_code || '').trim() !== ride.pin_code) {
+        return res.status(403).json({
+          error: 'PIN de entrega incorreto. Peça o código de 4 dígitos no destino para concluir.',
+        });
+      }
+    }
+
     ride.status = 'completed';
     ride.final_fare = ride.estimated_fare;
     ride.completed_at = new Date().toISOString();
@@ -625,13 +954,18 @@ async function startServer() {
     const driver = db.users.find((u) => u.id === driver_id);
     if (driver) {
       driver.wallet_balance = Number((driver.wallet_balance + ride.final_fare).toFixed(2));
+      if (driver.driver) {
+        driver.rides_completed = (driver.rides_completed || 0) + 1;
+        const started = Math.max(driver.rides_started || 1, driver.rides_completed);
+        driver.driver.completion_rate = Math.round((driver.rides_completed / started) * 100);
+      }
       const tx: WalletTransaction = {
         id: `tx-${crypto.randomUUID().slice(0, 8)}`,
         user_id: driver.id,
         ride_id: ride.id,
         amount: ride.final_fare,
         type: 'ride_earning',
-        description: `Corrida #${ride.id.slice(-4)} · ${ride.destination_address.split(',')[0]}`,
+        description: `${ride.category === 'delivery' ? 'Entrega' : 'Corrida'} #${ride.id.slice(-4)} · ${ride.destination_address.split(',')[0]}`,
         created_at: new Date().toISOString(),
       };
       db.transactions.unshift(tx);
@@ -713,11 +1047,25 @@ async function startServer() {
 
   // --- ADMIN ROUTES ---
   app.get('/api/admin/overview', (_req, res) => {
+    const completedRides = db.rides.filter((r) => r.status === 'completed');
+    const totalRevenue = Number(
+      completedRides.reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0).toFixed(2)
+    );
     res.json({
       users: db.users.map(sanitizeUser),
       rides: db.rides.map(enrichRide),
       pricing: db.pricing,
       transactions: db.transactions,
+      metrics: {
+        totalRevenue,
+        completedCount: completedRides.length,
+        activeRidesCount: db.rides.filter((r) =>
+          ['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status)
+        ).length,
+        pendingDriversCount: db.users.filter(
+          (u) => u.role === 'driver' && u.status === 'pending' && !u.is_anonymized
+        ).length,
+      },
     });
   });
 
@@ -760,7 +1108,6 @@ async function startServer() {
     return res.json({ pricing: db.pricing });
   });
 
-  // Vite middleware in dev, static dist in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },

@@ -35,6 +35,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
   const [driverFilter, setDriverFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>(
     'pending'
   );
+  const [metrics, setMetrics] = useState({
+    totalRevenue: 0,
+    completedCount: 0,
+    activeRidesCount: 0,
+    pendingDriversCount: 0,
+  });
   const [inspectDriver, setInspectDriver] = useState<UserProfile | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [savingPricing, setSavingPricing] = useState(false);
@@ -52,10 +58,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
         users: UserProfile[];
         rides: Ride[];
         pricing: PricingSetting[];
+        metrics?: {
+          totalRevenue: number;
+          completedCount: number;
+          activeRidesCount: number;
+          pendingDriversCount: number;
+        };
       };
       setUsers(data.users);
       setRides(data.rides);
       setPricing(data.pricing);
+      if (data.metrics) setMetrics(data.metrics);
     }
   }, []);
 
@@ -174,6 +187,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
       )}
 
       <div className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-8 py-6">
+        {/* Financial & Operational Metrics */}
+        <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs font-semibold text-neutral-500">Volume Financeiro</p>
+            <p className="mt-1 font-mono-num text-2xl font-extrabold text-neutral-950">
+              {formatBRL(metrics.totalRevenue)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs font-semibold text-neutral-500">Corridas / Entregas</p>
+            <p className="mt-1 font-mono-num text-2xl font-extrabold text-neutral-950">
+              {metrics.completedCount}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs font-semibold text-neutral-500">Em Andamento Agora</p>
+            <p className="mt-1 font-mono-num text-2xl font-extrabold text-neutral-950">
+              {metrics.activeRidesCount}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs font-semibold text-neutral-500">Aprovações Pendentes</p>
+            <p className="mt-1 font-mono-num text-2xl font-extrabold text-amber-600">
+              {metrics.pendingDriversCount}
+            </p>
+          </div>
+        </div>
+
         {/* Segmented Navigation Tabs */}
         <nav className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           {[

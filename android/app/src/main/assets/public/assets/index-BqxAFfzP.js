@@ -11775,6 +11775,23 @@ var Bike = createLucideIcon("bike", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Briefcase = createLucideIcon("briefcase", [["path", {
+	d: "M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16",
+	key: "jecpp"
+}], ["rect", {
+	width: "20",
+	height: "14",
+	x: "2",
+	y: "6",
+	rx: "2",
+	key: "i6l2r4"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var Car = createLucideIcon("car", [
 	["path", {
 		d: "M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2",
@@ -11806,6 +11823,16 @@ var Car = createLucideIcon("car", [
 var Check = createLucideIcon("check", [["path", {
 	d: "M20 6 9 17l-5-5",
 	key: "1gmf2c"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var ChevronRight = createLucideIcon("chevron-right", [["path", {
+	d: "m9 18 6-6-6-6",
+	key: "mthhwq"
 }]]);
 /**
 * @license lucide-react v0.546.0 - ISC
@@ -12083,6 +12110,19 @@ var History = createLucideIcon("history", [
 		key: "1fdv2h"
 	}]
 ]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var House = createLucideIcon("house", [["path", {
+	d: "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8",
+	key: "5wwlr5"
+}], ["path", {
+	d: "M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+	key: "r6nss1"
+}]]);
 /**
 * @license lucide-react v0.546.0 - ISC
 *
@@ -12405,12 +12445,37 @@ var Send = createLucideIcon("send", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Settings = createLucideIcon("settings", [["path", {
+	d: "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
+	key: "1i5ecw"
+}], ["circle", {
+	cx: "12",
+	cy: "12",
+	r: "3",
+	key: "1v7zrd"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var ShieldCheck = createLucideIcon("shield-check", [["path", {
 	d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
 	key: "oel41y"
 }], ["path", {
 	d: "m9 12 2 2 4-4",
 	key: "dzmm74"
+}]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Shield = createLucideIcon("shield", [["path", {
+	d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+	key: "oel41y"
 }]]);
 /**
 * @license lucide-react v0.546.0 - ISC
@@ -12440,6 +12505,34 @@ var Star = createLucideIcon("star", [["path", {
 	d: "M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z",
 	key: "r04s7s"
 }]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Trash2 = createLucideIcon("trash-2", [
+	["path", {
+		d: "M10 11v6",
+		key: "nco0om"
+	}],
+	["path", {
+		d: "M14 11v6",
+		key: "outv1u"
+	}],
+	["path", {
+		d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+		key: "miytrc"
+	}],
+	["path", {
+		d: "M3 6h18",
+		key: "d0wm0j"
+	}],
+	["path", {
+		d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+		key: "e791ji"
+	}]
+]);
 /**
 * @license lucide-react v0.546.0 - ISC
 *
@@ -12713,6 +12806,12 @@ var AdminDashboard = ({ currentUser, onLogout }) => {
 	const [schemaSql, setSchemaSql] = (0, import_react.useState)("");
 	const [copiedSql, setCopiedSql] = (0, import_react.useState)(false);
 	const [driverFilter, setDriverFilter] = (0, import_react.useState)("pending");
+	const [metrics, setMetrics] = (0, import_react.useState)({
+		totalRevenue: 0,
+		completedCount: 0,
+		activeRidesCount: 0,
+		pendingDriversCount: 0
+	});
 	const [inspectDriver, setInspectDriver] = (0, import_react.useState)(null);
 	const [rejectionReason, setRejectionReason] = (0, import_react.useState)("");
 	const [savingPricing, setSavingPricing] = (0, import_react.useState)(false);
@@ -12728,6 +12827,7 @@ var AdminDashboard = ({ currentUser, onLogout }) => {
 			setUsers(data.users);
 			setRides(data.rides);
 			setPricing(data.pricing);
+			if (data.metrics) setMetrics(data.metrics);
 		}
 	}, []);
 	(0, import_react.useEffect)(() => {
@@ -12822,6 +12922,51 @@ var AdminDashboard = ({ currentUser, onLogout }) => {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "mx-auto w-full max-w-7xl flex-1 px-4 sm:px-8 py-6",
 				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "mb-6 grid grid-cols-2 lg:grid-cols-4 gap-3",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "rounded-2xl border border-neutral-200 bg-white p-4",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-xs font-semibold text-neutral-500",
+									children: "Volume Financeiro"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "mt-1 font-mono-num text-2xl font-extrabold text-neutral-950",
+									children: formatBRL(metrics.totalRevenue)
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "rounded-2xl border border-neutral-200 bg-white p-4",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-xs font-semibold text-neutral-500",
+									children: "Corridas / Entregas"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "mt-1 font-mono-num text-2xl font-extrabold text-neutral-950",
+									children: metrics.completedCount
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "rounded-2xl border border-neutral-200 bg-white p-4",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-xs font-semibold text-neutral-500",
+									children: "Em Andamento Agora"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "mt-1 font-mono-num text-2xl font-extrabold text-neutral-950",
+									children: metrics.activeRidesCount
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "rounded-2xl border border-neutral-200 bg-white p-4",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-xs font-semibold text-neutral-500",
+									children: "Aprovações Pendentes"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "mt-1 font-mono-num text-2xl font-extrabold text-amber-600",
+									children: metrics.pendingDriversCount
+								})]
+							})
+						]
+					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("nav", {
 						className: "flex gap-2 overflow-x-auto pb-2 no-scrollbar",
 						children: [
@@ -13924,18 +14069,27 @@ var AuthScreen = ({ onAuthenticated }) => {
 										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileText, { className: "h-4 w-4 text-amber-600" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Documentação do Motorista & Veículo" })]
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										className: "grid grid-cols-2 gap-2",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-											type: "button",
-											onClick: () => setVehicleType("car"),
-											className: `min-h-[44px] flex items-center justify-center gap-2 rounded-xl text-xs font-bold border transition ${vehicleType === "car" ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-white text-neutral-700 border-neutral-200"}`,
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Car, { className: "h-4 w-4" }), " Carro"]
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-											type: "button",
-											onClick: () => setVehicleType("moto"),
-											className: `min-h-[44px] flex items-center justify-center gap-2 rounded-xl text-xs font-bold border transition ${vehicleType === "moto" ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-white text-neutral-700 border-neutral-200"}`,
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bike, { className: "h-4 w-4" }), " Moto"]
-										})]
+										className: "grid grid-cols-3 gap-2",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+												type: "button",
+												onClick: () => setVehicleType("car"),
+												className: `min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${vehicleType === "car" ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-white text-neutral-700 border-neutral-200"}`,
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Car, { className: "h-4 w-4" }), " Carro"]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+												type: "button",
+												onClick: () => setVehicleType("moto"),
+												className: `min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${vehicleType === "moto" ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-white text-neutral-700 border-neutral-200"}`,
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bike, { className: "h-4 w-4" }), " Moto"]
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+												type: "button",
+												onClick: () => setVehicleType("delivery"),
+												className: `min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${vehicleType === "delivery" ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-white text-neutral-700 border-neutral-200"}`,
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Package, { className: "h-4 w-4" }), " Entrega"]
+											})
+										]
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 										className: "grid grid-cols-1 sm:grid-cols-3 gap-2.5",
@@ -14040,6 +14194,531 @@ var AuthScreen = ({ onAuthenticated }) => {
 				]
 			})
 		})]
+	});
+};
+// src/lib/sound.ts
+function playOfferAlertSound() {
+	try {
+		const AudioCtx = window.AudioContext || window.webkitAudioContext;
+		if (!AudioCtx) return;
+		const ctx = new AudioCtx();
+		const now = ctx.currentTime;
+		[
+			880,
+			1174.66,
+			1318.51
+		].forEach((freq, i) => {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			osc.type = "triangle";
+			osc.frequency.setValueAtTime(freq, now + i * .11);
+			gain.gain.setValueAtTime(.001, now + i * .11);
+			gain.gain.exponentialRampToValueAtTime(.18, now + i * .11 + .02);
+			gain.gain.exponentialRampToValueAtTime(.001, now + i * .11 + .22);
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.start(now + i * .11);
+			osc.stop(now + i * .11 + .24);
+		});
+	} catch {}
+}
+// src/components/AccountSettingsModal.tsx
+var AccountSettingsModal = ({ currentUser, onUserUpdated, onAccountDeleted, onClose }) => {
+	const [section, setSection] = (0, import_react.useState)("menu");
+	const [saving, setSaving] = (0, import_react.useState)(false);
+	const [feedback, setFeedback] = (0, import_react.useState)(null);
+	const [fullName, setFullName] = (0, import_react.useState)(currentUser.full_name);
+	const [phone, setPhone] = (0, import_react.useState)(currentUser.phone);
+	const [email, setEmail] = (0, import_react.useState)(currentUser.email);
+	const [preferredPayment, setPreferredPayment] = (0, import_react.useState)(currentUser.preferred_payment || "pix");
+	const [homeQuery, setHomeQuery] = (0, import_react.useState)(currentUser.home_address?.address || "");
+	const [homeAddr, setHomeAddr] = (0, import_react.useState)(currentUser.home_address || null);
+	const [workQuery, setWorkQuery] = (0, import_react.useState)(currentUser.work_address?.address || "");
+	const [workAddr, setWorkAddr] = (0, import_react.useState)(currentUser.work_address || null);
+	const [addrSuggestions, setAddrSuggestions] = (0, import_react.useState)([]);
+	const [vehicleType, setVehicleType] = (0, import_react.useState)(currentUser.driver?.vehicle_type || "car");
+	const [vehicleModel, setVehicleModel] = (0, import_react.useState)(currentUser.driver?.vehicle_model || "");
+	const [vehiclePlate, setVehiclePlate] = (0, import_react.useState)(currentUser.driver?.vehicle_plate || "");
+	const [vehicleColor, setVehicleColor] = (0, import_react.useState)(currentUser.driver?.vehicle_color || "");
+	const [pixKey, setPixKey] = (0, import_react.useState)(currentUser.driver?.pix_key || "");
+	const [currentPassword, setCurrentPassword] = (0, import_react.useState)("");
+	const [newPassword, setNewPassword] = (0, import_react.useState)("");
+	const [confirmDelete, setConfirmDelete] = (0, import_react.useState)(false);
+	const handleSaveProfile = async (e) => {
+		e.preventDefault();
+		setFeedback(null);
+		setSaving(true);
+		try {
+			const res = await fetch(`/api/users/${currentUser.id}/profile`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					full_name: fullName,
+					phone,
+					email,
+					preferred_payment: preferredPayment,
+					home_address: homeAddr,
+					work_address: workAddr,
+					...currentUser.driver ? {
+						vehicle_type: vehicleType,
+						vehicle_model: vehicleModel,
+						vehicle_plate: vehiclePlate,
+						vehicle_color: vehicleColor,
+						pix_key: pixKey
+					} : {}
+				})
+			});
+			const data = await res.json();
+			if (!res.ok || !data.user) {
+				setFeedback({
+					type: "err",
+					msg: data.error || "Erro ao salvar alterações."
+				});
+				return;
+			}
+			onUserUpdated(data.user);
+			setFeedback({
+				type: "ok",
+				msg: "Configurações atualizadas com sucesso."
+			});
+		} finally {
+			setSaving(false);
+		}
+	};
+	const handleChangePassword = async (e) => {
+		e.preventDefault();
+		setFeedback(null);
+		setSaving(true);
+		try {
+			const res = await fetch(`/api/users/${currentUser.id}/password`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					current_password: currentPassword,
+					new_password: newPassword
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				setFeedback({
+					type: "err",
+					msg: data.error || "Falha ao alterar senha."
+				});
+				return;
+			}
+			setCurrentPassword("");
+			setNewPassword("");
+			setFeedback({
+				type: "ok",
+				msg: "Senha alterada com segurança."
+			});
+		} finally {
+			setSaving(false);
+		}
+	};
+	const handleAnonymizeAccount = async () => {
+		setSaving(true);
+		try {
+			if ((await fetch(`/api/users/${currentUser.id}/account`, { method: "DELETE" })).ok) onAccountDeleted();
+		} finally {
+			setSaving(false);
+		}
+	};
+	const searchSavedAddress = async (query, target) => {
+		if (target === "home") setHomeQuery(query);
+		else setWorkQuery(query);
+		if (query.trim().length < 3) {
+			setAddrSuggestions([]);
+			return;
+		}
+		const results = await searchAddresses(query);
+		setAddrSuggestions(results.map((r) => ({
+			...r,
+			target
+		})));
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs",
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "flex h-[88vh] sm:h-auto sm:max-h-[85vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex items-center justify-between border-b border-neutral-100 px-5 py-4",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-center gap-2",
+					children: [section !== "menu" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: () => {
+							setSection("menu");
+							setFeedback(null);
+						},
+						className: "flex h-9 px-2.5 items-center justify-center rounded-xl bg-neutral-100 text-xs font-bold text-neutral-800",
+						children: "Voltar"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h3", {
+						className: "font-display text-lg font-extrabold text-neutral-950",
+						children: [
+							section === "menu" && "Configurações",
+							section === "profile" && "Dados da Conta",
+							section === "password" && "Alterar Senha",
+							section === "addresses" && "Endereços e Pagamento",
+							section === "vehicle" && "Veículo e Chave Pix",
+							section === "privacy" && "Privacidade e LGPD"
+						]
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					type: "button",
+					onClick: onClose,
+					className: "flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700",
+					"aria-label": "Fechar configurações",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "h-5 w-5" })
+				})]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex-1 overflow-y-auto p-5 space-y-4",
+				children: [
+					feedback && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: `rounded-2xl px-4 py-3 text-xs font-bold ${feedback.type === "ok" ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`,
+						children: feedback.msg
+					}),
+					section === "menu" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "space-y-4",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-2xl bg-neutral-50 p-4 border border-neutral-100",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "font-display text-base font-extrabold text-neutral-950",
+								children: currentUser.full_name
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+								className: "text-xs text-neutral-500 font-mono-num",
+								children: [
+									currentUser.phone,
+									" · ",
+									currentUser.email
+								]
+							})]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "divide-y divide-neutral-100 rounded-2xl border border-neutral-200 bg-white overflow-hidden",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => setSection("profile"),
+									className: "flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3 text-sm font-bold text-neutral-900",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(User, { className: "h-4 w-4 text-neutral-600" }), "Editar nome, telefone e e-mail"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-400" })]
+								}),
+								currentUser.role === "passenger" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => setSection("addresses"),
+									className: "flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3 text-sm font-bold text-neutral-900",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(House, { className: "h-4 w-4 text-neutral-600" }), "Endereços (Casa, Trabalho) e Pagamento"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-400" })]
+								}),
+								currentUser.role === "driver" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => setSection("vehicle"),
+									className: "flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3 text-sm font-bold text-neutral-900",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Car, { className: "h-4 w-4 text-neutral-600" }), "Veículo e Chave Pix de repasse"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-400" })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => setSection("password"),
+									className: "flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3 text-sm font-bold text-neutral-900",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Lock, { className: "h-4 w-4 text-neutral-600" }), "Alterar senha de acesso"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-400" })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => setSection("privacy"),
+									className: "flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3 text-sm font-bold text-neutral-900",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Shield, { className: "h-4 w-4 text-neutral-600" }), "Privacidade, Segurança PIN e Exclusão (LGPD)"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-400" })]
+								})
+							]
+						})]
+					}),
+					section === "profile" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+						onSubmit: handleSaveProfile,
+						className: "space-y-3",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "Nome completo"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "text",
+								required: true,
+								value: fullName,
+								onChange: (e) => setFullName(e.target.value),
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm outline-none focus:border-neutral-950"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "Telefone / WhatsApp"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "tel",
+								required: true,
+								value: phone,
+								onChange: (e) => setPhone(e.target.value),
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm outline-none focus:border-neutral-950"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "E-mail"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "email",
+								required: true,
+								value: email,
+								onChange: (e) => setEmail(e.target.value),
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm outline-none focus:border-neutral-950"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "submit",
+								disabled: saving,
+								className: "min-h-[48px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950",
+								children: saving ? "Salvando..." : "Salvar Dados"
+							})
+						]
+					}),
+					section === "addresses" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+						onSubmit: handleSaveProfile,
+						className: "space-y-4",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+								className: "flex items-center gap-1.5 text-xs font-bold text-neutral-700 mb-1",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(House, { className: "h-3.5 w-3.5" }), " Endereço de Casa"]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "text",
+								value: homeQuery,
+								onChange: (e) => searchSavedAddress(e.target.value, "home"),
+								placeholder: "Busque seu endereço residencial...",
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+								className: "flex items-center gap-1.5 text-xs font-bold text-neutral-700 mb-1",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Briefcase, { className: "h-3.5 w-3.5" }), " Endereço de Trabalho"]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "text",
+								value: workQuery,
+								onChange: (e) => searchSavedAddress(e.target.value, "work"),
+								placeholder: "Busque seu endereço comercial...",
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
+							})] }),
+							addrSuggestions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "rounded-2xl border border-neutral-200 divide-y divide-neutral-100 max-h-40 overflow-y-auto",
+								children: addrSuggestions.map((s, idx) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: () => {
+										const saved = {
+											label: s.target === "home" ? "Casa" : "Trabalho",
+											address: s.address,
+											lat: s.lat,
+											lng: s.lng
+										};
+										if (s.target === "home") {
+											setHomeAddr(saved);
+											setHomeQuery(s.address);
+										} else {
+											setWorkAddr(saved);
+											setWorkQuery(s.address);
+										}
+										setAddrSuggestions([]);
+									},
+									className: "block w-full px-3.5 py-2.5 text-left text-xs hover:bg-neutral-50",
+									children: s.address
+								}, idx))
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+								className: "flex items-center gap-1.5 text-xs font-bold text-neutral-700 mb-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CreditCard, { className: "h-3.5 w-3.5" }), " Pagamento Preferencial"]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "grid grid-cols-3 gap-2",
+								children: [
+									{
+										id: "pix",
+										label: "Pix"
+									},
+									{
+										id: "cash",
+										label: "Dinheiro"
+									},
+									{
+										id: "card_machine",
+										label: "Maquininha"
+									}
+								].map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: () => setPreferredPayment(m.id),
+									className: `min-h-[42px] rounded-xl border text-xs font-bold ${preferredPayment === m.id ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-neutral-50 text-neutral-700 border-neutral-200"}`,
+									children: m.label
+								}, m.id))
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "submit",
+								disabled: saving,
+								className: "min-h-[48px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950",
+								children: saving ? "Salvando..." : "Salvar Favoritos"
+							})
+						]
+					}),
+					section === "vehicle" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+						onSubmit: handleSaveProfile,
+						className: "space-y-3",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "Categoria"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								className: "grid grid-cols-3 gap-2",
+								children: [
+									{
+										id: "car",
+										label: "Carro"
+									},
+									{
+										id: "moto",
+										label: "Moto"
+									},
+									{
+										id: "delivery",
+										label: "Entrega"
+									}
+								].map((vt) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: () => setVehicleType(vt.id),
+									className: `min-h-[42px] rounded-xl border text-xs font-bold ${vehicleType === vt.id ? "bg-neutral-950 text-[#FFCC00] border-neutral-950" : "bg-neutral-50 text-neutral-700 border-neutral-200"}`,
+									children: vt.label
+								}, vt.id))
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "text",
+								required: true,
+								value: vehicleModel,
+								onChange: (e) => setVehicleModel(e.target.value),
+								placeholder: "Modelo",
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "grid grid-cols-2 gap-2.5",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									type: "text",
+									required: true,
+									value: vehiclePlate,
+									onChange: (e) => setVehiclePlate(e.target.value.toUpperCase()),
+									placeholder: "Placa",
+									className: "min-h-[46px] rounded-2xl border border-neutral-200 px-3.5 font-mono-num text-sm uppercase"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									type: "text",
+									required: true,
+									value: vehicleColor,
+									onChange: (e) => setVehicleColor(e.target.value),
+									placeholder: "Cor",
+									className: "min-h-[46px] rounded-2xl border border-neutral-200 px-3.5 text-sm"
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "Chave Pix para repasses"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "text",
+								required: true,
+								value: pixKey,
+								onChange: (e) => setPixKey(e.target.value),
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 font-mono-num text-sm"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "submit",
+								disabled: saving,
+								className: "min-h-[48px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950",
+								children: saving ? "Salvando..." : "Atualizar Veículo & Pix"
+							})
+						]
+					}),
+					section === "password" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+						onSubmit: handleChangePassword,
+						className: "space-y-3",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "Senha atual"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "password",
+								required: true,
+								value: currentPassword,
+								onChange: (e) => setCurrentPassword(e.target.value),
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+								className: "block text-xs font-bold text-neutral-700 mb-1",
+								children: "Nova senha (mínimo 6 caracteres)"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "password",
+								required: true,
+								minLength: 6,
+								value: newPassword,
+								onChange: (e) => setNewPassword(e.target.value),
+								className: "min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm"
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "submit",
+								disabled: saving,
+								className: "min-h-[48px] w-full rounded-2xl bg-neutral-950 text-sm font-bold text-[#FFCC00]",
+								children: saving ? "Alterando..." : "Confirmar Nova Senha"
+							})
+						]
+					}),
+					section === "privacy" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "space-y-4",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-700 space-y-2 leading-relaxed",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "font-extrabold text-neutral-950",
+									children: "Política de Privacidade e Isolamento de Dados (RLS)"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "• Seus dados pessoais (CPF, e-mail, endereços favoritos e documentos) são isolados por regras estritas de acesso (Row Level Security)." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "• Para passageiros, a localização GPS e placa do veículo são compartilhadas apenas durante uma corrida ou entrega ativa." }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "• Todas as viagens e entregas exigem verificação presencial com Código PIN de 4 dígitos para proteger embarque, coleta e entrega." })
+							]
+						}), !confirmDelete ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => setConfirmDelete(true),
+							className: "flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Trash2, { className: "h-4 w-4" }), "Excluir / Anonimizar minha conta (LGPD)"]
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-2xl border border-red-300 bg-red-50 p-4 space-y-3",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-start gap-2.5 text-red-800",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { className: "h-5 w-5 shrink-0 mt-0.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+									className: "text-xs font-semibold",
+									children: "Esta ação anonimiza irreversivelmente seu nome, CPF, telefone, e-mail e documentos conforme a LGPD, encerrando seu acesso imediatamente."
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: () => setConfirmDelete(false),
+									className: "min-h-[44px] flex-1 rounded-xl bg-white border border-neutral-300 text-xs font-bold text-neutral-800",
+									children: "Cancelar"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: saving,
+									onClick: handleAnonymizeAccount,
+									className: "min-h-[44px] flex-1 rounded-xl bg-red-600 text-xs font-bold text-white",
+									children: saving ? "Anonimizando..." : "Confirmar Exclusão"
+								})]
+							})]
+						})]
+					})
+				]
+			})]
+		})
 	});
 };
 // node_modules/leaflet/dist/leaflet-src.js
@@ -21164,7 +21843,7 @@ var LiveMap = ({ center, origin, destination, routeCoords, driverPosition, nearb
 	const makeVehicleIcon = (vehicleType = "car", heading = 0, active = true) => import_leaflet_src.default.divIcon({
 		className: "velo-smooth-marker",
 		html: `<div style="transform:rotate(${heading}deg);width:40px;height:40px;border-radius:9999px;background:${active ? "#111827" : "#ffffff"};border:3px solid ${active ? "#FFCC00" : "#111827"};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,0.35);">
-        ${vehicleType === "moto" ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${active ? "#FFCC00" : "#111827"}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h3"/></svg>` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${active ? "#FFCC00" : "#111827"}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`}
+        ${vehicleType === "moto" || vehicleType === "delivery" ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${active ? "#FFCC00" : "#111827"}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h3"/></svg>` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${active ? "#FFCC00" : "#111827"}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`}
       </div>`,
 		iconSize: [40, 40],
 		iconAnchor: [20, 20]
@@ -21470,25 +22149,29 @@ var RideChatModal = ({ rideId, currentUser, peerName, messages, onClose }) => {
 var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMessages, onRideUpsert, onEmitLocation, onLogout }) => {
 	const [menuOpen, setMenuOpen] = (0, import_react.useState)(false);
 	const [walletOpen, setWalletOpen] = (0, import_react.useState)(false);
+	const [historyOpen, setHistoryOpen] = (0, import_react.useState)(false);
+	const [settingsOpen, setSettingsOpen] = (0, import_react.useState)(false);
 	const [transactions, setTransactions] = (0, import_react.useState)([]);
 	const [togglingOnline, setTogglingOnline] = (0, import_react.useState)(false);
 	const [statusError, setStatusError] = (0, import_react.useState)(null);
 	const [driverCoords, setDriverCoords] = (0, import_react.useState)([currentUser.driver?.current_lat ?? -23.55052, currentUser.driver?.current_lng ?? -46.633308]);
 	const [routeCoords, setRouteCoords] = (0, import_react.useState)([]);
 	const [declinedRideIds, setDeclinedRideIds] = (0, import_react.useState)([]);
-	const [pinModalOpen, setPinModalOpen] = (0, import_react.useState)(false);
+	const [pinModalMode, setPinModalMode] = (0, import_react.useState)(null);
 	const [pinInput, setPinInput] = (0, import_react.useState)("");
 	const [pinError, setPinError] = (0, import_react.useState)(null);
 	const [actionLoading, setActionLoading] = (0, import_react.useState)(false);
 	const [chatOpen, setChatOpen] = (0, import_react.useState)(false);
 	const [dismissedRatingRideId, setDismissedRatingRideId] = (0, import_react.useState)(null);
 	const watchIdRef = (0, import_react.useRef)(null);
+	const lastAlertedRideIdRef = (0, import_react.useRef)(null);
 	const isOnline = Boolean(currentUser.driver?.is_online);
-	const activeRide = (0, import_react.useMemo)(() => rides.find((r) => r.driver_id === currentUser.id && [
+	const myDriverRides = (0, import_react.useMemo)(() => rides.filter((r) => r.driver_id === currentUser.id), [rides, currentUser.id]);
+	const activeRide = (0, import_react.useMemo)(() => myDriverRides.find((r) => [
 		"accepted",
 		"arrived",
 		"in_progress"
-	].includes(r.status)) || null, [rides, currentUser.id]);
+	].includes(r.status)) || null, [myDriverRides]);
 	const incomingRide = (0, import_react.useMemo)(() => {
 		if (!isOnline || activeRide || currentUser.status !== "active") return null;
 		return rides.find((r) => r.status === "searching" && !declinedRideIds.includes(r.id)) || null;
@@ -21499,12 +22182,14 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 		rides,
 		declinedRideIds
 	]);
-	const pendingRatingRide = (0, import_react.useMemo)(() => rides.find((r) => r.driver_id === currentUser.id && r.status === "completed" && !r.driver_rating_submitted && r.id !== dismissedRatingRideId) || null, [
-		rides,
-		currentUser.id,
-		dismissedRatingRideId
-	]);
-	const completedCount = (0, import_react.useMemo)(() => rides.filter((r) => r.driver_id === currentUser.id && r.status === "completed").length, [rides, currentUser.id]);
+	(0, import_react.useEffect)(() => {
+		if (incomingRide && incomingRide.id !== lastAlertedRideIdRef.current) {
+			lastAlertedRideIdRef.current = incomingRide.id;
+			playOfferAlertSound();
+		}
+	}, [incomingRide]);
+	const pendingRatingRide = (0, import_react.useMemo)(() => myDriverRides.find((r) => r.status === "completed" && !r.driver_rating_submitted && r.id !== dismissedRatingRideId) || null, [myDriverRides, dismissedRatingRideId]);
+	const completedCount = (0, import_react.useMemo)(() => myDriverRides.filter((r) => r.status === "completed").length, [myDriverRides]);
 	(0, import_react.useEffect)(() => {
 		if (!isOnline || !navigator.geolocation) {
 			if (watchIdRef.current !== null && navigator.geolocation) {
@@ -21605,12 +22290,24 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 			});
 			const data = await res.json();
 			if (!res.ok || !data.ride) {
-				setStatusError(data.error || "Corrida indisponível.");
+				setStatusError(data.error || "Solicitação indisponível.");
 				return;
 			}
 			onRideUpsert(data.ride);
 		} finally {
 			setActionLoading(false);
+		}
+	};
+	const declineRide = async (rideId) => {
+		setDeclinedRideIds((prev) => [...prev, rideId]);
+		const res = await fetch(`/api/rides/${rideId}/decline`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ driver_id: currentUser.id })
+		});
+		if (res.ok) {
+			const data = await res.json();
+			if (data.user) onUserUpdated(data.user);
 		}
 	};
 	const markArrived = async () => {
@@ -21627,13 +22324,14 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 			setActionLoading(false);
 		}
 	};
-	const submitPinToStart = async (e) => {
+	const submitPinAction = async (e) => {
 		e.preventDefault();
-		if (!activeRide) return;
+		if (!activeRide || !pinModalMode) return;
 		setPinError(null);
 		setActionLoading(true);
 		try {
-			const res = await fetch(`/api/rides/${activeRide.id}/start`, {
+			const endpoint = pinModalMode === "pickup" ? `/api/rides/${activeRide.id}/start` : `/api/rides/${activeRide.id}/complete`;
+			const res = await fetch(endpoint, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -21646,15 +22344,22 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 				setPinError(data.error || "Código PIN incorreto.");
 				return;
 			}
-			setPinModalOpen(false);
+			setPinModalMode(null);
 			setPinInput("");
 			onRideUpsert(data.ride);
+			if (pinModalMode === "delivery") await refreshProfile();
 		} finally {
 			setActionLoading(false);
 		}
 	};
-	const completeRide = async () => {
+	const completeRideDirect = async () => {
 		if (!activeRide) return;
+		if (activeRide.category === "delivery") {
+			setPinError(null);
+			setPinInput("");
+			setPinModalMode("delivery");
+			return;
+		}
 		setActionLoading(true);
 		try {
 			const res = await fetch(`/api/rides/${activeRide.id}/complete`, {
@@ -21752,7 +22457,7 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 								children: currentUser.status === "pending" ? "Cadastro em análise" : currentUser.status === "rejected" ? "Cadastro reprovado" : "Perfil suspenso"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "mt-1 text-xs text-neutral-700",
-								children: currentUser.status === "pending" ? "Seus documentos (CNH e CRLV) foram recebidos. Aguarde a aprovação no Painel Administrativo para ficar online." : currentUser.driver?.rejection_reason || "Entre em contato com a administração para regularizar seus documentos."
+								children: currentUser.status === "pending" ? "Seus documentos (CNH e CRLV) estão sendo revisados no Painel Administrativo." : currentUser.driver?.rejection_reason || "Entre em contato com a administração para regularizar seus documentos."
 							})] })]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							type: "button",
@@ -21768,18 +22473,18 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 									className: "text-xs font-bold text-amber-700",
 									children: [
-										activeRide.status === "accepted" && "Indo buscar o passageiro",
-										activeRide.status === "arrived" && "Aguardando embarque · Peça o PIN",
-										activeRide.status === "in_progress" && "Viagem em andamento"
+										activeRide.status === "accepted" && (activeRide.category === "delivery" ? "Indo para o local de coleta" : "Indo buscar o passageiro"),
+										activeRide.status === "arrived" && (activeRide.category === "delivery" ? "No local de coleta · Peça o PIN" : "Aguardando embarque · Peça o PIN"),
+										activeRide.status === "in_progress" && (activeRide.category === "delivery" ? "Entrega em trânsito · PIN no destino" : "Viagem em andamento")
 									]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 									className: "font-display text-lg font-extrabold text-neutral-950",
-									children: activeRide.passenger?.full_name || "Passageiro"
+									children: activeRide.passenger?.full_name || "Cliente"
 								})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 									className: "text-right",
 									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "block text-[11px] font-medium text-neutral-500",
-										children: "Valor"
+										children: "Repasse"
 									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 										className: "font-mono-num text-lg font-extrabold text-neutral-950",
 										children: formatBRL(activeRide.estimated_fare)
@@ -21788,27 +22493,34 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "rounded-2xl bg-neutral-50 p-3 text-xs space-y-1.5 border border-neutral-100",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-									className: "text-neutral-700",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
-											className: "text-neutral-950",
-											children: "Embarque:"
-										}),
-										" ",
-										activeRide.origin_address
-									]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-									className: "text-neutral-700",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
-											className: "text-neutral-950",
-											children: "Destino:"
-										}),
-										" ",
-										activeRide.destination_address
-									]
-								})]
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-neutral-700",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+												className: "text-neutral-950",
+												children: activeRide.category === "delivery" ? "Coleta:" : "Embarque:"
+											}),
+											" ",
+											activeRide.origin_address
+										]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-neutral-700",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+												className: "text-neutral-950",
+												children: "Destino:"
+											}),
+											" ",
+											activeRide.destination_address
+										]
+									}),
+									activeRide.delivery_notes && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+										className: "text-amber-800 font-semibold",
+										children: ["Obs. pacote: ", activeRide.delivery_notes]
+									})
+								]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
 								href: googleMapsUrl,
@@ -21819,7 +22531,7 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigation, { className: "h-4 w-4" }),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
 										"Abrir Rota no Google Maps (",
-										activeRide.status === "in_progress" ? "Destino" : "Embarque",
+										activeRide.status === "in_progress" ? "Destino" : activeRide.category === "delivery" ? "Coleta" : "Embarque",
 										")"
 									] }),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { className: "h-4 w-4" })
@@ -21829,7 +22541,7 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 								className: "flex items-center justify-between rounded-xl bg-neutral-100 px-3 py-2 text-[11px]",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 									className: "font-semibold text-neutral-700",
-									children: "GPS ao vivo transmitindo"
+									children: "GPS ao vivo ativo"
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 									type: "button",
 									onClick: () => nudgeDriverTowardTarget(activeRide.status === "in_progress" ? activeRide.destination_lat : activeRide.origin_lat, activeRide.status === "in_progress" ? activeRide.destination_lng : activeRide.origin_lng),
@@ -21845,30 +22557,31 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 										disabled: actionLoading,
 										onClick: markArrived,
 										className: "min-h-[52px] flex-1 rounded-2xl bg-[#FFCC00] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition",
-										children: "Cheguei no local de embarque"
+										children: activeRide.category === "delivery" ? "Cheguei no local de coleta" : "Cheguei no local de embarque"
 									}),
 									activeRide.status === "arrived" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 										type: "button",
 										disabled: actionLoading,
 										onClick: () => {
 											setPinError(null);
-											setPinModalOpen(true);
+											setPinInput("");
+											setPinModalMode("pickup");
 										},
 										className: "min-h-[52px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-[#FFCC00] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(KeyRound, { className: "h-4 w-4" }), "Iniciar Viagem (PIN)"]
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(KeyRound, { className: "h-4 w-4" }), activeRide.category === "delivery" ? "Confirmar Coleta (PIN)" : "Iniciar Viagem (PIN)"]
 									}),
 									activeRide.status === "in_progress" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 										type: "button",
 										disabled: actionLoading,
-										onClick: completeRide,
+										onClick: completeRideDirect,
 										className: "min-h-[52px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 text-sm font-extrabold text-white shadow-md active:scale-[0.98] transition",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "h-5 w-5" }), "Finalizar Corrida"]
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "h-5 w-5" }), activeRide.category === "delivery" ? "Confirmar Entrega (PIN)" : "Finalizar Corrida"]
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 										type: "button",
 										onClick: () => setChatOpen(true),
 										className: "flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFCC00]",
-										"aria-label": "Abrir chat com passageiro",
+										"aria-label": "Abrir chat com cliente",
 										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageSquare, { className: "h-5 w-5" })
 									})
 								]
@@ -21883,7 +22596,7 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "mt-0.5 text-xs text-neutral-600",
-								children: isOnline ? "Aguardando chamados na sua região..." : "Toque em \"Ficar Online\" no topo para receber corridas."
+								children: isOnline ? "Aguardando corridas e entregas na sua região..." : "Toque em \"Ficar Online\" no topo para receber chamados."
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 								className: "mt-1.5 text-xs font-bold text-neutral-800 font-mono-num",
@@ -21910,9 +22623,9 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center justify-between",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								className: "text-xs font-extrabold uppercase tracking-wider text-amber-700",
-								children: ["Nova solicitação · ", incomingRide.category.toUpperCase()]
+								children: incomingRide.category === "delivery" ? "Nova Entrega / Coleta" : `Nova Corrida · ${incomingRide.category.toUpperCase()}`
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 								className: "font-mono-num text-xs font-bold text-neutral-600",
 								children: [
@@ -21938,31 +22651,38 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "mt-4 space-y-2.5 rounded-2xl bg-neutral-50 p-3.5 text-xs border border-neutral-100",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "flex items-start gap-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MapPin, { className: "h-4 w-4 shrink-0 text-amber-600 mt-0.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "block font-bold text-neutral-500",
-									children: "Embarque"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "font-semibold text-neutral-950",
-									children: incomingRide.origin_address
-								})] })]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "flex items-start gap-2",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigation, { className: "h-4 w-4 shrink-0 text-neutral-950 mt-0.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "block font-bold text-neutral-500",
-									children: "Destino"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "font-semibold text-neutral-950",
-									children: incomingRide.destination_address
-								})] })]
-							})]
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex items-start gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(MapPin, { className: "h-4 w-4 shrink-0 text-amber-600 mt-0.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "block font-bold text-neutral-500",
+										children: incomingRide.category === "delivery" ? "Local de Coleta" : "Embarque"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "font-semibold text-neutral-950",
+										children: incomingRide.origin_address
+									})] })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex items-start gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigation, { className: "h-4 w-4 shrink-0 text-neutral-950 mt-0.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "block font-bold text-neutral-500",
+										children: "Destino"
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "font-semibold text-neutral-950",
+										children: incomingRide.destination_address
+									})] })]
+								}),
+								incomingRide.delivery_notes && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "pt-1 text-amber-800 font-semibold",
+									children: ["Obs.: ", incomingRide.delivery_notes]
+								})
+							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "mt-5 flex items-center gap-3",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "button",
-								onClick: () => setDeclinedRideIds((prev) => [...prev, incomingRide.id]),
+								onClick: () => declineRide(incomingRide.id),
 								className: "min-h-[52px] rounded-2xl border border-neutral-300 px-5 text-sm font-bold text-neutral-700 hover:bg-neutral-100",
 								children: "Recusar"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
@@ -21976,32 +22696,27 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 					]
 				})
 			}),
-			pinModalOpen && activeRide && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			pinModalMode && activeRide && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs",
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
-					onSubmit: submitPinToStart,
+					onSubmit: submitPinAction,
 					className: "w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl",
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center justify-between",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 								className: "font-display text-lg font-extrabold text-neutral-950",
-								children: "Confirmar Código PIN"
+								children: pinModalMode === "delivery" ? "PIN de Entrega Final" : activeRide.category === "delivery" ? "PIN de Retirada / Coleta" : "Confirmar Código PIN"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "button",
-								onClick: () => setPinModalOpen(false),
+								onClick: () => setPinModalMode(null),
 								className: "flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100",
 								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "h-5 w-5" })
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "mt-1 text-xs text-neutral-600",
-							children: [
-								"Peça os 4 dígitos exibidos no celular do passageiro",
-								" ",
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: activeRide.passenger?.full_name }),
-								" para liberar a viagem."
-							]
+							children: pinModalMode === "delivery" ? "Informe o código PIN de 4 dígitos para confirmar a entrega no destino e liberar seu pagamento." : `Peça os 4 dígitos exibidos no celular de ${activeRide.passenger?.full_name || "cliente"} para liberar a partida.`
 						}),
 						pinError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							className: "mt-3 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-red-700",
@@ -22022,15 +22737,15 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 							type: "submit",
 							disabled: pinInput.length !== 4 || actionLoading,
 							className: "mt-4 min-h-[50px] w-full rounded-2xl bg-[#FFCC00] text-sm font-extrabold text-neutral-950 disabled:opacity-40",
-							children: actionLoading ? "Verificando..." : "Liberar Partida"
+							children: actionLoading ? "Validando PIN..." : pinModalMode === "delivery" ? "Confirmar Entrega e Receber" : "Liberar Partida"
 						})
 					]
 				})
 			}),
 			menuOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "fixed inset-0 z-[1000] flex bg-black/50 backdrop-blur-xs",
+				className: "fixed inset-0 z-[1000] flex bg-black/60 backdrop-blur-xs",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex h-full w-80 max-w-[85vw] flex-col bg-white p-6 shadow-2xl",
+					className: "flex h-full w-80 max-w-[85vw] flex-col bg-[#0F1115] p-6 text-white shadow-2xl",
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center justify-between",
@@ -22040,17 +22755,17 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 									src: currentUser.avatar_url,
 									alt: currentUser.full_name,
 									referrerPolicy: "no-referrer",
-									className: "h-12 w-12 rounded-full object-cover border border-neutral-200"
+									className: "h-12 w-12 rounded-full object-cover border border-white/15"
 								}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "flex h-12 w-12 items-center justify-center rounded-full bg-[#FFCC00] text-neutral-950 font-extrabold text-lg",
 									children: currentUser.full_name.slice(0, 1)
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
-									className: "font-display text-base font-extrabold text-neutral-950",
+									className: "font-display text-base font-extrabold text-white",
 									children: currentUser.full_name
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-									className: "text-xs font-semibold text-neutral-600 flex items-center gap-1",
+									className: "text-xs font-semibold text-neutral-300 flex items-center gap-1",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Star, { className: "h-3.5 w-3.5 fill-[#FFCC00] text-[#F59E0B]" }),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Star, { className: "h-3.5 w-3.5 fill-[#FFCC00] text-[#FFCC00]" }),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 											className: "font-mono-num",
 											children: currentUser.rating_avg.toFixed(2)
@@ -22058,37 +22773,92 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
 											"· ",
 											completedCount,
-											" corridas"
+											" viagens"
 										] })
 									]
 								})] })]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "button",
 								onClick: () => setMenuOpen(false),
-								className: "flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100",
+								className: "flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white",
 								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "h-5 w-5" })
 							})]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "mt-6 space-y-2 flex-1",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-								type: "button",
-								onClick: () => {
-									loadWallet();
-									setWalletOpen(true);
-									setMenuOpen(false);
-								},
-								className: "flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3.5 text-sm font-bold text-neutral-800 hover:bg-neutral-100",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "h-5 w-5 text-neutral-600" }), "Ganhos e Carteira Pix"]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								className: "pt-2",
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { variant: "menu" })
-							})]
+							className: "mt-5 grid grid-cols-2 gap-3 rounded-2xl bg-[#1A1D24] p-4 border border-white/5 text-center",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-[11px] text-neutral-400",
+								children: "Taxa de Aceitação"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+								className: "mt-1 font-mono-num text-lg font-extrabold text-white",
+								children: [currentUser.driver?.acceptance_rate ?? 100, "%"]
+							})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-[11px] text-neutral-400",
+								children: "Taxa de Finalização"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+								className: "mt-1 font-mono-num text-lg font-extrabold text-white",
+								children: [currentUser.driver?.completion_rate ?? 100, "%"]
+							})] })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "mt-5 space-y-1 flex-1",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										loadWallet();
+										setWalletOpen(true);
+										setMenuOpen(false);
+									},
+									className: "flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Wallet, { className: "h-5 w-5 text-[#FFCC00]" }), "Ganhos e Carteira Pix"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-500" })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										setHistoryOpen(true);
+										setMenuOpen(false);
+									},
+									className: "flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)(History, { className: "h-5 w-5 text-neutral-400" }),
+											"Histórico de Corridas (",
+											myDriverRides.length,
+											")"
+										]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-500" })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										setSettingsOpen(true);
+										setMenuOpen(false);
+									},
+									className: "flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-3",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Settings, { className: "h-5 w-5 text-neutral-400" }), "Configurações e Veículo"]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-4 w-4 text-neutral-500" })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex items-center gap-3 px-3 py-2 text-xs text-neutral-400",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "h-4 w-4 text-emerald-400 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Proteção PIN & RLS ativa" })]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "pt-2",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { variant: "menu" })
+								})
+							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							type: "button",
 							onClick: onLogout,
-							className: "flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-800",
+							className: "flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-white/10 text-sm font-bold text-white hover:bg-white/15",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(LogOut, { className: "h-4 w-4" }), "Sair da conta"]
 						})
 					]
@@ -22153,6 +22923,59 @@ var DriverView = ({ currentUser, rides, messagesByRide, onUserUpdated, onLoadMes
 					]
 				})
 			}),
+			historyOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "fixed inset-0 z-[1050] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center justify-between pb-3 border-b border-neutral-100",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
+							className: "font-display text-lg font-extrabold text-neutral-950",
+							children: "Histórico de Viagens e Entregas"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: () => setHistoryOpen(false),
+							className: "flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { className: "h-5 w-5" })
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "mt-3 flex-1 overflow-y-auto space-y-3",
+						children: myDriverRides.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "py-8 text-center text-sm text-neutral-500",
+							children: "Você ainda não realizou corridas."
+						}) : myDriverRides.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-2xl border border-neutral-200 p-3.5 text-xs space-y-1",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "flex items-center justify-between font-bold text-neutral-950",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+										r.category.toUpperCase(),
+										" · ",
+										r.status
+									] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "font-mono-num text-emerald-700",
+										children: formatBRL(r.final_fare ?? r.estimated_fare)
+									})]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-neutral-600 truncate",
+									children: ["De: ", r.origin_address]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+									className: "text-neutral-900 font-medium truncate",
+									children: ["Para: ", r.destination_address]
+								})
+							]
+						}, r.id))
+					})]
+				})
+			}),
+			settingsOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AccountSettingsModal, {
+				currentUser,
+				onUserUpdated,
+				onAccountDeleted: onLogout,
+				onClose: () => setSettingsOpen(false)
+			}),
 			chatOpen && activeRide && activeRide.passenger && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RideChatModal, {
 				rideId: activeRide.id,
 				currentUser,
@@ -22192,9 +23015,10 @@ var QUICK_DESTINATIONS = [
 		address: "Estação da Luz · Bom Retiro"
 	}
 ];
-var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRide, onLoadMessages, onRideUpsert, onLogout }) => {
+var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRide, onUserUpdated, onLoadMessages, onRideUpsert, onLogout }) => {
 	const [menuOpen, setMenuOpen] = (0, import_react.useState)(false);
 	const [historyOpen, setHistoryOpen] = (0, import_react.useState)(false);
+	const [settingsOpen, setSettingsOpen] = (0, import_react.useState)(false);
 	const [origin, setOrigin] = (0, import_react.useState)(DEFAULT_ORIGIN);
 	const [destination, setDestination] = (0, import_react.useState)(null);
 	const [originQuery, setOriginQuery] = (0, import_react.useState)(DEFAULT_ORIGIN.address);
@@ -22207,7 +23031,8 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 	const [distanceKm, setDistanceKm] = (0, import_react.useState)(0);
 	const [durationMin, setDurationMin] = (0, import_react.useState)(0);
 	const [category, setCategory] = (0, import_react.useState)("pop");
-	const [paymentMethod, setPaymentMethod] = (0, import_react.useState)("pix");
+	const [paymentMethod, setPaymentMethod] = (0, import_react.useState)(currentUser.preferred_payment || "pix");
+	const [deliveryNotes, setDeliveryNotes] = (0, import_react.useState)("");
 	const [submitting, setSubmitting] = (0, import_react.useState)(false);
 	const [errorMsg, setErrorMsg] = (0, import_react.useState)(null);
 	const [chatOpen, setChatOpen] = (0, import_react.useState)(false);
@@ -22350,7 +23175,8 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 					destination_address: destination.address,
 					destination_lat: destination.lat,
 					destination_lng: destination.lng,
-					distance_km: distanceKm
+					distance_km: distanceKm,
+					delivery_notes: category === "delivery" ? deliveryNotes : null
 				})
 			});
 			const data = await res.json();
@@ -22358,6 +23184,7 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 				setErrorMsg(data.error || "Erro ao solicitar corrida.");
 				return;
 			}
+			setDeliveryNotes("");
 			onRideUpsert(data.ride);
 		} catch {
 			setErrorMsg("Falha de rede ao chamar motorista.");
@@ -22435,7 +23262,7 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 								children: "Para onde vamos?"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								className: "text-xs font-semibold text-neutral-500",
-								children: onlineDrivers.length > 0 ? `${onlineDrivers.length} motorista${onlineDrivers.length > 1 ? "s" : ""} online` : "Mapa ao vivo"
+								children: onlineDrivers.length > 0 ? `${onlineDrivers.length} parceiro${onlineDrivers.length > 1 ? "s" : ""} online` : "Mapa ao vivo"
 							})]
 						}),
 						errorMsg && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -22455,7 +23282,7 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 											value: originQuery,
 											onFocus: () => setActiveSearchField("origin"),
 											onChange: (e) => setOriginQuery(e.target.value),
-											placeholder: "Local de embarque",
+											placeholder: "Local de embarque / coleta",
 											className: "min-h-[38px] flex-1 bg-transparent text-sm font-medium text-neutral-900 outline-none"
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
@@ -22543,8 +23370,45 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 							})]
 						}),
 						!destination ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "mt-4",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "mt-4 space-y-3",
+							children: [(currentUser.home_address || currentUser.work_address) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "grid grid-cols-2 gap-2",
+								children: [currentUser.home_address && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										setDestination(currentUser.home_address);
+										setDestQuery(currentUser.home_address.address);
+									},
+									className: "flex min-h-[46px] items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 text-left hover:border-neutral-950 transition",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(House, { className: "h-4 w-4 shrink-0 text-neutral-950" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "min-w-0",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "block text-xs font-extrabold text-neutral-950",
+											children: "Casa"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "block text-[10px] text-neutral-500 truncate",
+											children: currentUser.home_address.address
+										})]
+									})]
+								}), currentUser.work_address && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										setDestination(currentUser.work_address);
+										setDestQuery(currentUser.work_address.address);
+									},
+									className: "flex min-h-[46px] items-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 text-left hover:border-neutral-950 transition",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Briefcase, { className: "h-4 w-4 shrink-0 text-neutral-950" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "min-w-0",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "block text-xs font-extrabold text-neutral-950",
+											children: "Trabalho"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "block text-[10px] text-neutral-500 truncate",
+											children: currentUser.work_address.address
+										})]
+									})]
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "text-xs font-bold text-neutral-500 mb-2",
 								children: "Destinos sugeridos"
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -22562,12 +23426,12 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 										children: qd.address
 									})]
 								}, qd.address))
-							})]
+							})] })]
 						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "mt-3 flex items-center justify-between text-xs text-neutral-600 px-1",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-									"Distância estimada:",
+									"Distância:",
 									" ",
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", {
 										className: "text-neutral-950 font-mono-num",
@@ -22610,6 +23474,13 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 									}, cat.category);
 								})
 							}),
+							category === "delivery" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "text",
+								value: deliveryNotes,
+								onChange: (e) => setDeliveryNotes(e.target.value),
+								placeholder: "Detalhes do pacote ou destinatário (opcional)",
+								className: "mt-2.5 min-h-[42px] w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs outline-none focus:border-neutral-950"
+							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "mt-3 grid grid-cols-3 gap-2",
 								children: [
@@ -22647,7 +23518,7 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 								onClick: handleRequestRide,
 								disabled: submitting,
 								className: "mt-4 min-h-[52px] w-full rounded-2xl bg-[#FFCC00] text-base font-extrabold text-neutral-950 shadow-md hover:bg-[#f5c400] active:scale-[0.98] transition disabled:opacity-50",
-								children: submitting ? "Solicitando..." : "Chamar Corrida Agora"
+								children: submitting ? "Solicitando..." : category === "delivery" ? "Solicitar Entrega Rápida" : "Chamar Corrida Agora"
 							})
 						] })
 					] }) : activeRide.status === "searching" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -22660,13 +23531,13 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "absolute inset-0 rounded-full bg-[#FFCC00]/40 animate-radar-ring-delayed" }),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 										className: "relative flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFCC00] shadow-lg",
-										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Car, { className: "h-7 w-7" })
+										children: activeRide.category === "delivery" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Package, { className: "h-7 w-7" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Car, { className: "h-7 w-7" })
 									})
 								]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 								className: "mt-4 font-display text-lg font-extrabold text-neutral-950",
-								children: "Procurando motorista..."
+								children: activeRide.category === "delivery" ? "Procurando entregador..." : "Procurando motorista..."
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
 								className: "mt-1 text-xs text-neutral-600",
@@ -22700,9 +23571,9 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 									className: "text-xs font-bold text-amber-700",
 									children: [
-										activeRide.status === "accepted" && "Motorista a caminho do embarque",
-										activeRide.status === "arrived" && "Motorista chegou no local de embarque!",
-										activeRide.status === "in_progress" && "Em viagem para o destino"
+										activeRide.status === "accepted" && (activeRide.category === "delivery" ? "Entregador a caminho da coleta" : "Motorista a caminho do embarque"),
+										activeRide.status === "arrived" && (activeRide.category === "delivery" ? "Entregador chegou para retirar o pacote!" : "Motorista chegou no local de embarque!"),
+										activeRide.status === "in_progress" && (activeRide.category === "delivery" ? "Pacote em rota de entrega" : "Em viagem para o destino")
 									]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 									className: "font-display text-lg font-extrabold text-neutral-950",
@@ -22724,10 +23595,10 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 									className: "flex items-center gap-2.5",
 									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "h-5 w-5 text-neutral-950 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "text-xs font-extrabold text-neutral-950",
-										children: "PIN de segurança"
+										children: activeRide.category === "delivery" ? "PIN de Coleta e Entrega" : "PIN de segurança"
 									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "text-[11px] text-neutral-700",
-										children: "Informe ao motorista ao embarcar"
+										children: activeRide.category === "delivery" ? "Valida a retirada e a entrega final" : "Informe ao motorista ao embarcar"
 									})] })]
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "rounded-xl bg-neutral-950 px-3.5 py-1.5 font-mono-num text-xl font-extrabold tracking-widest text-[#FFCC00]",
@@ -22823,23 +23694,35 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "mt-6 space-y-2 flex-1",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-								type: "button",
-								onClick: () => {
-									setHistoryOpen(true);
-									setMenuOpen(false);
-								},
-								className: "flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3.5 text-sm font-bold text-neutral-800 hover:bg-neutral-100",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(History, { className: "h-5 w-5 text-neutral-600" }),
-									"Atividade e Corridas (",
-									myRides.length,
-									")"
-								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								className: "pt-2",
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { variant: "menu" })
-							})]
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										setHistoryOpen(true);
+										setMenuOpen(false);
+									},
+									className: "flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3.5 text-sm font-bold text-neutral-800 hover:bg-neutral-100",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(History, { className: "h-5 w-5 text-neutral-600" }),
+										"Histórico de Corridas (",
+										myRides.length,
+										")"
+									]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => {
+										setSettingsOpen(true);
+										setMenuOpen(false);
+									},
+									className: "flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3.5 text-sm font-bold text-neutral-800 hover:bg-neutral-100",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Settings, { className: "h-5 w-5 text-neutral-600" }), "Configurações, Endereços e LGPD"]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "pt-2",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { variant: "menu" })
+								})
+							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							type: "button",
@@ -22861,7 +23744,7 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 						className: "flex items-center justify-between pb-3 border-b border-neutral-100",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 							className: "font-display text-lg font-extrabold text-neutral-950",
-							children: "Suas Corridas"
+							children: "Histórico de Viagens e Entregas"
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "button",
 							onClick: () => setHistoryOpen(false),
@@ -22872,7 +23755,7 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 						className: "mt-3 flex-1 overflow-y-auto space-y-3",
 						children: myRides.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "py-8 text-center text-sm text-neutral-500",
-							children: "Você ainda não realizou corridas."
+							children: "Você ainda não realizou corridas ou entregas."
 						}) : myRides.map((r) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "rounded-2xl border border-neutral-200 p-3.5 text-xs space-y-1",
 							children: [
@@ -22899,6 +23782,12 @@ var PassengerView = ({ currentUser, rides, pricing, onlineDrivers, messagesByRid
 						}, r.id))
 					})]
 				})
+			}),
+			settingsOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AccountSettingsModal, {
+				currentUser,
+				onUserUpdated,
+				onAccountDeleted: onLogout,
+				onClose: () => setSettingsOpen(false)
 			}),
 			chatOpen && activeRide && activeRide.driver && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RideChatModal, {
 				rideId: activeRide.id,
@@ -23146,6 +24035,7 @@ function App() {
 		pricing,
 		onlineDrivers,
 		messagesByRide,
+		onUserUpdated: handleUserUpdated,
 		onLoadMessages: loadRideMessages,
 		onRideUpsert: upsertRide,
 		onLogout: handleLogout

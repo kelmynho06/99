@@ -10,6 +10,7 @@ import {
   Lock,
   Mail,
   MapPin,
+  Package,
   Phone,
   ShieldCheck,
   Upload,
@@ -48,7 +49,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const [password, setPassword] = useState('');
 
   // Driver specific fields
-  const [vehicleType, setVehicleType] = useState<'car' | 'moto'>('car');
+  const [vehicleType, setVehicleType] = useState<'car' | 'moto' | 'delivery'>('car');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
@@ -462,11 +463,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                     <span>Documentação do Motorista & Veículo</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setVehicleType('car')}
-                      className={`min-h-[44px] flex items-center justify-center gap-2 rounded-xl text-xs font-bold border transition ${
+                      className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'car'
                           ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
                           : 'bg-white text-neutral-700 border-neutral-200'
@@ -477,13 +478,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                     <button
                       type="button"
                       onClick={() => setVehicleType('moto')}
-                      className={`min-h-[44px] flex items-center justify-center gap-2 rounded-xl text-xs font-bold border transition ${
+                      className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'moto'
                           ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
                           : 'bg-white text-neutral-700 border-neutral-200'
                       }`}
                     >
                       <Bike className="h-4 w-4" /> Moto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVehicleType('delivery')}
+                      className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
+                        vehicleType === 'delivery'
+                          ? 'bg-neutral-950 text-[#FFCC00] border-neutral-950'
+                          : 'bg-white text-neutral-700 border-neutral-200'
+                      }`}
+                    >
+                      <Package className="h-4 w-4" /> Entrega
                     </button>
                   </div>
 
