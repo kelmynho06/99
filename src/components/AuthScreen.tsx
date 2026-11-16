@@ -17,6 +17,7 @@ import {
   User,
 } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
+import { logAuditEvent } from '../lib/audit';
 import { resolveBrandLogo } from '../lib/brandAssets';
 import {
   compressImageFileToDataUrl,
@@ -151,6 +152,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       }
 
       if (result.user) {
+        void logAuditEvent({
+          user: result.user,
+          event_type: 'register',
+          description: `Nova conta cadastrada (${result.user.role})`,
+        });
         onAuthenticated(result.user);
       }
     } catch (err) {
@@ -161,7 +167,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-neutral-100 flex flex-col lg:flex-row">
+    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 flex flex-col lg:flex-row">
       {/* Brand showcase column */}
       <div
         className="px-6 py-8 lg:w-[44%] lg:px-12 lg:py-12 flex flex-col justify-between"
@@ -218,9 +224,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       {/* Form column */}
       <div className="flex-1 px-4 py-6 sm:px-8 lg:px-14 lg:py-10 flex items-start lg:items-center justify-center overflow-y-auto">
-        <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-sm border border-neutral-200/80">
+        <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-neutral-900 p-6 sm:p-8 shadow-sm border border-neutral-200/80 dark:border-neutral-800">
           {/* Segmented mode switch */}
-          <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-neutral-100 p-1.5">
+          <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-1.5">
             <button
               type="button"
               onClick={() => {
@@ -230,7 +236,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               className={`min-h-[44px] rounded-xl text-sm font-bold transition ${
                 mode === 'login'
                   ? 'bg-neutral-950 text-[#FFD100] shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-950'
+                  : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white'
               }`}
             >
               Entrar na conta
@@ -244,7 +250,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               className={`min-h-[44px] rounded-xl text-sm font-bold transition ${
                 mode === 'register'
                   ? 'bg-neutral-950 text-[#FFD100] shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-950'
+                  : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white'
               }`}
             >
               Criar cadastro
@@ -252,13 +258,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
 
           {error && (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            <div className="mt-4 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-300">
               {error}
             </div>
           )}
 
           {infoNotice && (
-            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            <div className="mt-4 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm font-medium text-emerald-800 dark:text-emerald-200">
               {infoNotice}
             </div>
           )}
@@ -266,7 +272,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           {mode === 'login' ? (
             <form onSubmit={handleLogin} className="mt-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5">E-mail</label>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">E-mail</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                   <input
@@ -275,13 +281,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     placeholder="seu@email.com"
-                    className="min-h-[48px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 pl-10 pr-4 text-sm outline-none focus:border-neutral-950 focus:bg-white transition"
+                    className="min-h-[48px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-4 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900 transition"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1.5">Senha</label>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">Senha</label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                   <input
@@ -290,12 +296,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="Digite sua senha"
-                    className="min-h-[48px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 pl-10 pr-12 text-sm outline-none focus:border-neutral-950 focus:bg-white transition"
+                    className="min-h-[48px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-12 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900 transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center text-neutral-500"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center text-neutral-500 dark:text-neutral-400"
                     aria-label="Mostrar senha"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -311,7 +317,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 {loading ? 'Entrando...' : 'Entrar'}
               </button>
 
-              <p className="text-center text-xs text-neutral-500 pt-2">
+              <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 pt-2">
                 Ainda não possui conta?{' '}
                 <button
                   type="button"
@@ -319,7 +325,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     setMode('register');
                     setError(null);
                   }}
-                  className="font-extrabold text-neutral-950 underline"
+                  className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                 >
                   Criar cadastro agora
                 </button>
@@ -329,7 +335,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <form onSubmit={handleRegister} className="mt-5 space-y-4">
               {/* Dual Profile Selector */}
               <div>
-                <p className="text-xs font-bold text-neutral-700 mb-2">
+                <p className="text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-2">
                   Qual é o objetivo da sua conta?
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -338,19 +344,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     onClick={() => setAccountGoal('passenger')}
                     className={`min-h-[68px] rounded-2xl border-2 p-3 text-left transition ${
                       accountGoal === 'passenger'
-                        ? 'border-neutral-950 bg-[#FFD100]/20'
-                        : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        ? 'border-neutral-950 dark:border-[#FFD100] bg-[#FFD100]/20'
+                        : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:border-neutral-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-neutral-950">
+                      <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
                         Opção A · Passageiro
                       </span>
                       {accountGoal === 'passenger' && (
-                        <CheckCircle2 className="h-4 w-4 text-neutral-950 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 text-neutral-950 dark:text-[#FFD100] shrink-0" />
                       )}
                     </div>
-                    <p className="mt-1 text-[11px] text-neutral-600">
+                    <p className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-300">
                       Quero Viajar / Pedir Corridas (acesso imediato)
                     </p>
                   </button>
@@ -360,19 +366,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     onClick={() => setAccountGoal('driver')}
                     className={`min-h-[68px] rounded-2xl border-2 p-3 text-left transition ${
                       accountGoal === 'driver'
-                        ? 'border-neutral-950 bg-[#FFD100]/20'
-                        : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        ? 'border-neutral-950 dark:border-[#FFD100] bg-[#FFD100]/20'
+                        : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:border-neutral-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-neutral-950">
+                      <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
                         Opção B · Motorista / Entregador
                       </span>
                       {accountGoal === 'driver' && (
-                        <CheckCircle2 className="h-4 w-4 text-neutral-950 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 text-neutral-950 dark:text-[#FFD100] shrink-0" />
                       )}
                     </div>
-                    <p className="mt-1 text-[11px] text-neutral-600">
+                    <p className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-300">
                       Quero Dirigir / Fazer Entregas (análise CNH/CRLV)
                     </p>
                   </button>
@@ -382,7 +388,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {/* Basic Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Nome completo</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">Nome completo</label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                     <input
@@ -391,13 +397,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Ex: Lucas Pereira Silva"
-                      className="min-h-[46px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 pl-10 pr-3 text-sm outline-none focus:border-neutral-950 focus:bg-white"
+                      className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-3 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                     Telefone / WhatsApp
                   </label>
                   <div className="relative">
@@ -408,13 +414,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="(11) 99999-0000"
-                      className="min-h-[46px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 pl-10 pr-3 text-sm outline-none focus:border-neutral-950 focus:bg-white"
+                      className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-3 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">CPF</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">CPF</label>
                   <div className="relative">
                     <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                     <input
@@ -423,25 +429,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={cpf}
                       onChange={(e) => setCpf(e.target.value)}
                       placeholder="000.000.000-00"
-                      className="min-h-[46px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 pl-10 pr-3 text-sm font-mono-num outline-none focus:border-neutral-950 focus:bg-white"
+                      className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-3 text-sm font-mono-num text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">E-mail</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">E-mail</label>
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="voce@email.com"
-                    className="min-h-[46px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-3.5 text-sm outline-none focus:border-neutral-950 focus:bg-white"
+                    className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3.5 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Senha</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">Senha</label>
                   <input
                     type="password"
                     required
@@ -449,16 +455,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Mínimo 6 dígitos"
-                    className="min-h-[46px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-3.5 text-sm outline-none focus:border-neutral-950 focus:bg-white"
+                    className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3.5 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                   />
                 </div>
               </div>
 
               {/* Driver Extra Requirements */}
               {accountGoal === 'driver' && (
-                <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-                  <div className="flex items-center gap-2 text-xs font-extrabold text-neutral-950">
-                    <FileText className="h-4 w-4 text-amber-600" />
+                <div className="space-y-3 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/30 p-4">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-neutral-950 dark:text-amber-200">
+                    <FileText className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                     <span>Documentação do Motorista & Veículo</span>
                   </div>
 
@@ -469,7 +475,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'car'
                           ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
-                          : 'bg-white text-neutral-700 border-neutral-200'
+                          : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
                       <Car className="h-4 w-4" /> Carro
@@ -480,7 +486,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'moto'
                           ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
-                          : 'bg-white text-neutral-700 border-neutral-200'
+                          : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
                       <Bike className="h-4 w-4" /> Moto
@@ -491,7 +497,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-bold border transition ${
                         vehicleType === 'delivery'
                           ? 'bg-neutral-950 text-[#FFD100] border-neutral-950'
-                          : 'bg-white text-neutral-700 border-neutral-200'
+                          : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
                       <Package className="h-4 w-4" /> Entregador
@@ -505,7 +511,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={vehicleModel}
                       onChange={(e) => setVehicleModel(e.target.value)}
                       placeholder="Modelo (Ex: Onix 1.0)"
-                      className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none focus:border-neutral-950"
+                      className="min-h-[44px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                     <input
                       type="text"
@@ -513,7 +519,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={vehiclePlate}
                       onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
                       placeholder="Placa (ABC-1D23)"
-                      className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 text-xs font-mono-num uppercase outline-none focus:border-neutral-950"
+                      className="min-h-[44px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-mono-num uppercase text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                     <input
                       type="text"
@@ -521,12 +527,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={vehicleColor}
                       onChange={(e) => setVehicleColor(e.target.value)}
                       placeholder="Cor (Ex: Branco)"
-                      className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none focus:border-neutral-950"
+                      className="min-h-[44px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                       Sua Chave Pix para receber repasses do Admin
                     </label>
                     <input
@@ -535,12 +541,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       value={pixKey}
                       onChange={(e) => setPixKey(e.target.value)}
                       placeholder="CPF, e-mail, telefone ou chave aleatória"
-                      className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none focus:border-neutral-950"
+                      className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-white p-3 text-center hover:border-neutral-950 transition">
+                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 p-3 text-center hover:border-neutral-950 transition">
                       {cnhPreview ? (
                         <img
                           src={cnhPreview}
@@ -550,11 +556,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         />
                       ) : (
                         <>
-                          <Upload className="h-5 w-5 text-neutral-500" />
-                          <span className="mt-1.5 text-[11px] font-bold text-neutral-800">
+                          <Upload className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+                          <span className="mt-1.5 text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
                             Foto da CNH
                           </span>
-                          <span className="text-[10px] text-neutral-500">Toque para enviar</span>
+                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400">Toque para enviar</span>
                         </>
                       )}
                       <input
@@ -565,7 +571,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       />
                     </label>
 
-                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-white p-3 text-center hover:border-neutral-950 transition">
+                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 p-3 text-center hover:border-neutral-950 transition">
                       {crlvPreview ? (
                         <img
                           src={crlvPreview}
@@ -575,11 +581,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         />
                       ) : (
                         <>
-                          <Upload className="h-5 w-5 text-neutral-500" />
-                          <span className="mt-1.5 text-[11px] font-bold text-neutral-800">
+                          <Upload className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+                          <span className="mt-1.5 text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
                             Documento CRLV
                           </span>
-                          <span className="text-[10px] text-neutral-500">Toque para enviar</span>
+                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400">Toque para enviar</span>
                         </>
                       )}
                       <input
@@ -594,7 +600,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               )}
 
               {/* Terms, Security & Privacy Acceptance Box */}
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2">
+              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-3.5 space-y-2">
                 <label className="flex items-start gap-2.5 cursor-pointer">
                   <input
                     type="checkbox"
@@ -602,12 +608,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     onChange={(e) => setAcceptedTerms(e.target.checked)}
                     className="mt-0.5 h-5 w-5 shrink-0 rounded border-neutral-300 accent-neutral-950"
                   />
-                  <span className="text-xs text-neutral-700 leading-relaxed">
+                  <span className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
                     <strong>Li e aceito</strong> os{' '}
                     <button
                       type="button"
                       onClick={() => setLegalModalTab('terms')}
-                      className="font-extrabold text-neutral-950 underline"
+                      className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                     >
                       Termos de Uso
                     </button>
@@ -615,7 +621,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => setLegalModalTab('security')}
-                      className="font-extrabold text-neutral-950 underline"
+                      className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                     >
                       Termo de Segurança e PIN
                     </button>{' '}
@@ -623,7 +629,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => setLegalModalTab('privacy')}
-                      className="font-extrabold text-neutral-950 underline"
+                      className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                     >
                       Política de Privacidade (LGPD)
                     </button>
@@ -634,7 +640,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => setLegalModalTab('terms')}
-                    className="text-[11px] font-extrabold text-neutral-950 underline"
+                    className="text-[11px] font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                   >
                     Abrir documento completo e aceitar
                   </button>

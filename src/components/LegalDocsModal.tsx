@@ -22,18 +22,18 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[1350] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="flex h-[90vh] sm:h-auto sm:max-h-[88vh] w-full max-w-2xl flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
+      <div className="flex h-[90vh] sm:h-auto sm:max-h-[88vh] w-full max-w-2xl flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-lg font-extrabold text-neutral-950">
+              <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                 Central Jurídica, Segurança e Privacidade
               </h3>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {siteName} Mobilidade · Conformidade LGPD (Lei 13.709/2018)
               </p>
             </div>
@@ -41,7 +41,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
             aria-label="Fechar documentos legais"
           >
             <X className="h-5 w-5" />
@@ -49,7 +49,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex gap-1.5 overflow-x-auto border-b border-neutral-100 bg-neutral-50 px-5 py-2.5 no-scrollbar">
+        <div className="flex gap-1.5 overflow-x-auto border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-5 py-2.5 no-scrollbar">
           {[
             { id: 'terms' as LegalDocTab, label: 'Termos de Uso', icon: FileText },
             { id: 'privacy' as LegalDocTab, label: 'Privacidade (LGPD)', icon: Lock },
@@ -65,8 +65,8 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
                 onClick={() => setActiveTab(item.id)}
                 className={`flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-xs font-bold whitespace-nowrap transition ${
                   active
-                    ? 'bg-neutral-950 text-[#FFD100]'
-                    : 'bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100'
+                    ? 'bg-neutral-950 text-[#FFD100] dark:bg-[#FFD100] dark:text-neutral-950'
+                    : 'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -77,10 +77,10 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
         </div>
 
         {/* Legal Content */}
-        <div className="flex-1 overflow-y-auto p-5 text-xs sm:text-sm text-neutral-700 space-y-4 leading-relaxed">
+        <div className="flex-1 overflow-y-auto p-5 text-xs sm:text-sm text-neutral-700 dark:text-neutral-300 space-y-4 leading-relaxed">
           {activeTab === 'terms' && (
             <div className="space-y-3">
-              <h4 className="font-display text-base font-extrabold text-neutral-950">
+              <h4 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
                 1. Termos e Condições Gerais de Uso — {siteName}
               </h4>
               <p>
@@ -96,11 +96,11 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
               </p>
               <p>
                 <strong>1.2. Tarifas, Pagamentos e Débitos Pendentes:</strong> O usuário compromete-se
-                a quitar o valor combinado da corrida ou entrega via Pix Oficial da plataforma ou em
-                Dinheiro ao motorista/entregador no destino. Em caso de não pagamento relatado e
-                confirmado pela auditoria administrativa, o saldo devedor (&ldquo;Corrida não
-                paga&rdquo;) será lançado na conta do cliente e somado automaticamente ao valor da
-                próxima corrida até sua quitação integral.
+                a quitar o valor combinado da corrida ou entrega via Saldo do App, Pix Oficial da
+                plataforma ou em Dinheiro ao motorista/entregador no destino. Em caso de não
+                pagamento relatado e confirmado pela auditoria administrativa, o saldo devedor
+                (&ldquo;Corrida não paga&rdquo;) será lançado na conta do cliente e somado
+                automaticamente ao valor da próxima corrida até sua quitação integral.
               </p>
               <p>
                 <strong>1.3. Conferência Pix:</strong> Para maior segurança de ambas as partes,
@@ -117,7 +117,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
 
           {activeTab === 'privacy' && (
             <div className="space-y-3">
-              <h4 className="font-display text-base font-extrabold text-neutral-950">
+              <h4 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
                 2. Política de Privacidade e Proteção de Dados (LGPD)
               </h4>
               <p>
@@ -138,8 +138,9 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
               <p>
                 <strong>2.3. Permissões do Dispositivo:</strong> Solicitamos acesso à Localização
                 (inclusive em segundo plano para motoristas em rota), Notificações pop-up, Câmera
-                (para comprovação fotográfica de entregas e documentos) e Galeria de Fotos (para
-                avatar e documentos). Você pode gerenciar essas permissões a qualquer momento nas
+                e Galeria de Fotos exclusivamente para envio de foto de perfil e documentos
+                obrigatórios de cadastro (CNH/CRLV), além de instruções para modo irrestrito de
+                bateria no Android. Você pode gerenciar essas permissões a qualquer momento nas
                 configurações do app ou do Android.
               </p>
               <p>
@@ -152,7 +153,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
 
           {activeTab === 'security' && (
             <div className="space-y-3">
-              <h4 className="font-display text-base font-extrabold text-neutral-950">
+              <h4 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
                 3. Termo de Segurança Operacional, Código PIN e Entregas
               </h4>
               <p>
@@ -162,10 +163,11 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
                 garantindo o embarque correto e seguro. A finalização no destino não exige PIN.
               </p>
               <p>
-                <strong>3.2. Entregas com Foto e PIN Opcional:</strong> Ao solicitar uma entrega de
-                pacotes (Moto ou Carro), o remetente pode escolher se exige ou não o código PIN de
-                segurança. Durante a conclusão da entrega, o entregador registra uma foto
-                comprobatória do pacote entregue no destino como proteção contra extravios.
+                <strong>3.2. Entregas Seguras com PIN Opcional:</strong> Ao solicitar uma entrega de
+                pacotes (Moto ou Carro), o remetente pode escolher se exige ou não o código PIN de 4
+                dígitos de segurança. Quando habilitado, o entregador valida o PIN para confirmar a
+                coleta e a entrega segura ao destinatário, sem necessidade de registro fotográfico do
+                pacote.
               </p>
               <p>
                 <strong>3.3. Acompanhamento GPS e Guia por Voz:</strong> Tanto o motorista quanto o
@@ -177,7 +179,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
 
           {activeTab === 'cookies' && (
             <div className="space-y-3">
-              <h4 className="font-display text-base font-extrabold text-neutral-950">
+              <h4 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
                 4. Política de Cookies e Armazenamento Local (Web & APK)
               </h4>
               <p>
@@ -191,8 +193,8 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
                   o Supabase Auth sem exigir login repetitivo.
                 </li>
                 <li>
-                  <strong>Preferências de Voz e Áudio:</strong> Salva se você prefere manter guia por
-                  voz, toques sonoros e notificações ativados ou silenciados.
+                  <strong>Preferências de Idioma, Tema, Voz e Áudio:</strong> Salva o idioma
+                  escolhido, tema claro/escuro/automático (18h–06h), toques sonoros e guia por voz.
                 </li>
                 <li>
                   <strong>Cache Offline PWA:</strong> Armazena ícones, estilos e mapa base para que
@@ -204,11 +206,11 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-4 flex flex-col sm:flex-row items-center justify-end gap-2.5">
+        <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-5 py-4 flex flex-col sm:flex-row items-center justify-end gap-2.5">
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[44px] w-full sm:w-auto rounded-2xl border border-neutral-300 bg-white px-5 text-xs font-bold text-neutral-800"
+            className="min-h-[44px] w-full sm:w-auto rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-5 text-xs font-bold text-neutral-800 dark:text-neutral-200"
           >
             Fechar
           </button>

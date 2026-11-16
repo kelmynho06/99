@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   Ban,
   Bike,
-  Camera,
   Car,
   Check,
   CheckCircle2,
@@ -10,6 +10,7 @@ import {
   Copy,
   Database,
   DollarSign,
+  DownloadCloud,
   Eye,
   FileText,
   Image as ImageIcon,
@@ -20,6 +21,7 @@ import {
   Package,
   Plus,
   Power,
+  Printer,
   QrCode,
   Radio,
   RefreshCw,
@@ -35,21 +37,25 @@ import {
   X,
 } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
+import { fetchAuditLogsFromSupabase } from '../lib/audit';
 import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import {
+  adminApproveWalletDeposit,
   adminAssignClientDebt,
   adminConfirmPixRide,
   adminCreatePlatformEvent,
   adminDeletePlatformEvent,
   adminDeleteUserAccount,
   adminPayDriverPix,
+  adminRejectWalletDeposit,
   adminReviewDriver,
   adminSavePlatformConfig,
   adminSavePricing,
   adminSettleDispute,
   adminTogglePlatformEvent,
   adminUpdateUserStatus,
+  adminUpdateUserWalletBalance,
   cancelRide,
   DEFAULT_PLATFORM_CONFIG,
   DEFAULT_PRICING_LIST,
@@ -58,16 +64,23 @@ import {
   resolveDocumentDisplayUrl,
   uploadPlatformAssetFile,
 } from '../lib/mobilityApi';
+import { CURRENT_APP_VERSION } from '../lib/otaUpdate';
+import { isDateInPeriod } from '../lib/periodFilter';
 import { playSoundCue, syncPlatformSounds } from '../lib/sound';
 import { supabase } from '../lib/supabase';
 import type {
+  AuditLogEntry,
+  PeriodFilter,
   PlatformConfig,
   PlatformEvent,
   PricingSetting,
   Ride,
   UserProfile,
+  WalletDeposit,
   WalletTransaction,
 } from '../types/mobility';
+import { AdminAuditTab } from './AdminAuditTab';
+import { AdminSettlementReceiptModal } from './AdminSettlementReceiptModal';
 import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
@@ -89,6 +102,7 @@ type AdminTab =
   | 'payments'
   | 'events'
   | 'pricing'
+  | 'audit'
   | 'infra';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -102,10 +116,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [rides, setRides] = useState<Ride[]>([]);
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [deposits, setDeposits] = useState<WalletDeposit[]>([]);
   const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(
     initialPlatformConfig ?? DEFAULT_PLATFORM_CONFIG
   );
   const [platformEvents, setPlatformEvents] = useState<PlatformEvent[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
   const [migrationSql] = useState<string>(migrationSqlRaw);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -113,6 +129,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [driverFilter, setDriverFilter] = useState<'all' | 'pending' | 'active' | 'rejected' | 'suspended'>('all');
   const [delivererFilter, setDelivererFilter] = useState<'all' | 'pending' | 'active' | 'rejected' | 'suspended'>('all');
   const [rideFilter, setRideFilter] = useState<'all' | 'active' | 'completed' | 'disputed' | 'cancelled'>('all');
+  const [settlementPeriod, setSettlementPeriod] = useState<PeriodFilter>('all');
 
   const [inspectDriver, setInspectDriver] = useState<UserProfile | null>(null);
   const [resolvedCnhUrl, setResolvedCnhUrl] = useState<string>('');
@@ -120,16 +137,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [rejectionReason, setRejectionReason] = useState('');
 
   const [payoutModalDriver, setPayoutModalDriver] = useState<UserProfile | null>(null);
+  const [receiptModalDriver, setReceiptModalDriver] = useState<UserProfile | null>(null);
   const [payoutAmount, setPayoutAmount] = useState<string>('');
   const [payoutNote, setPayoutNote] = useState<string>('');
 
   const [confirmingPixRideId, setConfirmingPixRideId] = useState<string | null>(null);
+  const [processingDepositId, setProcessingDepositId] = useState<string | null>(null);
   const [debtModalClient, setDebtModalClient] = useState<UserProfile | null>(null);
   const [debtAmountInput, setDebtAmountInput] = useState<string>('');
   const [debtNoteInput, setDebtNoteInput] = useState<string>('Corrida não paga');
   const [savingDebt, setSavingDebt] = useState(false);
-  const [inspectPhotoUrl, setInspectPhotoUrl] = useState<string | null>(null);
-  const [resolvedInspectPhotoUrl, setResolvedInspectPhotoUrl] = useState<string>('');
+
+  const [balanceModalUser, setBalanceModalUser] = useState<UserProfile | null>(null);
+  const [balanceMode, setBalanceMode] = useState<'set' | 'add' | 'subtract'>('set');
+  const [balanceAmountInput, setBalanceAmountInput] = useState<string>('');
+  const [balanceNoteInput, setBalanceNoteInput] = useState<string>('');
+  const [savingBalance, setSavingBalance] = useState(false);
+
   const [showLegalDocs, setShowLegalDocs] = useState(false);
   const [uploadingAssetKind, setUploadingAssetKind] = useState<string | null>(null);
 
@@ -156,14 +180,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const loadOverview = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [data, events] = await Promise.all([fetchAdminOverview(), fetchPlatformEvents()]);
+      const [data, events, logs] = await Promise.all([
+        fetchAdminOverview(),
+        fetchPlatformEvents(),
+        fetchAuditLogsFromSupabase(300).catch(() => []),
+      ]);
       setPlatformConfig(data.platformConfig);
       syncPlatformSounds(data.platformConfig);
       setUsers(data.users);
       setRides(data.rides);
       setPricing(data.pricing);
       setTransactions(data.transactions);
+      setDeposits(data.deposits);
       setPlatformEvents(events);
+      setAuditLogs(logs);
 
       const firstOnlineWithGps = data.users.find(
         (u) => u.role === 'driver' && u.driver?.is_online && u.driver.current_lat && u.driver.current_lng
@@ -197,6 +227,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           loadOverview();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wallet_deposits' },
+        () => {
+          loadOverview();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => {
+          loadOverview();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -213,14 +257,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     resolveDocumentDisplayUrl(inspectDriver.driver.cnh_url).then(setResolvedCnhUrl);
     resolveDocumentDisplayUrl(inspectDriver.driver.crlv_url).then(setResolvedCrlvUrl);
   }, [inspectDriver]);
-
-  useEffect(() => {
-    if (!inspectPhotoUrl) {
-      setResolvedInspectPhotoUrl('');
-      return;
-    }
-    resolveDocumentDisplayUrl(inspectPhotoUrl).then(setResolvedInspectPhotoUrl);
-  }, [inspectPhotoUrl]);
 
   const passengerDrivers = useMemo(
     () => users.filter((u) => u.role === 'driver' && u.driver?.vehicle_type !== 'delivery'),
@@ -259,7 +295,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       0
     );
     const totalPixPlatform = completed
-      .filter((r) => r.payment_method === 'pix')
+      .filter((r) => r.payment_method === 'pix' || r.payment_method === 'wallet')
       .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
     const totalPendingToDrivers = allDriversAndDeliverers.reduce(
       (acc, d) => acc + (d.wallet_balance || 0),
@@ -305,6 +341,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           (r.payment_method === 'pix' || Boolean(r.pix_declared_at))
       ),
     [rides]
+  );
+
+  const pendingDeposits = useMemo(
+    () => deposits.filter((d) => d.status === 'pending'),
+    [deposits]
+  );
+
+  const reviewedDeposits = useMemo(
+    () => deposits.filter((d) => d.status !== 'pending').slice(0, 15),
+    [deposits]
   );
 
   const filteredRides = useMemo(() => {
@@ -442,6 +488,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleApproveDeposit = async (dep: WalletDeposit) => {
+    setProcessingDepositId(dep.id);
+    try {
+      await adminApproveWalletDeposit(dep);
+      await loadOverview();
+      showToast(
+        `Depósito de ${formatBRL(dep.amount)} creditado no saldo de ${dep.user?.full_name || 'Cliente'}!`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao aprovar depósito Pix.');
+    } finally {
+      setProcessingDepositId(null);
+    }
+  };
+
+  const handleRejectDeposit = async (dep: WalletDeposit) => {
+    setProcessingDepositId(dep.id);
+    try {
+      await adminRejectWalletDeposit(dep.id);
+      await loadOverview();
+      showToast('Solicitação de depósito recusada.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao recusar depósito.');
+    } finally {
+      setProcessingDepositId(null);
+    }
+  };
+
+  const openBalanceModal = (usr: UserProfile) => {
+    setBalanceModalUser(usr);
+    setBalanceMode('set');
+    setBalanceAmountInput(Number(usr.wallet_balance || 0).toFixed(2));
+    setBalanceNoteInput('');
+  };
+
+  const computedPreviewBalance = useMemo(() => {
+    if (!balanceModalUser) return 0;
+    const current = Number(balanceModalUser.wallet_balance || 0);
+    const val = Math.max(0, parseFloat(balanceAmountInput.replace(',', '.')) || 0);
+    if (balanceMode === 'add') return Number((current + val).toFixed(2));
+    if (balanceMode === 'subtract') return Number(Math.max(0, current - val).toFixed(2));
+    return Number(val.toFixed(2));
+  }, [balanceModalUser, balanceMode, balanceAmountInput]);
+
+  const handleSaveUserBalance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!balanceModalUser) return;
+    setSavingBalance(true);
+    try {
+      await adminUpdateUserWalletBalance(
+        balanceModalUser,
+        computedPreviewBalance,
+        balanceNoteInput || undefined
+      );
+      setBalanceModalUser(null);
+      await loadOverview();
+      showToast(
+        `Saldo de ${balanceModalUser.full_name} atualizado para ${formatBRL(computedPreviewBalance)}!`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar saldo do usuário.');
+    } finally {
+      setSavingBalance(false);
+    }
+  };
+
   const handleUploadPlatformAsset = async (
     file: File | undefined,
     kind:
@@ -451,8 +563,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       | 'delivery_moto'
       | 'delivery_car'
       | 'sound_offer'
+      | 'sound_delivery'
       | 'sound_accepted'
       | 'sound_arrived'
+      | 'sound_completed'
+      | 'sound_chat'
+      | 'sound_cancel'
   ) => {
     if (!file) return;
     setUploadingAssetKind(kind);
@@ -465,8 +581,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         delivery_moto: 'vehicle_img_delivery_moto',
         delivery_car: 'vehicle_img_delivery_car',
         sound_offer: 'sound_offer_url',
+        sound_delivery: 'sound_delivery_url',
         sound_accepted: 'sound_accepted_url',
         sound_arrived: 'sound_arrived_url',
+        sound_completed: 'sound_completed_url',
+        sound_chat: 'sound_chat_url',
+        sound_cancel: 'sound_cancel_url',
       };
       const updatedCfg: PlatformConfig = {
         ...platformConfig,
@@ -495,8 +615,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       | 'vehicle_img_delivery_moto'
       | 'vehicle_img_delivery_car'
       | 'sound_offer_url'
+      | 'sound_delivery_url'
       | 'sound_accepted_url'
       | 'sound_arrived_url'
+      | 'sound_completed_url'
+      | 'sound_chat_url'
+      | 'sound_cancel_url'
   ) => {
     const updatedCfg: PlatformConfig = { ...platformConfig, [field]: null };
     setPlatformConfig(updatedCfg);
@@ -765,6 +889,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={() => openBalanceModal(d)}
+                      className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                      title="Editar saldo deste parceiro"
+                    >
+                      <Wallet className="h-3.5 w-3.5" />
+                      Saldo
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setChatTargetUser(d)}
                       className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl border border-neutral-300 bg-white px-2.5 text-xs font-bold text-neutral-900 hover:bg-neutral-100"
                       title="Conversar com este usuário"
@@ -810,21 +943,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
+    <div
+      className={`min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col ${
+        receiptModalDriver ? 'no-print' : ''
+      }`}
+    >
       {/* Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white px-4 sm:px-8 py-3.5">
+      <header className="no-print sticky top-0 z-30 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 sm:px-8 py-3.5">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img
               src={resolveBrandLogo(platformConfig)}
               alt={platformConfig.site_name || 'Velo99'}
-              className="h-10 w-10 rounded-xl object-cover border border-neutral-200 shadow-xs"
+              className="h-10 w-10 rounded-xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
             />
             <div>
-              <h1 className="font-display text-base sm:text-lg font-extrabold text-neutral-950 leading-tight">
+              <h1 className="font-display text-base sm:text-lg font-extrabold text-neutral-950 dark:text-white leading-tight">
                 {platformConfig.site_name || 'Velo99'} · Painel Super Admin
               </h1>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {platformConfig.platform_city} · {currentUser.email}
               </p>
             </div>
@@ -835,7 +972,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               type="button"
               disabled={loadingData}
               onClick={loadOverview}
-              className="flex min-h-[42px] items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-700 hover:bg-neutral-50"
+              className="flex min-h-[42px] items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700"
             >
               <RefreshCw className={`h-4 w-4 ${loadingData ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Atualizar</span>
@@ -843,7 +980,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="flex min-h-[42px] items-center gap-1.5 rounded-xl bg-neutral-950 px-3.5 text-xs font-bold text-[#FFD100]"
+              className="flex min-h-[42px] items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3.5 text-xs font-bold text-[#FFD100] dark:text-neutral-950"
             >
               <LogOut className="h-4 w-4" />
               <span>Sair</span>
@@ -853,49 +990,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </header>
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 rounded-2xl bg-neutral-950 px-4 py-3 text-xs font-bold text-[#FFD100] shadow-xl">
+        <div className="no-print fixed bottom-5 right-5 z-50 rounded-2xl bg-neutral-950 px-4 py-3 text-xs font-bold text-[#FFD100] shadow-xl">
           {toast}
         </div>
       )}
 
       <div className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-8 py-6">
         {/* KPIs */}
-        <div className="mb-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs font-semibold text-neutral-500">Volume Total</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-neutral-950">
+        <div className="no-print mb-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Volume Total</p>
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-neutral-950 dark:text-white">
               {formatBRL(metrics.totalRevenue)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs font-semibold text-neutral-500">Entradas Pix Central</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-emerald-700">
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Entradas Pix / App</p>
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-emerald-700 dark:text-emerald-400">
               {formatBRL(metrics.totalPixPlatform)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs font-semibold text-neutral-500">A Repassar (Pix)</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-amber-600">
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">A Repassar (Pix)</p>
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-amber-600 dark:text-[#FFD100]">
               {formatBRL(metrics.totalPendingToDrivers)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs font-semibold text-neutral-500">Concluídas / Ativas</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-neutral-950">
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Concluídas / Ativas</p>
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-neutral-950 dark:text-white">
               {metrics.completedCount} / {metrics.activeRidesCount}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs font-semibold text-neutral-500">Aprovações Pend.</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-amber-600">
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Aprovações Pend.</p>
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-amber-600 dark:text-[#FFD100]">
               {metrics.pendingApprovalsCount}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs font-semibold text-neutral-500">Disputas Abertas</p>
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Disputas Abertas</p>
             <p
               className={`mt-1 font-mono-num text-xl font-extrabold ${
-                metrics.disputedCount > 0 ? 'text-red-600' : 'text-neutral-950'
+                metrics.disputedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-neutral-950 dark:text-white'
               }`}
             >
               {metrics.disputedCount}
@@ -903,37 +1040,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {awaitingPixRides.length > 0 && (
-          <div className="mb-5 rounded-3xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {(awaitingPixRides.length > 0 || pendingDeposits.length > 0) && (
+          <div className="no-print mb-5 rounded-3xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
                 <Clock className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-xs font-extrabold text-amber-950">
-                  {awaitingPixRides.length}{' '}
-                  {awaitingPixRides.length === 1
-                    ? 'corrida aguardando sua confirmação de Pix'
-                    : 'corridas aguardando sua confirmação de Pix'}
+                <p className="text-xs font-extrabold text-amber-950 dark:text-amber-200">
+                  {awaitingPixRides.length > 0 && (
+                    <>
+                      {awaitingPixRides.length}{' '}
+                      {awaitingPixRides.length === 1 ? 'corrida Pix' : 'corridas Pix'}
+                    </>
+                  )}
+                  {awaitingPixRides.length > 0 && pendingDeposits.length > 0 && ' e '}
+                  {pendingDeposits.length > 0 && (
+                    <>
+                      {pendingDeposits.length}{' '}
+                      {pendingDeposits.length === 1
+                        ? 'depósito de saldo'
+                        : 'depósitos de saldo'}
+                    </>
+                  )}{' '}
+                  aguardando sua confirmação
                 </p>
-                <p className="text-[11px] text-amber-800">
-                  Enquanto você não confirmar o recebimento do Pix, o motorista permanece bloqueado
-                  na tela de finalização.
+                <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                  Confira seu extrato bancário e confirme os Pix recebidos na aba Pagamentos &amp;
+                  Saldos.
                 </p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => setTab('payments')}
-              className="min-h-[42px] shrink-0 rounded-xl bg-neutral-950 px-4 text-xs font-extrabold text-[#FFD100]"
+              className="min-h-[42px] shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
             >
-              Conferir & Confirmar Pix
+              Conferir &amp; Confirmar
             </button>
           </div>
         )}
 
         {/* Separated Admin Management Navigation */}
-        <nav className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        <nav className="no-print flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           {[
             {
               id: 'livemap' as AdminTab,
@@ -962,7 +1111,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             },
             {
               id: 'payments' as AdminTab,
-              label: `Pagamentos & Pix (${awaitingPixRides.length})`,
+              label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length})`,
               icon: Wallet,
             },
             {
@@ -974,6 +1123,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               id: 'pricing' as AdminTab,
               label: 'Tarifas, Marca & Sons',
               icon: Settings,
+            },
+            {
+              id: 'audit' as AdminTab,
+              label: `Auditoria & Dispositivos (${auditLogs.length})`,
+              icon: Activity,
             },
             {
               id: 'infra' as AdminTab,
@@ -990,8 +1144,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() => setTab(item.id)}
                 className={`flex min-h-[44px] shrink-0 items-center gap-2 rounded-2xl px-4 text-xs font-bold transition whitespace-nowrap ${
                   active
-                    ? 'bg-neutral-950 text-[#FFD100] shadow-sm'
-                    : 'bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100'
+                    ? 'bg-neutral-950 text-[#FFD100] dark:bg-[#FFD100] dark:text-neutral-950 shadow-sm'
+                    : 'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -1164,6 +1318,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="px-4 py-3 font-bold">E-mail</th>
                       <th className="px-4 py-3 font-bold">Nota</th>
                       <th className="px-4 py-3 font-bold">Corridas</th>
+                      <th className="px-4 py-3 font-bold">Saldo App</th>
                       <th className="px-4 py-3 font-bold">Pendência</th>
                       <th className="px-4 py-3 font-bold">Status</th>
                       <th className="px-4 py-3 font-bold text-right">Ações</th>
@@ -1195,6 +1350,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <td className="px-4 py-3 font-mono-num">{c.rating_avg.toFixed(2)}</td>
                           <td className="px-4 py-3 font-mono-num font-bold">
                             {clientRides.length}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center rounded-lg px-2 py-1 font-mono-num text-[11px] font-extrabold ${
+                                (c.wallet_balance || 0) > 0
+                                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                                  : 'bg-neutral-100 text-neutral-600'
+                              }`}
+                            >
+                              {formatBRL(c.wallet_balance || 0)}
+                            </span>
                           </td>
                           <td className="px-4 py-3">
                             {debtVal > 0 ? (
@@ -1236,6 +1402,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </div>
                             ) : (
                               <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openBalanceModal(c)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100"
+                                  title="Editar Saldo do App do cliente"
+                                >
+                                  <Wallet className="h-3.5 w-3.5" />
+                                  Editar Saldo
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1364,13 +1539,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               r.payment_status === 'disputed'
                                 ? 'text-red-600'
                                 : r.payment_status === 'paid_pix' ||
+                                  r.payment_status === 'paid_wallet' ||
                                   r.payment_status === 'paid_cash' ||
                                   r.payment_status === 'admin_settled'
                                 ? 'text-emerald-700'
                                 : 'text-amber-700'
                             }`}
                           >
-                            {r.payment_method.toUpperCase()} · {r.payment_status}
+                            {r.payment_method === 'wallet'
+                              ? 'SALDO APP'
+                              : r.payment_method.toUpperCase()}{' '}
+                            · {r.payment_status}
                           </span>
                           {r.dispute_reason && (
                             <p className="text-[11px] text-red-600 truncate max-w-[180px]">
@@ -1384,17 +1563,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="px-4 py-3 font-bold">{r.status}</td>
                         <td className="px-4 py-3 text-right">
                           <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                            {r.delivery_photo_url && (
-                              <button
-                                type="button"
-                                onClick={() => setInspectPhotoUrl(r.delivery_photo_url || null)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-neutral-800 hover:bg-neutral-100"
-                                title="Ver foto de comprovante da entrega"
-                              >
-                                <Camera className="h-3.5 w-3.5" />
-                                Foto Entrega
-                              </button>
-                            )}
                             {r.status === 'completed' &&
                               r.payment_status === 'pending' &&
                               (r.payment_method === 'pix' || Boolean(r.pix_declared_at)) && (
@@ -1523,6 +1691,106 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
+            {/* Solicitações de Depósito de Saldo (Clientes via Pix) */}
+            <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display text-lg font-extrabold text-neutral-950 flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-emerald-600" />
+                    Depósitos de Saldo Pendentes — Clientes ({pendingDeposits.length})
+                  </h2>
+                  <p className="text-xs text-neutral-600">
+                    Quando o cliente informar que enviou um Pix para recarregar o Saldo do App,
+                    confira no seu banco e clique em <strong>Confirmar &amp; Creditar Saldo</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {pendingDeposits.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-6 text-center text-xs font-semibold text-neutral-500">
+                  Nenhuma solicitação de depósito de saldo aguardando confirmação.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {pendingDeposits.map((dep) => {
+                    const isBusy = processingDepositId === dep.id;
+                    return (
+                      <div
+                        key={dep.id}
+                        className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 flex flex-col justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-extrabold text-neutral-950">
+                              {dep.user?.full_name || 'Cliente'}
+                            </span>
+                            <span className="font-mono-num text-lg font-extrabold text-emerald-700">
+                              + {formatBRL(dep.amount)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-700 font-mono-num">
+                            {dep.user?.phone || '—'} · Saldo atual:{' '}
+                            <strong>{formatBRL(dep.user?.wallet_balance || 0)}</strong>
+                          </p>
+                          <p className="text-[11px] text-neutral-500 font-mono-num">
+                            Solicitado em {new Date(dep.created_at).toLocaleString('pt-BR')}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleRejectDeposit(dep)}
+                            className="min-h-[42px] rounded-xl border border-red-200 bg-white px-3.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                          >
+                            Recusar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleApproveDeposit(dep)}
+                            className="min-h-[42px] flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-extrabold text-white shadow-sm disabled:opacity-60"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            {isBusy ? 'Creditando...' : 'Confirmar & Creditar Saldo'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {reviewedDeposits.length > 0 && (
+                <div className="border-t border-neutral-100 pt-3">
+                  <p className="text-[11px] font-bold text-neutral-500 mb-2">
+                    Últimos depósitos revisados
+                  </p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {reviewedDeposits.map((dep) => (
+                      <div
+                        key={dep.id}
+                        className="flex items-center justify-between rounded-xl bg-neutral-50 px-3 py-2 text-[11px]"
+                      >
+                        <span className="font-semibold text-neutral-800 truncate pr-2">
+                          {dep.user?.full_name || 'Cliente'} ·{' '}
+                          <span className="font-mono-num">{formatBRL(dep.amount)}</span>
+                        </span>
+                        <span
+                          className={`font-extrabold shrink-0 ${
+                            dep.status === 'approved' ? 'text-emerald-700' : 'text-red-600'
+                          }`}
+                        >
+                          {dep.status === 'approved' ? 'Aprovado' : 'Recusado'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Official Owner Pix Configuration */}
               <form
@@ -1534,8 +1802,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span>Minha Conta Pix Oficial (Dono)</span>
                 </div>
                 <p className="text-xs text-neutral-600">
-                  Todo passageiro que escolher pagar por Pix pagará diretamente para esta chave.
-                  Depois, você realiza os repasses abaixo para cada motorista ou entregador.
+                  Todo passageiro que escolher pagar por Pix ou depositar Saldo no App pagará
+                  diretamente para esta chave. Depois, você realiza os repasses abaixo.
                 </p>
 
                 <div>
@@ -1580,96 +1848,148 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </form>
 
-              {/* Driver & Deliverer Payout Ledger Table */}
+              {/* Driver & Deliverer Payout Ledger Table with Period Breakdown & Printable Receipt */}
               <div className="lg:col-span-8 space-y-4">
-                <div>
-                  <h2 className="font-display text-xl font-extrabold text-neutral-950">
-                    Repasses aos Motoristas & Entregadores
-                  </h2>
-                  <p className="text-xs text-neutral-600">
-                    Confira o total recebido em Pix (centralizado em você), o total em dinheiro
-                    (recebido direto pelo motorista) e o saldo pendente para transferir.
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+                      Repasses &amp; Saldos — Motoristas e Entregadores
+                    </h2>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                      Filtre por Dia, Semana, Mês ou Tudo e gere Recibos assinados para repasse.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 rounded-xl bg-neutral-200/70 dark:bg-neutral-800 p-1">
+                    {(
+                      [
+                        { id: 'day', label: 'Hoje (Dia)' },
+                        { id: 'week', label: 'Semana' },
+                        { id: 'month', label: 'Mês' },
+                        { id: 'all', label: 'Tudo' },
+                      ] as const
+                    ).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSettlementPeriod(p.id)}
+                        className={`min-h-[34px] rounded-lg px-2.5 text-[11px] font-bold transition ${
+                          settlementPeriod === p.id
+                            ? 'bg-white dark:bg-neutral-950 text-neutral-950 dark:text-[#FFD100] shadow-xs'
+                            : 'text-neutral-600 dark:text-neutral-300'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
+                <div className="overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
                   <table className="w-full text-left text-xs">
-                    <thead className="border-b border-neutral-200 bg-neutral-50 text-neutral-600">
+                    <thead className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">
                       <tr>
                         <th className="px-4 py-3 font-bold">Motorista / Entregador</th>
                         <th className="px-4 py-3 font-bold">Chave Pix Dele</th>
-                        <th className="px-4 py-3 font-bold text-right">Pix Feito</th>
+                        <th className="px-4 py-3 font-bold text-right">Pix / App</th>
                         <th className="px-4 py-3 font-bold text-right">Dinheiro</th>
                         <th className="px-4 py-3 font-bold text-right">Já Pago</th>
-                        <th className="px-4 py-3 font-bold text-right">A Pagar</th>
-                        <th className="px-4 py-3 font-bold text-right">Ação</th>
+                        <th className="px-4 py-3 font-bold text-right">Saldo Atual</th>
+                        <th className="px-4 py-3 font-bold text-right">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-100">
+                    <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                       {allDriversAndDeliverers.map((d) => {
                         const drvRides = rides.filter(
-                          (r) => r.driver_id === d.id && r.status === 'completed'
+                          (r) =>
+                            r.driver_id === d.id &&
+                            r.status === 'completed' &&
+                            isDateInPeriod(r.completed_at || r.created_at, settlementPeriod)
                         );
-                        const pixTotal = drvRides
-                          .filter((r) => r.payment_method === 'pix')
+                        const pixAndAppTotal = drvRides
+                          .filter(
+                            (r) => r.payment_method === 'pix' || r.payment_method === 'wallet'
+                          )
                           .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
                         const cashTotal = drvRides
                           .filter((r) => r.payment_method === 'cash')
                           .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
                         const paidOut = transactions
-                          .filter((t) => t.user_id === d.id && t.type === 'payout')
+                          .filter(
+                            (t) =>
+                              t.user_id === d.id &&
+                              t.type === 'payout' &&
+                              isDateInPeriod(t.created_at, settlementPeriod)
+                          )
                           .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
                         return (
-                          <tr key={d.id} className="hover:bg-neutral-50">
+                          <tr key={d.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                             <td className="px-4 py-3">
-                              <p className="font-bold text-neutral-950">{d.full_name}</p>
-                              <p className="text-[11px] text-neutral-500">
+                              <p className="font-bold text-neutral-950 dark:text-white">{d.full_name}</p>
+                              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                                 {d.driver?.vehicle_type === 'delivery'
                                   ? 'Entregador'
                                   : d.driver?.vehicle_type === 'moto'
                                   ? 'Moto'
                                   : 'Carro'}{' '}
-                                · {d.driver?.vehicle_plate}
+                                · {d.driver?.vehicle_plate} · {drvRides.length} corridas
                               </p>
                             </td>
-                            <td className="px-4 py-3 font-mono-num text-neutral-700">
+                            <td className="px-4 py-3 font-mono-num text-neutral-700 dark:text-neutral-300">
                               {d.driver?.pix_key || '—'}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono-num font-bold text-neutral-900">
-                              {formatBRL(pixTotal)}
+                            <td className="px-4 py-3 text-right font-mono-num font-bold text-neutral-900 dark:text-neutral-100">
+                              {formatBRL(pixAndAppTotal)}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono-num text-emerald-700">
+                            <td className="px-4 py-3 text-right font-mono-num text-emerald-700 dark:text-emerald-400">
                               {formatBRL(cashTotal)}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono-num text-sky-700">
+                            <td className="px-4 py-3 text-right font-mono-num text-sky-700 dark:text-sky-400">
                               {formatBRL(paidOut)}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono-num font-extrabold text-amber-700">
+                            <td className="px-4 py-3 text-right font-mono-num font-extrabold text-amber-700 dark:text-[#FFD100]">
                               {formatBRL(d.wallet_balance)}
                             </td>
                             <td className="px-4 py-3 text-right">
-                              {d.wallet_balance > 0 ? (
+                              <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setPayoutModalDriver(d);
-                                    setPayoutAmount(d.wallet_balance.toFixed(2));
-                                    setPayoutNote(
-                                      `Repasse Pix para ${d.driver?.pix_key || d.email}`
-                                    );
-                                  }}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-3 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                                  onClick={() => setReceiptModalDriver(d)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-900 dark:text-white hover:bg-neutral-100"
+                                  title="Gerar Recibo Imprimível com Assinatura"
                                 >
-                                  <Wallet className="h-3.5 w-3.5" />
-                                  Pagar Pix
+                                  <Printer className="h-3.5 w-3.5" />
+                                  Recibo / Acertar
                                 </button>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Em dia
-                                </span>
-                              )}
+                                <button
+                                  type="button"
+                                  onClick={() => openBalanceModal(d)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2.5 py-1.5 text-[11px] font-bold text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100"
+                                >
+                                  Editar Saldo
+                                </button>
+                                {d.wallet_balance > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPayoutModalDriver(d);
+                                      setPayoutAmount(d.wallet_balance.toFixed(2));
+                                      setPayoutNote(
+                                        `Repasse Pix para ${d.driver?.pix_key || d.email}`
+                                      );
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-3 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                                  >
+                                    <Wallet className="h-3.5 w-3.5" />
+                                    Pagar Pix
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    Em dia
+                                  </span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2272,15 +2592,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Áudios & Toques de Notificação Personalizados */}
-              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
-                <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950">
+              {/* Gerenciador Completo de Sons do Sistema (7 Cues MP3/WAV/OGG) */}
+              <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-4">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950 dark:text-white">
                   <Music className="h-5 w-5 text-amber-600" />
-                  <span>Sons & Toques de Notificação (MP3/WAV/OGG)</span>
+                  <span>Gerenciador Completo de Sons do Sistema (7 Cues)</span>
                 </div>
-                <p className="text-xs text-neutral-600">
-                  Envie áudios personalizados para toques de chamada de corrida, aceite e chegada do
-                  motorista.
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  Personalize todos os toques de chamada, entrega, aceite, chegada, conclusão, chat e
+                  cancelamento em MP3/WAV/OGG.
                 </p>
 
                 <div className="space-y-2.5">
@@ -2290,30 +2610,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         kind: 'sound_offer' as const,
                         field: 'sound_offer_url' as const,
                         cue: 'offer' as const,
-                        label: 'Toque Nova Corrida (Motorista)',
+                        label: '1. Nova Corrida (Alarme Motorista)',
+                      },
+                      {
+                        kind: 'sound_delivery' as const,
+                        field: 'sound_delivery_url' as const,
+                        cue: 'delivery' as const,
+                        label: '2. Nova Entrega (Alarme Motoboy)',
                       },
                       {
                         kind: 'sound_accepted' as const,
                         field: 'sound_accepted_url' as const,
                         cue: 'accepted' as const,
-                        label: 'Som Corrida Aceita',
+                        label: '3. Corrida Aceita',
                       },
                       {
                         kind: 'sound_arrived' as const,
                         field: 'sound_arrived_url' as const,
                         cue: 'arrived' as const,
-                        label: 'Som Motorista Chegou',
+                        label: '4. Chegada no Local (Embarque)',
+                      },
+                      {
+                        kind: 'sound_completed' as const,
+                        field: 'sound_completed_url' as const,
+                        cue: 'completed' as const,
+                        label: '5. Corrida / Entrega Concluída',
+                      },
+                      {
+                        kind: 'sound_chat' as const,
+                        field: 'sound_chat_url' as const,
+                        cue: 'chat' as const,
+                        label: '6. Nova Mensagem no Chat',
+                      },
+                      {
+                        kind: 'sound_cancel' as const,
+                        field: 'sound_cancel_url' as const,
+                        cue: 'cancel' as const,
+                        label: '7. Cancelamento de Corrida',
                       },
                     ] as const
                   ).map((snd) => (
                     <div
                       key={snd.kind}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-3"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/70 p-3"
                     >
                       <div className="min-w-0">
-                        <p className="text-xs font-extrabold text-neutral-950">{snd.label}</p>
-                        <p className="text-[11px] text-neutral-500">
-                          {platformConfig[snd.field] ? 'Áudio personalizado ativo' : 'Áudio padrão'}
+                        <p className="text-xs font-extrabold text-neutral-950 dark:text-white">{snd.label}</p>
+                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                          {platformConfig[snd.field] ? 'Áudio personalizado ativo' : 'Sintetizador padrão'}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -2323,12 +2667,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             syncPlatformSounds(platformConfig);
                             void playSoundCue(snd.cue);
                           }}
-                          className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-[11px] font-bold text-neutral-800"
+                          className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-2 text-[11px] font-bold text-neutral-800 dark:text-neutral-200"
                         >
                           <Volume2 className="h-3.5 w-3.5" />
                           Testar
                         </button>
-                        <label className="cursor-pointer rounded-xl bg-neutral-950 px-3 py-2 text-[11px] font-bold text-[#FFD100]">
+                        <label className="cursor-pointer rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3 py-2 text-[11px] font-bold text-[#FFD100] dark:text-neutral-950">
                           {uploadingAssetKind === snd.kind ? 'Enviando...' : 'Enviar Áudio'}
                           <input
                             type="file"
@@ -2343,7 +2687,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <button
                             type="button"
                             onClick={() => handleResetPlatformAsset(snd.field)}
-                            className="rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-[11px] font-bold text-neutral-700"
+                            className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-2 text-[11px] font-bold text-neutral-700 dark:text-neutral-200"
                           >
                             Padrão
                           </button>
@@ -2353,17 +2697,104 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ))}
                 </div>
 
+                {/* Atualização Automática OTA do APK */}
+                <form
+                  onSubmit={handleSavePlatformConfig}
+                  className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-xs font-extrabold text-neutral-950 dark:text-white">
+                      <DownloadCloud className="h-4 w-4 text-amber-600" />
+                      Publicar Atualização OTA do APK
+                    </span>
+                    <span className="font-mono-num text-[11px] font-bold text-neutral-500">
+                      Atual: v{CURRENT_APP_VERSION}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                        Nova Versão (Semver)
+                      </label>
+                      <input
+                        type="text"
+                        value={platformConfig.ota_latest_version || CURRENT_APP_VERSION}
+                        onChange={(e) =>
+                          setPlatformConfig((prev) => ({
+                            ...prev,
+                            ota_latest_version: e.target.value,
+                          }))
+                        }
+                        placeholder="1.2.1"
+                        className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 font-mono-num text-xs font-bold"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                        URL Direta do APK (.apk / GitHub Release)
+                      </label>
+                      <input
+                        type="url"
+                        value={platformConfig.ota_apk_url || ''}
+                        onChange={(e) =>
+                          setPlatformConfig((prev) => ({
+                            ...prev,
+                            ota_apk_url: e.target.value,
+                          }))
+                        }
+                        placeholder="https://seu-link.com/velo99-v1.2.1.apk"
+                        className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Notas da Versão (exibidas no alerta do usuário)
+                    </label>
+                    <input
+                      type="text"
+                      value={platformConfig.ota_release_notes || ''}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          ota_release_notes: e.target.value,
+                        }))
+                      }
+                      placeholder="Melhorias de GPS, mapa noturno e performance."
+                      className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={savingPlatform}
+                    className="min-h-[42px] w-full rounded-xl bg-neutral-950 dark:bg-[#FFD100] text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
+                  >
+                    {savingPlatform ? 'Publicando...' : 'Salvar Versão OTA'}
+                  </button>
+                </form>
+
                 <button
                   type="button"
                   onClick={() => setShowLegalDocs(true)}
-                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 text-xs font-extrabold text-neutral-900 hover:bg-neutral-100"
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-extrabold text-neutral-900 dark:text-white hover:bg-neutral-100"
                 >
                   <FileText className="h-4 w-4 text-amber-600" />
-                  Visualizar Termos, Privacidade, Segurança & Cookies
+                  Visualizar Termos, Privacidade, Segurança &amp; Cookies
                 </button>
               </div>
             </div>
           </section>
+        )}
+
+        {/* TAB 6B: AUDITORIA & TELEMETRIA DE DISPOSITIVOS */}
+        {tab === 'audit' && (
+          <AdminAuditTab
+            logs={auditLogs}
+            loading={loadingData}
+            platformConfig={platformConfig}
+            suppressPrintSheet={Boolean(receiptModalDriver)}
+            onRefresh={loadOverview}
+          />
         )}
 
         {/* TAB 7: SQL INCREMENTAL & APK */}
@@ -2676,35 +3107,131 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Delivery Photo Inspection Modal */}
-      {inspectPhotoUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl space-y-3">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
-              <h3 className="font-display text-base font-extrabold text-neutral-950">
-                Foto de Comprovante da Entrega
-              </h3>
+      {/* Universal User Wallet Balance Editor Modal (Clients, Drivers & Deliverers) */}
+      {balanceModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
+          <form
+            onSubmit={handleSaveUserBalance}
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                  Editar Saldo do Usuário
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {balanceModalUser.full_name} ·{' '}
+                  {balanceModalUser.role === 'passenger'
+                    ? 'Cliente'
+                    : balanceModalUser.driver?.vehicle_type === 'delivery'
+                    ? 'Entregador'
+                    : 'Motorista'}
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => setInspectPhotoUrl(null)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100"
+                onClick={() => setBalanceModalUser(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
-            {resolvedInspectPhotoUrl ? (
-              <img
-                src={resolvedInspectPhotoUrl}
-                alt="Foto da entrega realizada"
-                referrerPolicy="no-referrer"
-                className="max-h-[70vh] w-full rounded-2xl object-contain bg-neutral-100 border border-neutral-200"
-              />
-            ) : (
-              <div className="flex h-48 items-center justify-center rounded-2xl bg-neutral-100 text-xs font-semibold text-neutral-500">
-                Carregando foto segura...
+
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-neutral-50 border border-neutral-200 p-3.5">
+              <div>
+                <p className="text-[11px] font-bold text-neutral-500">Saldo Atual</p>
+                <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                  {formatBRL(balanceModalUser.wallet_balance || 0)}
+                </p>
               </div>
-            )}
-          </div>
+              <div className="text-right">
+                <p className="text-[11px] font-bold text-emerald-700">Novo Saldo Final</p>
+                <p className="font-mono-num text-lg font-extrabold text-emerald-700">
+                  {formatBRL(computedPreviewBalance)}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1.5">
+                Tipo de Alteração
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-neutral-100 p-1">
+                {(
+                  [
+                    { id: 'set', label: 'Valor Exato' },
+                    { id: 'add', label: 'Adicionar (+)' },
+                    { id: 'subtract', label: 'Descontar (-)' },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      setBalanceMode(m.id);
+                      if (m.id === 'set') {
+                        setBalanceAmountInput(
+                          Number(balanceModalUser.wallet_balance || 0).toFixed(2)
+                        );
+                      } else {
+                        setBalanceAmountInput('');
+                      }
+                    }}
+                    className={`min-h-[38px] rounded-xl text-[11px] font-extrabold transition ${
+                      balanceMode === m.id
+                        ? 'bg-neutral-950 text-[#FFD100] shadow-xs'
+                        : 'text-neutral-700'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                {balanceMode === 'set'
+                  ? 'Definir novo saldo total (R$)'
+                  : balanceMode === 'add'
+                  ? 'Valor a adicionar (R$)'
+                  : 'Valor a descontar (R$)'}
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={balanceAmountInput}
+                onChange={(e) => setBalanceAmountInput(e.target.value)}
+                placeholder="0.00"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-base font-extrabold outline-none focus:border-neutral-950"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                Motivo / Descrição no Extrato (opcional)
+              </label>
+              <input
+                type="text"
+                value={balanceNoteInput}
+                onChange={(e) => setBalanceNoteInput(e.target.value)}
+                placeholder="Ex: Crédito confirmado / Ajuste manual / Bônus"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-neutral-950"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={savingBalance}
+              className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm disabled:opacity-60"
+            >
+              {savingBalance
+                ? 'Salvando no Supabase...'
+                : `Confirmar Saldo (${formatBRL(computedPreviewBalance)})`}
+            </button>
+          </form>
         </div>
       )}
 
@@ -2712,6 +3239,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <LegalDocsModal
           siteName={platformConfig.site_name}
           onClose={() => setShowLegalDocs(false)}
+        />
+      )}
+
+      {receiptModalDriver && (
+        <AdminSettlementReceiptModal
+          driver={receiptModalDriver}
+          period={settlementPeriod}
+          rides={rides}
+          transactions={transactions}
+          platformConfig={platformConfig}
+          onConfirmPayout={async (amount, note) => {
+            await adminPayDriverPix(receiptModalDriver, amount, note);
+            setReceiptModalDriver(null);
+            await loadOverview();
+            showToast('Recibo quitado e repasse Pix registrado!');
+          }}
+          onClose={() => setReceiptModalDriver(null)}
         />
       )}
     </div>

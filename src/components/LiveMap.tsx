@@ -9,7 +9,18 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet';
-import { Crosshair, Layers, Minus, Plus, Satellite, Map as MapIcon } from 'lucide-react';
+import {
+  Compass,
+  Crosshair,
+  Layers,
+  Map as MapIcon,
+  Minus,
+  Moon,
+  Mountain,
+  Satellite,
+  Plus,
+} from 'lucide-react';
+import { getUserPreferences, saveUserPreferences, subscribeUserPreferences } from '../lib/userPrefs';
 import type { GeoPoint, MapLayerMode, UserProfile } from '../types/mobility';
 
 interface LiveMapProps {
@@ -35,6 +46,18 @@ interface LiveMapProps {
   speedKmh?: number;
   showSpeedometer?: boolean;
 }
+
+const LAYER_OPTIONS: Array<{
+  id: MapLayerMode;
+  label: string;
+  shortLabel: string;
+  desc: string;
+}> = [
+  { id: 'urban', label: 'Urbano Padrão', shortLabel: 'Urbano', desc: 'Ruas e bairros' },
+  { id: 'satellite', label: 'Satélite HD', shortLabel: 'Satélite', desc: 'Esri Crisp + Ruas' },
+  { id: 'dark', label: 'Mapa Noturno', shortLabel: 'Noturno', desc: 'CartoDB Dark' },
+  { id: 'terrain_traffic', label: 'Relevo & Tráfego', shortLabel: 'Tráfego', desc: 'Topografia + Vias' },
+];
 
 function findClosestRouteIndex(
   routeCoords: [number, number][],
@@ -63,24 +86,35 @@ function MapController({
   routeCoords,
   driverPosition,
   followVehicle,
+  hudActive,
   userPanned,
   onUserPanChange,
   recenterNonce,
   pickOnMapMode,
   onMapPick,
+  onZoomChange,
 }: {
   center: [number, number];
   routeCoords?: [number, number][];
   driverPosition?: LiveMapProps['driverPosition'];
   followVehicle?: boolean;
+  hudActive: boolean;
   userPanned: boolean;
   onUserPanChange: (panned: boolean) => void;
   recenterNonce: number;
   pickOnMapMode?: 'origin' | 'destination' | null;
   onMapPick?: (lat: number, lng: number) => void;
+  onZoomChange: (zoomFn: { zoomIn: () => void; zoomOut: () => void }) => void;
 }) {
   const map = useMap();
   const initialFollowFittedRef = useRef(false);
+
+  useEffect(() => {
+    onZoomChange({
+      zoomIn: () => map.zoomIn(),
+      zoomOut: () => map.zoomOut(),
+    });
+  }, [map, onZoomChange]);
 
   useMapEvents({
     click(e) {
@@ -92,6 +126,13 @@ function MapController({
       onUserPanChange(true);
     },
   });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      map.invalidateSize({ animate: false });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [map, hudActive]);
 
   useEffect(() => {
     if (!followVehicle) {
@@ -110,7 +151,6 @@ function MapController({
     }
   }, [map, routeCoords, followVehicle]);
 
-  // Real-time vehicle camera follow during navigation
   useEffect(() => {
     if (!followVehicle || !driverPosition || userPanned) return;
     const targetZoom = Math.max(map.getZoom(), 16);
@@ -126,78 +166,6 @@ function MapController({
   return null;
 }
 
-function ZoomControls({
-  onRecenter,
-  layerMode,
-  onToggleLayer,
-  topClassName = 'top-24',
-}: {
-  onRecenter?: () => void;
-  layerMode: MapLayerMode;
-  onToggleLayer: () => void;
-  topClassName?: string;
-}) {
-  const map = useMap();
-
-  return (
-    <div className={`pointer-events-auto absolute right-3 ${topClassName} z-[500] flex flex-col gap-2`}>
-      <button
-        type="button"
-        onClick={onToggleLayer}
-        className={`flex h-11 px-3 items-center justify-center gap-1.5 rounded-2xl shadow-lg border text-[11px] font-extrabold active:scale-95 transition ${
-          layerMode === 'satellite'
-            ? 'bg-neutral-950 text-[#FFD100] border-neutral-800'
-            : 'bg-white text-neutral-900 border-neutral-200/80'
-        }`}
-        aria-label="Alternar entre mapa urbano e satélite rural"
-        title="Alternar Urbano / Satélite Rural"
-      >
-        {layerMode === 'satellite' ? (
-          <>
-            <Satellite className="h-4 w-4 text-[#FFD100]" />
-            <span>Satélite</span>
-          </>
-        ) : (
-          <>
-            <Layers className="h-4 w-4 text-blue-600" />
-            <span>Urbano</span>
-          </>
-        )}
-      </button>
-
-      <div className="flex flex-col gap-1.5 items-end">
-        <button
-          type="button"
-          onClick={() => map.zoomIn()}
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-neutral-900 shadow-lg border border-neutral-200/80 active:scale-95 transition"
-          aria-label="Aproximar mapa"
-        >
-          <Plus className="h-5 w-5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => map.zoomOut()}
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-neutral-900 shadow-lg border border-neutral-200/80 active:scale-95 transition"
-          aria-label="Afastar mapa"
-        >
-          <Minus className="h-5 w-5" />
-        </button>
-        {onRecenter && (
-          <button
-            type="button"
-            onClick={onRecenter}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFCC00] text-neutral-950 shadow-lg active:scale-95 transition"
-            aria-label="Centralizar GPS"
-            title="Minha localização"
-          >
-            <Crosshair className="h-5 w-5" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export const LiveMap: React.FC<LiveMapProps> = ({
   center,
   origin,
@@ -210,15 +178,36 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   onRecenter,
   layerMode: controlledLayerMode,
   onLayerModeChange,
-  controlsTopClassName,
+  controlsTopClassName = 'top-24',
   followVehicle = false,
   speedKmh = 0,
   showSpeedometer = false,
 }) => {
-  const [internalLayerMode, setInternalLayerMode] = useState<MapLayerMode>('urban');
+  const [internalLayerMode, setInternalLayerMode] = useState<MapLayerMode>(
+    () => getUserPreferences().map_layer || 'urban'
+  );
+  const [hudCompassEnabled, setHudCompassEnabled] = useState<boolean>(
+    () => getUserPreferences().hud_compass_enabled ?? true
+  );
+  const [layerMenuOpen, setLayerMenuOpen] = useState(false);
   const [userPanned, setUserPanned] = useState(false);
   const [recenterNonce, setRecenterNonce] = useState(0);
+  const zoomApiRef = useRef<{ zoomIn: () => void; zoomOut: () => void }>({
+    zoomIn: () => {},
+    zoomOut: () => {},
+  });
+
   const layerMode = controlledLayerMode ?? internalLayerMode;
+
+  useEffect(() => {
+    const unsub = subscribeUserPreferences((prefs) => {
+      if (!controlledLayerMode) {
+        setInternalLayerMode(prefs.map_layer);
+      }
+      setHudCompassEnabled(prefs.hud_compass_enabled);
+    });
+    return unsub;
+  }, [controlledLayerMode]);
 
   useEffect(() => {
     if (!followVehicle) {
@@ -226,10 +215,21 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     }
   }, [followVehicle]);
 
-  const toggleLayerMode = () => {
-    const next: MapLayerMode = layerMode === 'urban' ? 'satellite' : 'urban';
-    setInternalLayerMode(next);
-    onLayerModeChange?.(next);
+  const handleSelectLayer = (mode: MapLayerMode) => {
+    setInternalLayerMode(mode);
+    saveUserPreferences({ map_layer: mode });
+    onLayerModeChange?.(mode);
+    setLayerMenuOpen(false);
+  };
+
+  const handleToggleHudCompass = () => {
+    const next = !hudCompassEnabled;
+    setHudCompassEnabled(next);
+    saveUserPreferences({ hud_compass_enabled: next });
+    if (next) {
+      setUserPanned(false);
+      setRecenterNonce((n) => n + 1);
+    }
   };
 
   const handleRecenterClick = () => {
@@ -238,13 +238,63 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     onRecenter?.();
   };
 
+  // Smoothly rotate viewport in 1st-person HUD mode during active navigation
+  const activeHeading = driverPosition?.heading ?? 0;
+  const isHudRotating =
+    followVehicle && hudCompassEnabled && !userPanned && typeof driverPosition?.heading === 'number';
+  const hudRotationDeg = isHudRotating ? -activeHeading : 0;
+
   // Split OSRM route into traveled (Gray) and remaining ahead (Blue)
-  const { traveledCoords, remainingCoords } = useMemo(() => {
+  const { traveledCoords, remainingCoords, trafficZones } = useMemo(() => {
     if (!routeCoords || routeCoords.length < 2) {
-      return { traveledCoords: [] as [number, number][], remainingCoords: [] as [number, number][] };
+      // Decorative simulated local traffic corridors around current center for terrain_traffic layer
+      const [cLat, cLng] = center;
+      const simulatedZones: Array<{ coords: [number, number][]; color: string }> = [
+        {
+          coords: [
+            [cLat - 0.004, cLng - 0.006],
+            [cLat - 0.001, cLng - 0.001],
+            [cLat + 0.003, cLng + 0.004],
+          ],
+          color: '#10B981',
+        },
+        {
+          coords: [
+            [cLat + 0.002, cLng - 0.005],
+            [cLat, cLng],
+            [cLat - 0.002, cLng + 0.005],
+          ],
+          color: '#F59E0B',
+        },
+      ];
+      return {
+        traveledCoords: [] as [number, number][],
+        remainingCoords: [] as [number, number][],
+        trafficZones: simulatedZones,
+      };
     }
+
+    const total = routeCoords.length;
+    const midStart = Math.floor(total * 0.42);
+    const midEnd = Math.min(total - 1, Math.floor(total * 0.58));
+    const heavyStart = Math.floor(total * 0.72);
+    const heavyEnd = Math.min(total - 1, Math.floor(total * 0.84));
+    const routeZones: Array<{ coords: [number, number][]; color: string }> = [
+      { coords: routeCoords.slice(0, Math.max(2, midStart + 1)), color: '#10B981' },
+    ];
+    if (midEnd > midStart) {
+      routeZones.push({ coords: routeCoords.slice(midStart, midEnd + 1), color: '#F59E0B' });
+    }
+    if (heavyEnd > heavyStart) {
+      routeZones.push({ coords: routeCoords.slice(heavyStart, heavyEnd + 1), color: '#EF4444' });
+    }
+
     if (!driverPosition || !followVehicle) {
-      return { traveledCoords: [] as [number, number][], remainingCoords: routeCoords };
+      return {
+        traveledCoords: [] as [number, number][],
+        remainingCoords: routeCoords,
+        trafficZones: routeZones,
+      };
     }
     const closestIdx = findClosestRouteIndex(routeCoords, driverPosition.lat, driverPosition.lng);
     const traveled =
@@ -257,8 +307,12 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             [driverPosition.lat, driverPosition.lng],
             routeCoords[routeCoords.length - 1],
           ];
-    return { traveledCoords: traveled, remainingCoords: remaining };
-  }, [routeCoords, driverPosition, followVehicle]);
+    return {
+      traveledCoords: traveled,
+      remainingCoords: remaining,
+      trafficZones: routeZones,
+    };
+  }, [routeCoords, driverPosition, followVehicle, center]);
 
   const originIcon = useMemo(
     () =>
@@ -313,143 +367,308 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       iconAnchor: [22, 22],
     });
 
+  const activeLayerMeta = LAYER_OPTIONS.find((l) => l.id === layerMode) || LAYER_OPTIONS[0];
+
   return (
-    <div className="relative h-full w-full">
-      <MapContainer
-        center={center}
-        zoom={15}
-        maxZoom={21}
-        dragging={true}
-        touchZoom={true}
-        scrollWheelZoom={true}
-        doubleClickZoom={true}
-        zoomControl={false}
-        className="h-full w-full"
+    <div
+      className={`relative h-full w-full overflow-hidden ${
+        layerMode === 'satellite' ? 'leaflet-satellite-crisp bg-neutral-900' : 'bg-neutral-100 dark:bg-neutral-900'
+      }`}
+    >
+      {/* Rotatable inner map viewport for 1st-Person Compass HUD */}
+      <div
+        className={
+          isHudRotating
+            ? 'leaflet-hud-viewport absolute left-1/2 top-1/2 h-[155vmax] w-[155vmax]'
+            : 'leaflet-hud-viewport h-full w-full'
+        }
+        style={
+          isHudRotating
+            ? { transform: `translate(-50%, -50%) rotate(${hudRotationDeg}deg)` }
+            : undefined
+        }
       >
-        {layerMode === 'urban' ? (
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxNativeZoom={19}
-            maxZoom={21}
-          />
-        ) : (
-          <>
-            <TileLayer
-              attribution="Tiles &copy; Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              maxNativeZoom={18}
-              maxZoom={21}
-            />
-            <TileLayer
-              attribution="Labels &copy; Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              maxNativeZoom={18}
-              maxZoom={21}
-            />
-          </>
-        )}
-
-        <MapController
+        <MapContainer
           center={center}
-          routeCoords={routeCoords}
-          driverPosition={driverPosition}
-          followVehicle={followVehicle}
-          userPanned={userPanned}
-          onUserPanChange={setUserPanned}
-          recenterNonce={recenterNonce}
-          pickOnMapMode={pickOnMapMode}
-          onMapPick={onMapPick}
-        />
-        <ZoomControls
-          onRecenter={onRecenter ? handleRecenterClick : undefined}
-          layerMode={layerMode}
-          onToggleLayer={toggleLayerMode}
-          topClassName={controlsTopClassName}
-        />
+          zoom={15}
+          maxZoom={21}
+          dragging={true}
+          touchZoom={true}
+          scrollWheelZoom={true}
+          doubleClickZoom={true}
+          zoomControl={false}
+          className="h-full w-full"
+        >
+          {layerMode === 'urban' && (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxNativeZoom={19}
+              maxZoom={21}
+              detectRetina={true}
+            />
+          )}
 
-        {origin && (
-          <Marker position={[origin.lat, origin.lng]} icon={originIcon}>
-            <Popup>
-              <div className="text-xs font-semibold text-neutral-900">
-                Origem / Embarque: {origin.address}
-              </div>
-            </Popup>
-          </Marker>
-        )}
+          {layerMode === 'satellite' && (
+            <>
+              <TileLayer
+                attribution="Tiles &copy; Esri"
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                maxNativeZoom={18}
+                maxZoom={21}
+                detectRetina={true}
+              />
+              <TileLayer
+                attribution="Labels &copy; Esri"
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                maxNativeZoom={18}
+                maxZoom={21}
+              />
+            </>
+          )}
 
-        {destination && (
-          <Marker position={[destination.lat, destination.lng]} icon={destinationIcon}>
-            <Popup>
-              <div className="text-xs font-semibold text-neutral-900">
-                Destino: {destination.address}
-              </div>
-            </Popup>
-          </Marker>
-        )}
+          {layerMode === 'dark' && (
+            <TileLayer
+              attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              maxNativeZoom={19}
+              maxZoom={21}
+              detectRetina={true}
+            />
+          )}
 
-        {/* Traveled Route Portion (Gray) */}
-        {traveledCoords.length >= 2 && (
-          <Polyline
-            positions={traveledCoords}
-            pathOptions={{ color: '#9CA3AF', weight: 6.5, opacity: 0.85 }}
+          {layerMode === 'terrain_traffic' && (
+            <TileLayer
+              attribution="Topografia &copy; Esri"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
+              maxNativeZoom={18}
+              maxZoom={21}
+              detectRetina={true}
+            />
+          )}
+
+          <MapController
+            center={center}
+            routeCoords={routeCoords}
+            driverPosition={driverPosition}
+            followVehicle={followVehicle}
+            hudActive={isHudRotating}
+            userPanned={userPanned}
+            onUserPanChange={setUserPanned}
+            recenterNonce={recenterNonce}
+            pickOnMapMode={pickOnMapMode}
+            onMapPick={onMapPick}
+            onZoomChange={(api) => {
+              zoomApiRef.current = api;
+            }}
           />
-        )}
 
-        {/* Remaining Route Ahead (Two-tone Blue) */}
-        {remainingCoords.length >= 2 && (
-          <>
-            <Polyline
-              positions={remainingCoords}
-              pathOptions={{ color: '#1E3A8A', weight: 8, opacity: 0.9 }}
-            />
-            <Polyline
-              positions={remainingCoords}
-              pathOptions={{ color: '#3B82F6', weight: 4.5, opacity: 1 }}
-            />
-          </>
-        )}
-
-        {driverPosition && (
-          <Marker
-            position={[driverPosition.lat, driverPosition.lng]}
-            icon={makeVehicleIcon(driverPosition.vehicleType || 'car', driverPosition.heading || 0, true)}
-          >
-            {driverPosition.label && (
+          {origin && (
+            <Marker position={[origin.lat, origin.lng]} icon={originIcon}>
               <Popup>
-                <div className="text-xs font-bold text-neutral-900">{driverPosition.label}</div>
-              </Popup>
-            )}
-          </Marker>
-        )}
-
-        {nearbyDrivers.map((drv) => {
-          if (!drv.driver?.current_lat || !drv.driver?.current_lng) return null;
-          if (driverPosition && drv.driver.current_lat === driverPosition.lat) return null;
-          const statusLabel =
-            drv.driver.vehicle_type === 'delivery'
-              ? 'Entregador / Motoboy'
-              : drv.driver.vehicle_type === 'moto'
-              ? 'Moto'
-              : 'Carro';
-          return (
-            <Marker
-              key={drv.id}
-              position={[drv.driver.current_lat, drv.driver.current_lng]}
-              icon={makeVehicleIcon(drv.driver.vehicle_type, drv.driver.heading, false)}
-            >
-              <Popup>
-                <div className="text-xs font-semibold text-neutral-900 space-y-0.5">
-                  <p className="font-bold">{drv.full_name}</p>
-                  <p className="text-[11px] text-neutral-600">
-                    {statusLabel} · {drv.driver.vehicle_model} ({drv.driver.vehicle_plate})
-                  </p>
+                <div className="text-xs font-semibold text-neutral-900">
+                  Origem / Embarque: {origin.address}
                 </div>
               </Popup>
             </Marker>
-          );
-        })}
-      </MapContainer>
+          )}
+
+          {destination && (
+            <Marker position={[destination.lat, destination.lng]} icon={destinationIcon}>
+              <Popup>
+                <div className="text-xs font-semibold text-neutral-900">
+                  Destino: {destination.address}
+                </div>
+              </Popup>
+            </Marker>
+          )}
+
+          {/* Traffic Corridor Indicators when Relevo & Tráfego layer is selected */}
+          {layerMode === 'terrain_traffic' &&
+            trafficZones.map((zone, idx) => (
+              <Polyline
+                key={`traffic-${idx}`}
+                positions={zone.coords}
+                pathOptions={{
+                  color: zone.color,
+                  weight: 10,
+                  opacity: 0.45,
+                }}
+              />
+            ))}
+
+          {/* Traveled Route Portion (Gray) */}
+          {traveledCoords.length >= 2 && (
+            <Polyline
+              positions={traveledCoords}
+              pathOptions={{ color: '#9CA3AF', weight: 6.5, opacity: 0.85 }}
+            />
+          )}
+
+          {/* Remaining Route Ahead (Two-tone Blue) */}
+          {remainingCoords.length >= 2 && (
+            <>
+              <Polyline
+                positions={remainingCoords}
+                pathOptions={{ color: '#1E3A8A', weight: 8, opacity: 0.9 }}
+              />
+              <Polyline
+                positions={remainingCoords}
+                pathOptions={{ color: '#3B82F6', weight: 4.5, opacity: 1 }}
+              />
+            </>
+          )}
+
+          {driverPosition && (
+            <Marker
+              position={[driverPosition.lat, driverPosition.lng]}
+              icon={makeVehicleIcon(driverPosition.vehicleType || 'car', driverPosition.heading || 0, true)}
+            >
+              {driverPosition.label && (
+                <Popup>
+                  <div className="text-xs font-bold text-neutral-900">{driverPosition.label}</div>
+                </Popup>
+              )}
+            </Marker>
+          )}
+
+          {nearbyDrivers.map((drv) => {
+            if (!drv.driver?.current_lat || !drv.driver?.current_lng) return null;
+            if (driverPosition && drv.driver.current_lat === driverPosition.lat) return null;
+            const statusLabel =
+              drv.driver.vehicle_type === 'delivery'
+                ? 'Entregador / Motoboy'
+                : drv.driver.vehicle_type === 'moto'
+                ? 'Moto'
+                : 'Carro';
+            return (
+              <Marker
+                key={drv.id}
+                position={[drv.driver.current_lat, drv.driver.current_lng]}
+                icon={makeVehicleIcon(drv.driver.vehicle_type, drv.driver.heading, false)}
+              >
+                <Popup>
+                  <div className="text-xs font-semibold text-neutral-900 space-y-0.5">
+                    <p className="font-bold">{drv.full_name}</p>
+                    <p className="text-[11px] text-neutral-600">
+                      {statusLabel} · {drv.driver.vehicle_model} ({drv.driver.vehicle_plate})
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+        </MapContainer>
+      </div>
+
+      {/* Upright Floating Controls (Never rotated with map) */}
+      <div className={`pointer-events-auto absolute right-3 ${controlsTopClassName} z-[500] flex flex-col items-end gap-2`}>
+        {/* Multi-Layer Picker Trigger */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setLayerMenuOpen((o) => !o)}
+            className={`flex h-11 px-3 items-center justify-center gap-1.5 rounded-2xl shadow-lg border text-[11px] font-extrabold active:scale-95 transition ${
+              layerMode === 'satellite' || layerMode === 'dark'
+                ? 'bg-neutral-950 text-[#FFD100] border-neutral-800'
+                : 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white border-neutral-200 dark:border-neutral-700'
+            }`}
+            aria-label="Selecionar camada do mapa"
+            title="Camadas de Geoprocessamento"
+          >
+            {layerMode === 'satellite' ? (
+              <Satellite className="h-4 w-4 text-[#FFD100]" />
+            ) : layerMode === 'dark' ? (
+              <Moon className="h-4 w-4 text-[#FFD100]" />
+            ) : layerMode === 'terrain_traffic' ? (
+              <Mountain className="h-4 w-4 text-emerald-600" />
+            ) : (
+              <Layers className="h-4 w-4 text-blue-600" />
+            )}
+            <span>{activeLayerMeta.shortLabel}</span>
+          </button>
+
+          {layerMenuOpen && (
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-2xl p-2 space-y-1 z-[520]">
+              <p className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
+                Camadas do Mapa
+              </p>
+              {LAYER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => handleSelectLayer(opt.id)}
+                  className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition ${
+                    layerMode === opt.id
+                      ? 'bg-neutral-950 text-[#FFD100] font-extrabold'
+                      : 'text-neutral-800 dark:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 font-bold'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  <span
+                    className={`text-[10px] ${
+                      layerMode === opt.id ? 'text-neutral-300' : 'text-neutral-400'
+                    }`}
+                  >
+                    {opt.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 1st-Person Compass HUD Toggle */}
+        {followVehicle && (
+          <button
+            type="button"
+            onClick={handleToggleHudCompass}
+            className={`flex h-11 px-3 items-center justify-center gap-1.5 rounded-2xl shadow-lg border text-[11px] font-extrabold active:scale-95 transition ${
+              hudCompassEnabled
+                ? 'bg-blue-600 text-white border-blue-500'
+                : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+            }`}
+            aria-label="Alternar bússola HUD 1ª pessoa"
+            title="Rotação automática por bússola GPS"
+          >
+            <Compass
+              className="h-4 w-4 transition-transform"
+              style={{ transform: `rotate(${activeHeading}deg)` }}
+            />
+            <span>HUD</span>
+          </button>
+        )}
+
+        <div className="flex flex-col gap-1.5 items-end">
+          <button
+            type="button"
+            onClick={() => zoomApiRef.current.zoomIn()}
+            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+            aria-label="Aproximar mapa"
+          >
+            <Plus className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomApiRef.current.zoomOut()}
+            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+            aria-label="Afastar mapa"
+          >
+            <Minus className="h-5 w-5" />
+          </button>
+          {onRecenter && (
+            <button
+              type="button"
+              onClick={handleRecenterClick}
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFCC00] text-neutral-950 shadow-lg active:scale-95 transition"
+              aria-label="Centralizar GPS"
+              title="Minha localização"
+            >
+              <Crosshair className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Real-time Floating GPS Speedometer */}
       {showSpeedometer && (
@@ -466,13 +685,23 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         </div>
       )}
 
-      {/* Subtle Map Mode Badge Top Left (hidden on small screens when covered, useful on Admin/desktop) */}
+      {/* Subtle Map Mode Badge Top Left */}
       {!showSpeedometer && (
-        <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold text-neutral-700 shadow border border-neutral-200">
+        <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-bold text-neutral-700 dark:text-neutral-200 shadow border border-neutral-200 dark:border-neutral-700">
           {layerMode === 'satellite' ? (
             <>
               <Satellite className="h-3 w-3 text-amber-600" />
-              <span>Satélite Rural</span>
+              <span>Satélite HD</span>
+            </>
+          ) : layerMode === 'dark' ? (
+            <>
+              <Moon className="h-3 w-3 text-indigo-400" />
+              <span>Mapa Noturno</span>
+            </>
+          ) : layerMode === 'terrain_traffic' ? (
+            <>
+              <Mountain className="h-3 w-3 text-emerald-600" />
+              <span>Relevo & Tráfego</span>
             </>
           ) : (
             <>

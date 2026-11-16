@@ -218,7 +218,7 @@ export function useRealtimeMobility(
                       playSound: false,
                     });
                   } else if (enriched.status === 'completed') {
-                    void playSoundCue('accepted');
+                    void playSoundCue('completed');
                     speakPtBr(
                       isDelivery
                         ? 'Entrega concluída com sucesso.'
@@ -227,6 +227,13 @@ export function useRealtimeMobility(
                     triggerLocalNotification({
                       title: isDelivery ? 'Entrega concluída!' : 'Você chegou ao destino!',
                       body: 'Avalie a experiência no aplicativo.',
+                      playSound: false,
+                    });
+                  } else if (enriched.status === 'cancelled') {
+                    void playSoundCue('cancel');
+                    triggerLocalNotification({
+                      title: isDelivery ? 'Entrega cancelada' : 'Corrida cancelada',
+                      body: 'A solicitação foi encerrada.',
                       playSound: false,
                     });
                   }
@@ -360,11 +367,50 @@ export function useRealtimeMobility(
             };
             appendMessage(msgObj);
             if (userRef.current && msgObj.sender_id !== userRef.current.id) {
+              void playSoundCue('chat');
               triggerLocalNotification({
                 title: `Mensagem de ${msgObj.sender_name}`,
                 body: msgObj.content,
+                playSound: false,
               });
             }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wallet_deposits' },
+        async (payload) => {
+          if (!active) return;
+          const row = payload.new as { user_id?: string; status?: string; amount?: number } | undefined;
+          const oldRow = payload.old as { status?: string } | undefined;
+          const u = userRef.current;
+          if (u && row?.user_id === u.id) {
+            const refreshed = await fetchUserProfileById(u.id);
+            if (refreshed && active) onCurrentUserUpdated(refreshed);
+            if (row.status === 'approved' && oldRow?.status !== 'approved') {
+              void playSoundCue('accepted');
+              const amountNum = Number(row.amount || 0).toFixed(2).replace('.', ',');
+              speakPtBr(`Depósito de ${amountNum} reais confirmado na sua carteira.`);
+              triggerLocalNotification({
+                title: 'Saldo Creditado!',
+                body: `Seu depósito Pix de R$ ${amountNum} foi confirmado pelo Administrador.`,
+                playSound: false,
+              });
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'wallet_transactions' },
+        async (payload) => {
+          if (!active) return;
+          const row = payload.new as { user_id?: string } | undefined;
+          const u = userRef.current;
+          if (u && row?.user_id === u.id) {
+            const refreshed = await fetchUserProfileById(u.id);
+            if (refreshed && active) onCurrentUserUpdated(refreshed);
           }
         }
       )
@@ -377,12 +423,14 @@ export function useRealtimeMobility(
           const u = userRef.current;
           if (!u || !m?.sender_id || String(m.sender_id) === u.id) return;
           if (u.role === 'admin' || String(m.user_id) === u.id) {
+            void playSoundCue('chat');
             triggerLocalNotification({
               title:
                 String(m.sender_role) === 'admin'
                   ? 'Mensagem da Administração'
                   : `Suporte: ${String(m.sender_name || 'Usuário')}`,
               body: String(m.content || ''),
+              playSound: false,
             });
           }
         }

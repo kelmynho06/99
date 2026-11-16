@@ -4,12 +4,13 @@ export type AccountStatus = 'active' | 'pending' | 'rejected' | 'suspended';
 
 export type RideCategory = 'moto' | 'pop' | 'negocia' | 'delivery_moto' | 'delivery_car';
 
-export type PaymentMethod = 'cash' | 'pix';
+export type PaymentMethod = 'cash' | 'pix' | 'wallet';
 
 export type PaymentStatus =
   | 'pending'
   | 'paid_pix'
   | 'paid_cash'
+  | 'paid_wallet'
   | 'disputed'
   | 'admin_settled';
 
@@ -21,7 +22,11 @@ export type RideStatus =
   | 'completed'
   | 'cancelled';
 
-export type MapLayerMode = 'urban' | 'satellite';
+export type MapLayerMode = 'urban' | 'satellite' | 'dark' | 'terrain_traffic';
+
+export type ThemeMode = 'light' | 'dark' | 'auto';
+
+export type PeriodFilter = 'day' | 'week' | 'month' | 'all';
 
 export interface SavedAddress {
   label: string;
@@ -46,8 +51,15 @@ export interface PlatformConfig {
   vehicle_img_delivery_moto?: string | null;
   vehicle_img_delivery_car?: string | null;
   sound_offer_url?: string | null;
+  sound_delivery_url?: string | null;
   sound_accepted_url?: string | null;
   sound_arrived_url?: string | null;
+  sound_completed_url?: string | null;
+  sound_chat_url?: string | null;
+  sound_cancel_url?: string | null;
+  ota_latest_version?: string | null;
+  ota_apk_url?: string | null;
+  ota_release_notes?: string | null;
 }
 
 export interface PlatformEvent {
@@ -110,6 +122,7 @@ export interface UserProfile {
   work_address?: SavedAddress | null;
   favorites?: SavedAddress[];
   preferred_payment?: PaymentMethod;
+  preferred_language?: string | null;
   rating_avg: number;
   rating_count: number;
   wallet_balance: number;
@@ -180,8 +193,51 @@ export interface WalletTransaction {
   user_id: string;
   ride_id?: string | null;
   amount: number;
-  type: 'ride_earning' | 'payout' | 'dispute_settlement';
+  type:
+    | 'ride_earning'
+    | 'payout'
+    | 'dispute_settlement'
+    | 'deposit'
+    | 'ride_debit'
+    | 'ride_refund'
+    | 'admin_adjustment';
   description: string;
+  created_at: string;
+}
+
+export type WalletDepositStatus = 'pending' | 'approved' | 'rejected';
+
+export interface WalletDeposit {
+  id: string;
+  user_id: string;
+  amount: number;
+  status: WalletDepositStatus;
+  pix_payload?: string | null;
+  note?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+  user?: UserProfile;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user_id: string | null;
+  user_name: string;
+  user_email: string;
+  user_role: UserRole | string;
+  event_type: string;
+  description: string;
+  device_type: string;
+  os_name: string;
+  os_version: string;
+  browser_name: string;
+  browser_version: string;
+  app_version: string;
+  screen_size: string;
+  language: string;
+  timezone: string;
+  user_agent: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -195,6 +251,10 @@ export interface UserPreferences {
   voice_enabled: boolean;
   sounds_enabled: boolean;
   notifications_enabled: boolean;
+  language: string;
+  theme_mode: ThemeMode;
+  map_layer: MapLayerMode;
+  hud_compass_enabled: boolean;
 }
 
 export type PermissionGrantState = 'granted' | 'denied' | 'prompt' | 'unknown';

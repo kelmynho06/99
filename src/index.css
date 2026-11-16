@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   :root {
@@ -35,6 +36,19 @@
   font-family: var(--font-body);
 }
 
+/* Sharp crisp-edge rendering for high-zoom Esri satellite & HD map tiles */
+.leaflet-satellite-crisp .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  filter: contrast(1.06) saturate(1.08);
+}
+
+.leaflet-hud-viewport {
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center center;
+}
+
 /* Smooth GPS marker interpolation */
 .velo-smooth-marker {
   transition: transform 0.65s linear !important;
@@ -66,4 +80,38 @@
 
 .pt-safe {
   padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+/* Clean print / PDF export rules without window.open */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #09090b !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #09090b !important;
+  }
 }

@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowUp,
   Banknote,
-  Camera,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -53,7 +52,6 @@ import {
 import {
   acceptRide,
   completeRide,
-  compressImageFileToDataUrl,
   confirmCashReceived,
   declarePixPaid,
   fetchUserProfileById,
@@ -63,6 +61,9 @@ import {
   startRideWithPin,
   toggleDriverOnlineStatus,
 } from '../lib/mobilityApi';
+import { logAuditEvent } from '../lib/audit';
+import { useTranslation } from '../lib/i18n';
+import { isDateInPeriod } from '../lib/periodFilter';
 import { PixQrSvg } from '../lib/pixQr';
 import {
   playRideAcceptedChime,
@@ -76,6 +77,7 @@ import {
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
+  PeriodFilter,
   PlatformConfig,
   PlatformEvent,
   Ride,
@@ -120,6 +122,7 @@ const isDeliveryCategory = (cat: RideCategory) =>
   cat === 'delivery_moto' || cat === 'delivery_car';
 
 const PAYMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  paid_wallet: { label: 'Pago pelo App (Saldo) · A receber', color: 'text-emerald-400' },
   paid_pix: { label: 'Pix pago à Plataforma · A receber', color: 'text-amber-400' },
   admin_settled: { label: 'Quitado pelo Admin', color: 'text-emerald-400' },
   paid_cash: { label: 'Recebido em Dinheiro', color: 'text-emerald-400' },
@@ -140,9 +143,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
   onEmitLocation,
   onLogout,
 }) => {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
   const [financeTab, setFinanceTab] = useState<'rides' | 'ledger'>('rides');
+  const [financePeriod, setFinancePeriod] = useState<PeriodFilter>('day');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -173,14 +178,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [routeDurationMin, setRouteDurationMin] = useState<number>(0);
   const [declinedRideIds, setDeclinedRideIds] = useState<string[]>([]);
 
-  const [pinModalMode, setPinModalMode] = useState<'pickup' | null>(null);
-  const [deliveryProofOpen, setDeliveryProofOpen] = useState(false);
-  const [deliveryPhotoPreview, setDeliveryPhotoPreview] = useState<string>('');
+  const [pinModalMode, setPinModalMode] = useState<'pickup' | 'delivery' | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const [checkoutRide, setCheckoutRide] = useState<Ride | null>(null);
+  const [walletPaidSuccessRide, setWalletPaidSuccessRide] = useState<Ride | null>(null);
   const [pixConfirmedSuccess, setPixConfirmedSuccess] = useState(false);
   const [copiedCheckoutPix, setCopiedCheckoutPix] = useState(false);
   const [waitNowMs, setWaitNowMs] = useState<number>(() => Date.now());
@@ -202,6 +206,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const sessionStartedAtRef = useRef<number>(Date.now());
   const justCompletedRideIdRef = useRef<string | null>(null);
   const pixSuccessTimerRef = useRef<number | null>(null);
+  const walletSuccessTimerRef = useRef<number | null>(null);
 
   const markRatingHandled = useCallback(
     (rideId: string) => {
@@ -242,31 +247,62 @@ export const DriverView: React.FC<DriverViewProps> = ({
     [myDriverRides]
   );
 
+  const periodDriverRides = useMemo(
+    () =>
+      myDriverRides.filter((r) =>
+        isDateInPeriod(r.completed_at || r.created_at, financePeriod)
+      ),
+    [myDriverRides, financePeriod]
+  );
+
+  const periodCompletedRides = useMemo(
+    () => periodDriverRides.filter((r) => r.status === 'completed'),
+    [periodDriverRides]
+  );
+
+  const periodTransactions = useMemo(
+    () => transactions.filter((tx) => isDateInPeriod(tx.created_at, financePeriod)),
+    [transactions, financePeriod]
+  );
+
   const financeSummary = useMemo(() => {
-    const totalPixEarned = completedRides
+    const totalPixEarned = periodCompletedRides
       .filter((r) => r.payment_method === 'pix')
       .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
 
-    const totalCashCollected = completedRides
+    const totalWalletEarned = periodCompletedRides
+      .filter((r) => r.payment_method === 'wallet')
+      .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
+
+    const totalCashCollected = periodCompletedRides
       .filter((r) => r.payment_method === 'cash' && r.payment_status !== 'disputed')
       .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
 
-    const totalPayoutsReceived = transactions
-      .filter((t) => t.type === 'payout')
-      .reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    const totalPayoutsReceived = periodTransactions
+      .filter((tx) => tx.type === 'payout')
+      .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
 
-    const disputedTotal = myDriverRides
+    const disputedTotal = periodDriverRides
       .filter((r) => r.payment_status === 'disputed')
       .reduce((acc, r) => acc + (r.final_fare ?? r.estimated_fare), 0);
 
+    const grossTotal = totalPixEarned + totalWalletEarned + totalCashCollected;
+    const deliveriesCount = periodCompletedRides.filter((r) =>
+      isDeliveryCategory(r.category)
+    ).length;
+
     return {
       totalPixEarned: Number(totalPixEarned.toFixed(2)),
+      totalWalletEarned: Number(totalWalletEarned.toFixed(2)),
       totalCashCollected: Number(totalCashCollected.toFixed(2)),
       totalPayoutsReceived: Number(totalPayoutsReceived.toFixed(2)),
       disputedTotal: Number(disputedTotal.toFixed(2)),
+      grossTotal: Number(grossTotal.toFixed(2)),
+      ridesCount: periodCompletedRides.length - deliveriesCount,
+      deliveriesCount,
       pendingToReceive: Number((currentUser.wallet_balance || 0).toFixed(2)),
     };
-  }, [completedRides, myDriverRides, transactions, currentUser.wallet_balance]);
+  }, [periodCompletedRides, periodDriverRides, periodTransactions, currentUser.wallet_balance]);
 
   const activeRide = useMemo(
     () =>
@@ -293,7 +329,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
       isDel
         ? `Nova Entrega (${formatBRL(incomingRide.estimated_fare)})`
         : `Nova Corrida (${formatBRL(incomingRide.estimated_fare)})`,
-      `${incomingRide.origin_address} → ${incomingRide.destination_address}`
+      `${incomingRide.origin_address} → ${incomingRide.destination_address}`,
+      isDel
     );
     return stopAlarm;
   }, [incomingRide]);
@@ -342,6 +379,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   useEffect(() => {
     return () => {
       if (pixSuccessTimerRef.current) window.clearTimeout(pixSuccessTimerRef.current);
+      if (walletSuccessTimerRef.current) window.clearTimeout(walletSuccessTimerRef.current);
     };
   }, []);
 
@@ -384,7 +422,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
   const pendingRatingRide = useMemo(
     () =>
-      !checkoutRide
+      !checkoutRide && !walletPaidSuccessRide
         ? myDriverRides.find((r) => {
             if (r.status !== 'completed' || r.driver_rating_submitted) return false;
             if (dismissedRatingIds.includes(r.id)) return false;
@@ -395,7 +433,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             );
           }) || null
         : null,
-    [myDriverRides, dismissedRatingIds, checkoutRide]
+    [myDriverRides, dismissedRatingIds, checkoutRide, walletPaidSuccessRide]
   );
 
   useEffect(() => {
@@ -549,6 +587,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
     try {
       const updated = await acceptRide(rideId, currentUser.id);
       onRideUpsert(updated);
+      void logAuditEvent({
+        user: currentUser,
+        event_type: 'ride_accept',
+        description: `Aceitou ${updated.category} #${updated.id.slice(-5)} (${formatBRL(updated.estimated_fare)})`,
+        metadata: { ride_id: updated.id, category: updated.category },
+      });
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : 'Solicitação indisponível.');
     } finally {
@@ -566,6 +610,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
     try {
       const updated = await markRideArrived(activeRide.id);
       onRideUpsert(updated);
+      void logAuditEvent({
+        user: currentUser,
+        event_type: 'ride_arrived',
+        description: `Chegou ao local de embarque #${updated.id.slice(-5)}`,
+        metadata: { ride_id: updated.id },
+      });
     } finally {
       setActionLoading(false);
     }
@@ -585,16 +635,55 @@ export const DriverView: React.FC<DriverViewProps> = ({
     }
   };
 
+  const handleCompletedRideOutcome = async (updated: Ride) => {
+    justCompletedRideIdRef.current = updated.id;
+    onRideUpsert(updated);
+    void logAuditEvent({
+      user: currentUser,
+      event_type: 'ride_completed',
+      description: `Concluiu ${updated.category} #${updated.id.slice(-5)} (${formatBRL(updated.final_fare ?? updated.estimated_fare)})`,
+      metadata: {
+        ride_id: updated.id,
+        payment_method: updated.payment_method,
+        fare: updated.final_fare ?? updated.estimated_fare,
+      },
+    });
+    if (updated.payment_method === 'wallet' || updated.payment_status === 'paid_wallet') {
+      setCheckoutRide(null);
+      setPixConfirmedSuccess(false);
+      setWalletPaidSuccessRide(updated);
+      void playRideAcceptedChime();
+      if (walletSuccessTimerRef.current) window.clearTimeout(walletSuccessTimerRef.current);
+      walletSuccessTimerRef.current = window.setTimeout(() => {
+        setWalletPaidSuccessRide(null);
+      }, 2600);
+    } else {
+      setPixConfirmedSuccess(false);
+      setCheckoutRide(updated);
+    }
+    await loadFinancePanel();
+  };
+
   const submitPinAction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRide || !pinModalMode) return;
     setPinError(null);
     setActionLoading(true);
     try {
-      const updated = await startRideWithPin(activeRide, pinInput);
-      setPinModalMode(null);
-      setPinInput('');
-      onRideUpsert(updated);
+      if (pinModalMode === 'pickup') {
+        const updated = await startRideWithPin(activeRide, pinInput);
+        setPinModalMode(null);
+        setPinInput('');
+        onRideUpsert(updated);
+      } else {
+        const totalWithWait = Number(
+          (activeRide.estimated_fare + waitingStats.waitingFee).toFixed(2)
+        );
+        const updated = await completeRide(activeRide, currentUser.id, pinInput, totalWithWait);
+        setPinModalMode(null);
+        setPinInput('');
+        await handleCompletedRideOutcome(updated);
+      }
     } catch (err) {
       setPinError(err instanceof Error ? err.message : 'Código PIN incorreto.');
     } finally {
@@ -602,60 +691,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
     }
   };
 
-  const handleDeliveryPhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const compressed = await compressImageFileToDataUrl(file, 1024, 0.7);
-      setDeliveryPhotoPreview(compressed);
-      setPinError(null);
-    } catch {
-      setPinError('Não foi possível processar a foto da entrega.');
-    }
-  };
-
-  const submitDeliveryCompletion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeRide) return;
-    if (!deliveryPhotoPreview) {
-      setPinError('Tire uma foto do pacote no local de entrega para confirmar.');
-      return;
-    }
-    setPinError(null);
-    setActionLoading(true);
-    try {
-      const totalWithWait = Number(
-        (activeRide.estimated_fare + waitingStats.waitingFee).toFixed(2)
-      );
-      const updated = await completeRide(
-        activeRide,
-        currentUser.id,
-        activeRide.require_pin !== false ? pinInput : undefined,
-        totalWithWait,
-        deliveryPhotoPreview
-      );
-      setDeliveryProofOpen(false);
-      setDeliveryPhotoPreview('');
-      setPinInput('');
-      justCompletedRideIdRef.current = updated.id;
-      onRideUpsert(updated);
-      setPixConfirmedSuccess(false);
-      setCheckoutRide(updated);
-      await loadFinancePanel();
-    } catch (err) {
-      setPinError(err instanceof Error ? err.message : 'Não foi possível concluir a entrega.');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const completeRideDirect = async () => {
     if (!activeRide) return;
-    if (isDeliveryCategory(activeRide.category)) {
+    if (isDeliveryCategory(activeRide.category) && activeRide.require_pin !== false) {
       setPinError(null);
       setPinInput('');
-      setDeliveryPhotoPreview('');
-      setDeliveryProofOpen(true);
+      setPinModalMode('delivery');
       return;
     }
     setActionLoading(true);
@@ -664,11 +705,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
         (activeRide.estimated_fare + waitingStats.waitingFee).toFixed(2)
       );
       const updated = await completeRide(activeRide, currentUser.id, undefined, totalWithWait);
-      justCompletedRideIdRef.current = updated.id;
-      onRideUpsert(updated);
-      setPixConfirmedSuccess(false);
-      setCheckoutRide(updated);
-      await loadFinancePanel();
+      await handleCompletedRideOutcome(updated);
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Não foi possível concluir a corrida.');
     } finally {
       setActionLoading(false);
     }
@@ -874,7 +913,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             }`}
           >
             <Power className="h-4 w-4" />
-            <span className="whitespace-nowrap">{isOnline ? 'Online' : 'Conectar'}</span>
+            <span className="whitespace-nowrap">{isOnline ? t.online : t.connect}</span>
           </button>
         </div>
       )}
@@ -893,7 +932,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               }`}
             />
             <Eye className="h-4 w-4 text-[#FFD100]" />
-            <span>Mostrar painel</span>
+            <span>{t.show_panel}</span>
           </button>
         </div>
       )}
@@ -1242,7 +1281,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <div className="rounded-2xl bg-[#1D212B] p-3 text-xs space-y-1.5 border border-white/5">
                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
                   <span className="font-bold text-neutral-400">
-                    {activeRide.payment_method === 'pix' ? 'Pagamento via Pix' : 'Pagamento em Dinheiro'}
+                    {activeRide.payment_method === 'wallet'
+                      ? 'Pago pelo App (Saldo)'
+                      : activeRide.payment_method === 'pix'
+                      ? 'Pagamento via Pix'
+                      : 'Pagamento em Dinheiro'}
                   </span>
                   <span className="font-mono-num text-base font-extrabold text-[#FFD100]">
                     {formatBRL(activeRide.estimated_fare + waitingStats.waitingFee)}
@@ -1310,7 +1353,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   variant="emerald"
                   label={
                     activeIsDelivery
-                      ? 'Arraste para finalizar entrega (Foto)'
+                      ? activeRide.require_pin !== false
+                        ? 'Arraste para finalizar entrega (PIN 4 dígitos)'
+                        : 'Arraste para finalizar entrega'
                       : 'Arraste para finalizar corrida no destino'
                   }
                   disabled={actionLoading}
@@ -1417,7 +1462,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       Central de Pagamentos & Ganhos
                     </p>
                     <p className="text-[11px] text-neutral-400 font-mono-num">
-                      A receber (Pix): {formatBRL(financeSummary.pendingToReceive)} · Dinheiro:{' '}
+                      A receber (Pix / App): {formatBRL(financeSummary.pendingToReceive)} · Dinheiro:{' '}
                       {formatBRL(financeSummary.totalCashCollected)}
                     </p>
                   </div>
@@ -1453,7 +1498,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
             <div className="rounded-3xl bg-[#181C24] p-5 border border-[#FFD100]/40 text-center">
               <p className="text-xs font-bold text-neutral-400">
-                {incomingRide.payment_method === 'pix'
+                {incomingRide.payment_method === 'wallet'
+                  ? 'Pago pelo App (Saldo) · Crédito garantido'
+                  : incomingRide.payment_method === 'pix'
                   ? 'Pagamento via Pix (Plataforma)'
                   : 'Receber em Dinheiro'}
               </p>
@@ -1713,114 +1760,47 @@ export const DriverView: React.FC<DriverViewProps> = ({
         );
       })()}
 
-      {/* DELIVERY COMPLETION MODAL (CAMERA PHOTO PROOF + OPTIONAL 4-DIGIT PIN) */}
-      {deliveryProofOpen && activeRide && (
-        <div className="fixed inset-0 z-[1140] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
-          <form
-            onSubmit={submitDeliveryCompletion}
-            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
-          >
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div>
-                <h3 className="font-display text-lg font-extrabold text-neutral-950">
-                  Finalizar Entrega com Foto
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  Registre a foto do pacote entregue no destino
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDeliveryProofOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
+      {/* Instant Celebratory Modal for Rides/Deliveries Paid with App Wallet Balance */}
+      {walletPaidSuccessRide && (
+        <div className="fixed inset-0 z-[1185] flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl space-y-4 border border-emerald-200">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <CheckCircle2 className="h-10 w-10" />
             </div>
-
-            {pinError && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">
-                {pinError}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-neutral-800">
-                1. Foto comprobatória da entrega (Câmera)
-              </label>
-              <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-neutral-300 bg-neutral-50 p-4 text-center hover:border-neutral-950 transition">
-                {deliveryPhotoPreview ? (
-                  <div className="w-full space-y-2">
-                    <img
-                      src={deliveryPhotoPreview}
-                      alt="Comprovante da entrega"
-                      className="h-44 w-full rounded-xl object-cover"
-                    />
-                    <span className="inline-block text-xs font-extrabold text-neutral-950 underline">
-                      Tirar outra foto
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950">
-                      <Camera className="h-6 w-6" />
-                    </div>
-                    <span className="mt-2 text-xs font-extrabold text-neutral-950">
-                      Abrir câmera e fotografar entrega
-                    </span>
-                    <span className="text-[11px] text-neutral-500">
-                      Foto salva automaticamente como comprovante
-                    </span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleDeliveryPhotoSelected}
-                  className="sr-only"
-                />
-              </label>
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">
+                Pago pelo Aplicativo (Saldo)
+              </p>
+              <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950">
+                Valor creditado no seu saldo!
+              </h3>
+              <p className="mt-1.5 text-xs text-neutral-600">
+                O valor de{' '}
+                <strong className="font-mono-num text-neutral-950">
+                  {formatBRL(
+                    walletPaidSuccessRide.final_fare ?? walletPaidSuccessRide.estimated_fare
+                  )}
+                </strong>{' '}
+                já foi adicionado automaticamente ao seu saldo de repasses.
+              </p>
             </div>
-
-            {activeRide.require_pin !== false ? (
-              <div>
-                <label className="block text-xs font-bold text-neutral-800 mb-1.5">
-                  2. PIN de Segurança de 4 dígitos
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={4}
-                  required
-                  value={pinInput}
-                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  placeholder="0000"
-                  className="min-h-[56px] w-full rounded-2xl border-2 border-neutral-300 bg-neutral-50 text-center font-mono-num text-3xl font-extrabold tracking-[0.45em] text-neutral-950 outline-none focus:border-neutral-950 focus:bg-white"
-                />
-              </div>
-            ) : (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs font-bold text-emerald-800">
-                O cliente optou por entrega sem código PIN (somente foto obrigatória).
-              </div>
-            )}
-
             <button
-              type="submit"
-              disabled={
-                actionLoading ||
-                !deliveryPhotoPreview ||
-                (activeRide.require_pin !== false && pinInput.length !== 4)
-              }
-              className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm disabled:opacity-45"
+              type="button"
+              onClick={() => {
+                if (walletSuccessTimerRef.current) {
+                  window.clearTimeout(walletSuccessTimerRef.current);
+                }
+                setWalletPaidSuccessRide(null);
+              }}
+              className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
             >
-              {actionLoading ? 'Enviando foto e concluindo...' : 'Concluir Entrega e Cobrar'}
+              Continuar
             </button>
-          </form>
+          </div>
         </div>
       )}
 
-      {/* 4-Digit Pickup PIN Modal (Passenger Boarding or Optional Delivery Pickup) */}
+      {/* 4-Digit PIN Modal (Pickup Boarding or Delivery Completion) */}
       {pinModalMode && activeRide && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/70 p-4">
           <form
@@ -1829,7 +1809,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
-                {activeIsDelivery ? 'PIN de Retirada / Coleta' : 'Confirmar Código PIN'}
+                {pinModalMode === 'delivery'
+                  ? 'Confirmar PIN de Entrega'
+                  : activeIsDelivery
+                  ? 'PIN de Retirada / Coleta'
+                  : 'Confirmar Código PIN'}
               </h3>
               <button
                 type="button"
@@ -1840,8 +1824,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </button>
             </div>
             <p className="mt-1 text-xs text-neutral-600">
-              Peça os 4 dígitos exibidos no celular de{' '}
-              {activeRide.passenger?.full_name || 'cliente'} para liberar a partida.
+              {pinModalMode === 'delivery'
+                ? 'Peça o código PIN de 4 dígitos ao destinatário para concluir a entrega com segurança.'
+                : `Peça os 4 dígitos exibidos no celular de ${
+                    activeRide.passenger?.full_name || 'cliente'
+                  } para liberar a partida.`}
             </p>
 
             {pinError && (
@@ -1867,7 +1854,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
               disabled={pinInput.length !== 4 || actionLoading}
               className="mt-4 min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 disabled:opacity-40"
             >
-              {actionLoading ? 'Validando PIN...' : 'Liberar Partida'}
+              {actionLoading
+                ? 'Validando PIN...'
+                : pinModalMode === 'delivery'
+                ? 'Concluir Entrega'
+                : 'Liberar Partida'}
             </button>
           </form>
         </div>
@@ -1990,7 +1981,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               >
                 <span className="flex items-center gap-3">
                   <Wallet className="h-5 w-5 text-[#FFD100]" />
-                  Central de Ganhos & Pagamentos
+                  {t.earnings_center}
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-500" />
               </button>
@@ -2020,7 +2011,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               >
                 <span className="flex items-center gap-3">
                   <History className="h-5 w-5 text-neutral-400" />
-                  Histórico de Corridas ({myDriverRides.length})
+                  {t.ride_history} ({myDriverRides.length})
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-500" />
               </button>
@@ -2035,7 +2026,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               >
                 <span className="flex items-center gap-3">
                   <Headphones className="h-5 w-5 text-sky-400" />
-                  Falar com Admin / Suporte
+                  {t.support_admin}
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-500" />
               </button>
@@ -2050,7 +2041,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               >
                 <span className="flex items-center gap-3">
                   <Settings className="h-5 w-5 text-neutral-400" />
-                  Perfil, Foto e Veículo
+                  {t.settings_title}
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-500" />
               </button>
@@ -2071,24 +2062,24 @@ export const DriverView: React.FC<DriverViewProps> = ({
               className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-white/10 text-sm font-bold text-white hover:bg-white/15"
             >
               <LogOut className="h-4 w-4" />
-              Sair da conta
+              {t.logout}
             </button>
           </div>
           <div className="flex-1" onClick={() => setMenuOpen(false)} />
         </div>
       )}
 
-      {/* FULL DRIVER PAYMENT & EARNINGS MANAGEMENT PANEL (Matching Admin Clarity) */}
+      {/* FULL DRIVER PAYMENT & EARNINGS MANAGEMENT PANEL WITH DIA/SEMANA/MÊS/GERAL BREAKDOWN */}
       {financeOpen && (
-        <div className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-          <div className="w-full max-w-2xl rounded-t-3xl sm:rounded-3xl bg-[#0F1115] text-white p-6 shadow-2xl max-h-[90vh] flex flex-col border border-white/10">
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+        <div className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
+          <div className="w-full max-w-2xl rounded-t-3xl sm:rounded-3xl bg-[#0F1115] text-white p-6 shadow-2xl max-h-[92vh] flex flex-col border border-white/10">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div>
                 <h3 className="font-display text-lg font-extrabold text-white">
-                  Gestão de Pagamentos e Ganhos
+                  {t.earnings_center}
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Acompanhe o que você tem a receber da plataforma (Pix) e em dinheiro
+                  Acompanhe ganhos por Dia, Semana, Mês, repasses Pix e dinheiro recebido
                 </p>
               </div>
               <button
@@ -2100,11 +2091,90 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </button>
             </div>
 
+            {/* Period Filter Tabs: Dia / Semana / Mês / Geral */}
+            <div className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl bg-[#1A1D24] p-1 border border-white/5">
+              {(
+                [
+                  { id: 'day', label: t.period_day },
+                  { id: 'week', label: t.period_week },
+                  { id: 'month', label: t.period_month },
+                  { id: 'all', label: t.period_all },
+                ] as const
+              ).map((p) => {
+                const count = myDriverRides.filter(
+                  (r) =>
+                    r.status === 'completed' &&
+                    isDateInPeriod(r.completed_at || r.created_at, p.id)
+                ).length;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setFinancePeriod(p.id)}
+                    className={`min-h-[38px] rounded-xl px-2 text-[11px] font-extrabold transition ${
+                      financePeriod === p.id
+                        ? 'bg-[#FFD100] text-neutral-950 shadow-xs'
+                        : 'text-neutral-300 hover:text-white'
+                    }`}
+                  >
+                    {p.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Period Earnings & Goal Progress Bar */}
+            {(() => {
+              const goalTarget =
+                financePeriod === 'day'
+                  ? 200
+                  : financePeriod === 'week'
+                  ? 1200
+                  : financePeriod === 'month'
+                  ? 4500
+                  : 0;
+              const pct =
+                goalTarget > 0
+                  ? Math.min(100, Math.round((financeSummary.grossTotal / goalTarget) * 100))
+                  : 100;
+              return (
+                <div className="mt-3 rounded-2xl bg-[#1A1D24] p-3.5 border border-white/10 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div>
+                      <span className="text-neutral-400 font-semibold">Produção no período: </span>
+                      <strong className="font-mono-num text-base font-extrabold text-[#FFD100]">
+                        {formatBRL(financeSummary.grossTotal)}
+                      </strong>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-neutral-300">
+                      <span>{financeSummary.ridesCount} corridas</span>
+                      <span>·</span>
+                      <span>{financeSummary.deliveriesCount} entregas</span>
+                    </div>
+                  </div>
+                  {goalTarget > 0 && (
+                    <div className="space-y-1">
+                      <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#FFD100] transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] font-bold text-neutral-400 font-mono-num">
+                        <span>Meta sugerida: {formatBRL(goalTarget)}</span>
+                        <span className="text-[#FFD100]">{pct}% atingido</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* 4 Financial Summary Cards */}
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-[#FFD100]/30">
                 <p className="text-[11px] font-semibold text-neutral-400">
-                  A Receber (Admin Pix)
+                  Saldo a Receber (Atual)
                 </p>
                 <p className="mt-1 font-mono-num text-xl font-extrabold text-[#FFD100]">
                   {formatBRL(financeSummary.pendingToReceive)}
@@ -2113,16 +2183,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
               <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-white/5">
                 <p className="text-[11px] font-semibold text-neutral-400">
-                  Total Corridas Pix
+                  Pix + Saldo App (Período)
                 </p>
                 <p className="mt-1 font-mono-num text-xl font-extrabold text-white">
-                  {formatBRL(financeSummary.totalPixEarned)}
+                  {formatBRL(financeSummary.totalPixEarned + financeSummary.totalWalletEarned)}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-white/5">
                 <p className="text-[11px] font-semibold text-neutral-400">
-                  Recebido em Dinheiro
+                  Dinheiro (Período)
                 </p>
                 <p className="mt-1 font-mono-num text-xl font-extrabold text-emerald-400">
                   {formatBRL(financeSummary.totalCashCollected)}
@@ -2131,7 +2201,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
               <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-white/5">
                 <p className="text-[11px] font-semibold text-neutral-400">
-                  Já Repassado (Pix)
+                  Repassado (Período)
                 </p>
                 <p className="mt-1 font-mono-num text-xl font-extrabold text-sky-400">
                   {formatBRL(financeSummary.totalPayoutsReceived)}
@@ -2157,7 +2227,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
 
             {/* Sub-tabs: Corridas vs Extrato */}
-            <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-2xl bg-[#1A1D24] p-1">
+            <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-2xl bg-[#1A1D24] p-1">
               <button
                 type="button"
                 onClick={() => setFinanceTab('rides')}
@@ -2167,7 +2237,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                Pagamentos por Corrida ({myDriverRides.length})
+                Corridas do Período ({periodDriverRides.length})
               </button>
               <button
                 type="button"
@@ -2178,18 +2248,29 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                Extrato e Repasses ({transactions.length})
+                Extrato e Repasses ({periodTransactions.length})
               </button>
             </div>
 
             <div className="mt-3 flex-1 overflow-y-auto space-y-2.5 pr-0.5">
               {financeTab === 'rides' ? (
-                myDriverRides.length === 0 ? (
-                  <p className="py-10 text-center text-xs text-neutral-400">
-                    Nenhuma corrida ou entrega registrada ainda.
-                  </p>
+                periodDriverRides.length === 0 ? (
+                  <div className="py-10 text-center space-y-2">
+                    <p className="text-xs text-neutral-400">
+                      Nenhuma corrida ou entrega neste período selecionado.
+                    </p>
+                    {financePeriod !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => setFinancePeriod('all')}
+                        className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-[#FFD100]"
+                      >
+                        Ver histórico completo (Geral)
+                      </button>
+                    )}
+                  </div>
                 ) : (
-                  myDriverRides.map((r) => {
+                  periodDriverRides.map((r) => {
                     const statusMeta =
                       PAYMENT_STATUS_LABELS[r.payment_status] ||
                       PAYMENT_STATUS_LABELS.pending;
@@ -2200,7 +2281,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            {r.payment_method === 'pix' ? (
+                            {r.payment_method === 'wallet' ? (
+                              <Wallet className="h-4 w-4 text-emerald-400 shrink-0" />
+                            ) : r.payment_method === 'pix' ? (
                               <QrCode className="h-4 w-4 text-[#FFD100] shrink-0" />
                             ) : (
                               <Banknote className="h-4 w-4 text-emerald-400 shrink-0" />
@@ -2221,11 +2304,20 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
                         <div className="flex items-center justify-between pt-1 text-[11px]">
                           <span className={`font-bold ${statusMeta.color}`}>
-                            {r.payment_method === 'pix' ? 'Pix' : 'Dinheiro'} ·{' '}
-                            {statusMeta.label}
+                            {r.payment_method === 'wallet'
+                              ? 'Pago pelo App (Saldo)'
+                              : r.payment_method === 'pix'
+                              ? 'Pix'
+                              : 'Dinheiro'}{' '}
+                            · {statusMeta.label}
                           </span>
                           <span className="font-mono-num text-neutral-500">
-                            {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                            {new Date(r.completed_at || r.created_at).toLocaleString('pt-BR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                           </span>
                         </div>
 
@@ -2248,12 +2340,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     );
                   })
                 )
-              ) : transactions.length === 0 ? (
+              ) : periodTransactions.length === 0 ? (
                 <p className="py-10 text-center text-xs text-neutral-400">
-                  Nenhuma movimentação financeira registrada ainda.
+                  Nenhuma movimentação financeira neste período.
                 </p>
               ) : (
-                transactions.map((tx) => (
+                periodTransactions.map((tx) => (
                   <div
                     key={tx.id}
                     className="flex items-center justify-between rounded-2xl border border-white/5 bg-[#1A1D24] px-4 py-3 text-xs"
@@ -2265,7 +2357,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
                           ? 'Repasse Pix recebido do Admin'
                           : tx.type === 'dispute_settlement'
                           ? 'Crédito de disputa quitada'
-                          : 'Crédito de corrida Pix'}{' '}
+                          : tx.type === 'admin_adjustment'
+                          ? 'Ajuste de saldo pelo Admin'
+                          : tx.type === 'deposit'
+                          ? 'Depósito Pix confirmado'
+                          : 'Crédito de corrida (Pix / Saldo)'}{' '}
                         · {new Date(tx.created_at).toLocaleDateString('pt-BR')}
                       </p>
                     </div>
@@ -2327,7 +2423,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </p>
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] font-semibold text-neutral-500">
-                        {r.payment_method === 'pix' ? 'Pix' : 'Dinheiro'} · {r.payment_status}
+                        {r.payment_method === 'wallet'
+                          ? 'Saldo do App'
+                          : r.payment_method === 'pix'
+                          ? 'Pix'
+                          : 'Dinheiro'}{' '}
+                        · {(PAYMENT_STATUS_LABELS[r.payment_status] || PAYMENT_STATUS_LABELS.pending).label}
                       </span>
                       {r.payment_status !== 'disputed' &&
                         r.payment_status !== 'admin_settled' &&
@@ -2409,6 +2510,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
           platformConfig={platformConfig}
           onUserUpdated={onUserUpdated}
           onAccountDeleted={onLogout}
+          onOpenSupport={() => {
+            setSettingsOpen(false);
+            setSupportChatOpen(true);
+          }}
           onClose={() => setSettingsOpen(false)}
         />
       )}

@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieBanner } from './components/CookieBanner';
 import { DriverView } from './components/DriverView';
+import { OtaUpdateModal } from './components/OtaUpdateModal';
 import { PassengerView } from './components/PassengerView';
 import { PermissionsPromptModal } from './components/PermissionsPromptModal';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { useAppConfig } from './context/AppConfigContext';
 import { useRealtimeMobility } from './hooks/useRealtimeMobility';
+import { logAuditEvent } from './lib/audit';
 import { resolveBrandLogo } from './lib/brandAssets';
 import { logoutUser, restoreSessionUser } from './lib/mobilityApi';
+import { checkForOtaUpdate, type OtaUpdateInfo } from './lib/otaUpdate';
 import { supabase } from './lib/supabase';
-import { hasSeenPermissionsPrompt } from './lib/userPrefs';
+import {
+  applyThemeToDocument,
+  getUserPreferences,
+  hasSeenPermissionsPrompt,
+  saveUserPreferences,
+  subscribeUserPreferences,
+} from './lib/userPrefs';
 import type { UserProfile } from './types/mobility';
 
 const STORAGE_KEY = 'velo99_session_user';
@@ -28,17 +37,88 @@ export default function App() {
   });
   const [booting, setBooting] = useState(true);
   const [showPermsModal, setShowPermsModal] = useState<boolean>(() => !hasSeenPermissionsPrompt());
+  const [otaUpdateInfo, setOtaUpdateInfo] = useState<OtaUpdateInfo | null>(null);
+  const [otaDismissed, setOtaDismissed] = useState(false);
 
-  const handleUserUpdated = useCallback((updated: UserProfile) => {
-    setCurrentUser(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const syncedLangUserIdRef = useRef<string | null>(null);
+  const loggedSessionUserIdRef = useRef<string | null>(null);
+  const otaCheckedRef = useRef(false);
+
+  useEffect(() => {
+    applyThemeToDocument();
+    const unsub = subscribeUserPreferences((prefs) => {
+      applyThemeToDocument(prefs.theme_mode, prefs.language);
+    });
+    const timer = window.setInterval(() => {
+      const prefs = getUserPreferences();
+      if (prefs.theme_mode === 'auto') {
+        applyThemeToDocument('auto', prefs.language);
+      }
+    }, 60_000);
+    return () => {
+      unsub();
+      window.clearInterval(timer);
+    };
   }, []);
+
+  const recordSessionAudit = useCallback(
+    (user: UserProfile, eventType: 'login' | 'session_restore') => {
+      if (loggedSessionUserIdRef.current === user.id) return;
+      loggedSessionUserIdRef.current = user.id;
+      void logAuditEvent({
+        user,
+        event_type: eventType,
+        description:
+          eventType === 'login'
+            ? `Login realizado (${user.role})`
+            : `Sessão restaurada (${user.role})`,
+      });
+    },
+    []
+  );
+
+  const handleUserUpdated = useCallback(
+    (updated: UserProfile) => {
+      setCurrentUser(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+      if (
+        updated.preferred_language &&
+        syncedLangUserIdRef.current !== updated.id
+      ) {
+        syncedLangUserIdRef.current = updated.id;
+        const localPrefs = getUserPreferences();
+        if (localPrefs.language !== updated.preferred_language) {
+          saveUserPreferences({ language: updated.preferred_language });
+        }
+      }
+    },
+    []
+  );
+
+  const handleAuthenticated = useCallback(
+    (user: UserProfile) => {
+      handleUserUpdated(user);
+      recordSessionAudit(user, 'login');
+    },
+    [handleUserUpdated, recordSessionAudit]
+  );
 
   const handleLogout = useCallback(async () => {
+    const prevUser = currentUser;
+    syncedLangUserIdRef.current = null;
+    loggedSessionUserIdRef.current = null;
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY);
+    if (prevUser) {
+      void logAuditEvent({
+        user: prevUser,
+        event_type: 'logout',
+        description: `Usuário encerrou sessão (${prevUser.role})`,
+      });
+    }
     await logoutUser().catch(() => {});
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     let mounted = true;
@@ -47,6 +127,7 @@ export default function App() {
         if (!mounted) return;
         if (user) {
           handleUserUpdated(user);
+          recordSessionAudit(user, 'session_restore');
         } else {
           setCurrentUser(null);
           localStorage.removeItem(STORAGE_KEY);
@@ -59,6 +140,8 @@ export default function App() {
 
     const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
+        syncedLangUserIdRef.current = null;
+        loggedSessionUserIdRef.current = null;
         setCurrentUser(null);
         localStorage.removeItem(STORAGE_KEY);
       }
@@ -68,7 +151,7 @@ export default function App() {
       mounted = false;
       authSub.subscription.unsubscribe();
     };
-  }, [handleUserUpdated]);
+  }, [handleUserUpdated, recordSessionAudit]);
 
   const {
     platformConfig,
@@ -95,10 +178,22 @@ export default function App() {
     [platformConfig, appConfig]
   );
 
+  useEffect(() => {
+    if (booting || otaCheckedRef.current) return;
+    otaCheckedRef.current = true;
+    checkForOtaUpdate(effectivePlatformConfig)
+      .then((info) => {
+        if (info.hasUpdate) {
+          setOtaUpdateInfo(info);
+        }
+      })
+      .catch(() => {});
+  }, [booting, effectivePlatformConfig]);
+
   if (booting && !currentUser) {
     return (
       <div
-        className="flex h-screen w-screen items-center justify-center"
+        className="flex h-screen w-screen items-center justify-center dark:bg-neutral-950"
         style={{ backgroundColor: effectivePlatformConfig.primary_color || '#FFD100' }}
       >
         <div className="text-center">
@@ -120,7 +215,7 @@ export default function App() {
       <OfflineIndicator />
       {!currentUser ? (
         <AuthScreen
-          onAuthenticated={handleUserUpdated}
+          onAuthenticated={handleAuthenticated}
           platformConfig={effectivePlatformConfig}
         />
       ) : currentUser.role === 'admin' ? (
@@ -165,6 +260,14 @@ export default function App() {
         <PermissionsPromptModal
           siteName={effectivePlatformConfig.site_name}
           onClose={() => setShowPermsModal(false)}
+        />
+      )}
+
+      {otaUpdateInfo?.hasUpdate && !otaDismissed && (
+        <OtaUpdateModal
+          updateInfo={otaUpdateInfo}
+          siteName={effectivePlatformConfig.site_name}
+          onClose={() => setOtaDismissed(true)}
         />
       )}
     </>

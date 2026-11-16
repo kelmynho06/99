@@ -540,5 +540,338 @@ RETURNS TABLE (
     AND dp.current_lng IS NOT NULL;
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
+-- ============================================================================
+-- 17. Carteira do Cliente (Saldo), Depósitos Pix & Pagamento com Saldo do App
+-- ============================================================================
 
+-- Atualizar constraints de payment_method, payment_status em rides e type em wallet_transactions
+DO $$
+DECLARE
+  c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'public.rides'::regclass
+      AND contype = 'c'
+      AND (pg_get_constraintdef(oid) ILIKE '%payment_method%' OR pg_get_constraintdef(oid) ILIKE '%payment_status%')
+  LOOP
+    EXECUTE format('ALTER TABLE public.rides DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+
+  FOR c IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'public.wallet_transactions'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%type%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.wallet_transactions DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+
+ALTER TABLE public.rides
+  ADD CONSTRAINT rides_payment_method_check
+  CHECK (payment_method IN ('cash', 'pix', 'wallet'));
+
+ALTER TABLE public.rides
+  ADD CONSTRAINT rides_payment_status_check
+  CHECK (payment_status IN ('pending', 'paid_pix', 'paid_cash', 'paid_wallet', 'disputed', 'admin_settled'));
+
+ALTER TABLE public.wallet_transactions
+  ADD CONSTRAINT wallet_transactions_type_check
+  CHECK (type IN (
+    'ride_earning',
+    'payout',
+    'dispute_settlement',
+    'deposit',
+    'ride_debit',
+    'ride_refund',
+    'admin_adjustment'
+  ));
+
+-- Tabela de solicitações de depósito Pix pelos clientes (confirmação pelo Super Admin)
+CREATE TABLE IF NOT EXISTS public.wallet_deposits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  pix_payload TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.wallet_deposits ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Cliente le proprios depositos ou Admin" ON public.wallet_deposits;
+DROP POLICY IF EXISTS "Cliente solicita proprio deposito" ON public.wallet_deposits;
+DROP POLICY IF EXISTS "Somente Admin gerencia depositos" ON public.wallet_deposits;
+
+CREATE POLICY "Cliente le proprios depositos ou Admin"
+  ON public.wallet_deposits FOR SELECT
+  USING (user_id = auth.uid() OR public.is_admin());
+
+CREATE POLICY "Cliente solicita proprio deposito"
+  ON public.wallet_deposits FOR INSERT
+  WITH CHECK (user_id = auth.uid() AND status = 'pending');
+
+CREATE POLICY "Somente Admin gerencia depositos"
+  ON public.wallet_deposits FOR UPDATE
+  USING (public.is_admin());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'wallet_deposits'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_deposits;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'wallet_transactions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_transactions;
+  END IF;
+END $$;
+
+-- RPC atômico: Admin confirma depósito Pix e credita o saldo do cliente
+CREATE OR REPLACE FUNCTION public.admin_approve_wallet_deposit(
+  p_deposit_id UUID,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS VOID AS $$
+DECLARE
+  v_dep public.wallet_deposits%ROWTYPE;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Apenas o Super Admin pode confirmar depósitos.';
+  END IF;
+
+  SELECT * INTO v_dep FROM public.wallet_deposits WHERE id = p_deposit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Solicitação de depósito não encontrada.';
+  END IF;
+  IF v_dep.status = 'approved' THEN
+    RETURN;
+  END IF;
+
+  UPDATE public.wallet_deposits
+  SET status = 'approved',
+      note = COALESCE(NULLIF(TRIM(p_note), ''), note),
+      reviewed_at = NOW()
+  WHERE id = p_deposit_id;
+
+  UPDATE public.profiles
+  SET wallet_balance = COALESCE(wallet_balance, 0) + v_dep.amount,
+      updated_at = NOW()
+  WHERE id = v_dep.user_id;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (
+    v_dep.user_id,
+    NULL,
+    v_dep.amount,
+    'deposit',
+    COALESCE(NULLIF(TRIM(p_note), ''), 'Depósito Pix confirmado pelo Administrador')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC atômico: Admin edita manualmente o saldo de qualquer cliente ou motorista
+CREATE OR REPLACE FUNCTION public.admin_adjust_user_wallet(
+  p_user_id UUID,
+  p_new_balance NUMERIC,
+  p_description TEXT DEFAULT 'Ajuste de saldo pelo Administrador'
+)
+RETURNS VOID AS $$
+DECLARE
+  v_current NUMERIC(10,2);
+  v_target NUMERIC(10,2);
+  v_delta NUMERIC(10,2);
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Apenas o Super Admin pode editar saldos.';
+  END IF;
+
+  SELECT COALESCE(wallet_balance, 0) INTO v_current
+  FROM public.profiles WHERE id = p_user_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Usuário não encontrado.';
+  END IF;
+
+  v_target := ROUND(GREATEST(0, COALESCE(p_new_balance, 0))::NUMERIC, 2);
+  v_delta := ROUND((v_target - v_current)::NUMERIC, 2);
+
+  UPDATE public.profiles
+  SET wallet_balance = v_target,
+      updated_at = NOW()
+  WHERE id = p_user_id;
+
+  IF v_delta <> 0 THEN
+    INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+    VALUES (
+      p_user_id,
+      NULL,
+      v_delta,
+      'admin_adjustment',
+      COALESCE(NULLIF(TRIM(p_description), ''), 'Ajuste de saldo pelo Administrador')
+    );
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC atômico: Cliente debita próprio saldo ao solicitar corrida com Saldo do App
+CREATE OR REPLACE FUNCTION public.debit_own_wallet_for_ride(
+  p_ride_id UUID,
+  p_amount NUMERIC,
+  p_description TEXT DEFAULT 'Pagamento de corrida com Saldo do App'
+)
+RETURNS VOID AS $$
+DECLARE
+  v_uid UUID;
+  v_balance NUMERIC(10,2);
+  v_debit NUMERIC(10,2);
+BEGIN
+  v_uid := auth.uid();
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  v_debit := ROUND(GREATEST(0, COALESCE(p_amount, 0))::NUMERIC, 2);
+  SELECT COALESCE(wallet_balance, 0) INTO v_balance
+  FROM public.profiles WHERE id = v_uid FOR UPDATE;
+
+  IF v_balance < v_debit THEN
+    RAISE EXCEPTION 'Saldo insuficiente na carteira.';
+  END IF;
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((wallet_balance - v_debit)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_uid;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (v_uid, p_ride_id, -v_debit, 'ride_debit', p_description);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC atômico: Reembolso automático ao cancelar corrida paga com Saldo do App
+CREATE OR REPLACE FUNCTION public.refund_wallet_for_cancelled_ride(
+  p_ride_id UUID
+)
+RETURNS VOID AS $$
+DECLARE
+  v_ride public.rides%ROWTYPE;
+  v_already_refunded BOOLEAN;
+  v_refund NUMERIC(10,2);
+BEGIN
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF auth.uid() IS DISTINCT FROM v_ride.passenger_id
+     AND auth.uid() IS DISTINCT FROM v_ride.driver_id
+     AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão para estornar esta corrida.';
+  END IF;
+
+  IF v_ride.payment_method <> 'wallet' OR v_ride.payment_status <> 'paid_wallet' THEN
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.wallet_transactions
+    WHERE ride_id = p_ride_id AND user_id = v_ride.passenger_id AND type = 'ride_refund'
+  ) INTO v_already_refunded;
+
+  IF v_already_refunded THEN
+    RETURN;
+  END IF;
+
+  v_refund := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, 0)::NUMERIC, 2);
+  IF v_refund <= 0 THEN
+    RETURN;
+  END IF;
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_refund)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_ride.passenger_id;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (
+    v_ride.passenger_id,
+    p_ride_id,
+    v_refund,
+    'ride_refund',
+    'Estorno automático de corrida cancelada'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- 18. Sons Completos, OTA APK, Idioma no Perfil & Auditoria de Dispositivos
+-- ============================================================================
+
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS sound_delivery_url TEXT,
+  ADD COLUMN IF NOT EXISTS sound_completed_url TEXT,
+  ADD COLUMN IF NOT EXISTS sound_chat_url TEXT,
+  ADD COLUMN IF NOT EXISTS sound_cancel_url TEXT,
+  ADD COLUMN IF NOT EXISTS ota_latest_version TEXT NOT NULL DEFAULT '1.2.0',
+  ADD COLUMN IF NOT EXISTS ota_apk_url TEXT,
+  ADD COLUMN IF NOT EXISTS ota_release_notes TEXT;
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS preferred_language TEXT NOT NULL DEFAULT 'pt-BR';
+
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  user_name TEXT NOT NULL DEFAULT '',
+  user_email TEXT NOT NULL DEFAULT '',
+  user_role TEXT NOT NULL DEFAULT 'passenger',
+  event_type TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  device_type TEXT NOT NULL DEFAULT 'Web',
+  os_name TEXT NOT NULL DEFAULT 'Desconhecido',
+  os_version TEXT NOT NULL DEFAULT '',
+  browser_name TEXT NOT NULL DEFAULT 'Navegador',
+  browser_version TEXT NOT NULL DEFAULT '',
+  app_version TEXT NOT NULL DEFAULT '1.2.0',
+  screen_size TEXT NOT NULL DEFAULT '',
+  language TEXT NOT NULL DEFAULT 'pt-BR',
+  timezone TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admin le todos logs ou usuario le proprios" ON public.audit_logs;
+DROP POLICY IF EXISTS "Usuario autenticado registra log de auditoria" ON public.audit_logs;
+
+CREATE POLICY "Admin le todos logs ou usuario le proprios"
+  ON public.audit_logs FOR SELECT
+  USING (public.is_admin() OR user_id = auth.uid());
+
+CREATE POLICY "Usuario autenticado registra log de auditoria"
+  ON public.audit_logs FOR INSERT
+  TO authenticated
+  WITH CHECK (user_id IS NULL OR user_id = auth.uid() OR public.is_admin());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'audit_logs'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+  END IF;
+END $$;
 

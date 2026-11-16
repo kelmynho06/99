@@ -14,6 +14,8 @@ import type {
   RideStatus,
   SavedAddress,
   UserProfile,
+  WalletDeposit,
+  WalletDepositStatus,
   WalletTransaction,
 } from '../types/mobility';
 
@@ -37,8 +39,15 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   vehicle_img_delivery_moto: null,
   vehicle_img_delivery_car: null,
   sound_offer_url: null,
+  sound_delivery_url: null,
   sound_accepted_url: null,
   sound_arrived_url: null,
+  sound_completed_url: null,
+  sound_chat_url: null,
+  sound_cancel_url: null,
+  ota_latest_version: '1.2.0',
+  ota_apk_url: null,
+  ota_release_notes: null,
 };
 
 export const DEFAULT_PRICING_LIST: PricingSetting[] = [
@@ -133,7 +142,13 @@ export function mapDbProfile(
     home_address: (row.home_address as SavedAddress | null) ?? null,
     work_address: (row.work_address as SavedAddress | null) ?? null,
     favorites: Array.isArray(row.favorites) ? (row.favorites as SavedAddress[]) : [],
-    preferred_payment: row.preferred_payment === 'cash' ? 'cash' : 'pix',
+    preferred_payment:
+      row.preferred_payment === 'wallet'
+        ? 'wallet'
+        : row.preferred_payment === 'cash'
+        ? 'cash'
+        : 'pix',
+    preferred_language: row.preferred_language ? String(row.preferred_language) : 'pt-BR',
     rating_avg: Number(row.rating_avg ?? 5),
     rating_count: Number(row.rating_count ?? 0),
     wallet_balance: Number(row.wallet_balance ?? 0),
@@ -157,9 +172,18 @@ export function mapDbRide(
       ? 'delivery_moto'
       : (rawCat as RideCategory);
   const status = String(row.status || 'searching') as RideStatus;
-  const paymentMethod: PaymentMethod = row.payment_method === 'cash' ? 'cash' : 'pix';
+  const paymentMethod: PaymentMethod =
+    row.payment_method === 'wallet'
+      ? 'wallet'
+      : row.payment_method === 'cash'
+      ? 'cash'
+      : 'pix';
   const defaultPaymentStatus: PaymentStatus =
-    status === 'completed' && paymentMethod === 'cash' ? 'paid_cash' : 'pending';
+    paymentMethod === 'wallet'
+      ? 'paid_wallet'
+      : status === 'completed' && paymentMethod === 'cash'
+      ? 'paid_cash'
+      : 'pending';
 
   return {
     id: String(row.id),
@@ -341,7 +365,19 @@ export async function fileToDataUrl(file: File): Promise<string> {
 
 export async function uploadPlatformAssetFile(
   file: File,
-  kind: 'logo' | 'moto' | 'pop' | 'delivery_moto' | 'delivery_car' | 'sound_offer' | 'sound_accepted' | 'sound_arrived'
+  kind:
+    | 'logo'
+    | 'moto'
+    | 'pop'
+    | 'delivery_moto'
+    | 'delivery_car'
+    | 'sound_offer'
+    | 'sound_delivery'
+    | 'sound_accepted'
+    | 'sound_arrived'
+    | 'sound_completed'
+    | 'sound_chat'
+    | 'sound_cancel'
 ): Promise<string> {
   const isImage = file.type.startsWith('image/');
   const dataUrl = isImage
@@ -700,10 +736,24 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       null,
     sound_offer_url:
       (data.sound_offer_url as string | null | undefined) ?? cached.sound_offer_url ?? null,
+    sound_delivery_url:
+      (data.sound_delivery_url as string | null | undefined) ?? cached.sound_delivery_url ?? null,
     sound_accepted_url:
       (data.sound_accepted_url as string | null | undefined) ?? cached.sound_accepted_url ?? null,
     sound_arrived_url:
       (data.sound_arrived_url as string | null | undefined) ?? cached.sound_arrived_url ?? null,
+    sound_completed_url:
+      (data.sound_completed_url as string | null | undefined) ?? cached.sound_completed_url ?? null,
+    sound_chat_url:
+      (data.sound_chat_url as string | null | undefined) ?? cached.sound_chat_url ?? null,
+    sound_cancel_url:
+      (data.sound_cancel_url as string | null | undefined) ?? cached.sound_cancel_url ?? null,
+    ota_latest_version:
+      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.0',
+    ota_apk_url:
+      (data.ota_apk_url as string | null | undefined) ?? cached.ota_apk_url ?? null,
+    ota_release_notes:
+      (data.ota_release_notes as string | null | undefined) ?? cached.ota_release_notes ?? null,
   };
 }
 
@@ -865,12 +915,29 @@ export async function createRideRequest(input: {
   require_pin?: boolean;
   pending_debt_included?: number;
 }): Promise<Ride> {
+  const fareRounded = Number(input.estimated_fare.toFixed(2));
+  let precheckWalletBalance = 0;
+
+  if (input.payment_method === 'wallet') {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('wallet_balance')
+      .eq('id', input.passenger_id)
+      .maybeSingle();
+    precheckWalletBalance = Number(prof?.wallet_balance ?? 0);
+    if (precheckWalletBalance < fareRounded) {
+      throw new Error(
+        `Saldo insuficiente na carteira (${precheckWalletBalance.toFixed(2)}). Deposite via Pix ou escolha Pix/Dinheiro.`
+      );
+    }
+  }
+
   const pin = String(Math.floor(1000 + Math.random() * 9000));
   const payload = {
     passenger_id: input.passenger_id,
     category: input.category,
     payment_method: input.payment_method,
-    payment_status: 'pending',
+    payment_status: input.payment_method === 'wallet' ? 'paid_wallet' : 'pending',
     status: 'searching',
     origin_address: input.origin.address,
     origin_lat: input.origin.lat,
@@ -879,7 +946,7 @@ export async function createRideRequest(input: {
     destination_lat: input.destination.lat,
     destination_lng: input.destination.lng,
     distance_km: input.distance_km,
-    estimated_fare: input.estimated_fare,
+    estimated_fare: fareRounded,
     negotiated_fare: input.negotiated_fare ?? null,
     pin_code: pin,
     require_pin: input.require_pin ?? true,
@@ -907,6 +974,7 @@ export async function createRideRequest(input: {
         passenger_id: input.passenger_id,
         category: legacyCategory,
         payment_method: input.payment_method,
+        payment_status: input.payment_method === 'wallet' ? 'paid_wallet' : 'pending',
         status: 'searching',
         origin_address: input.origin.address,
         origin_lat: input.origin.lat,
@@ -915,7 +983,7 @@ export async function createRideRequest(input: {
         destination_lat: input.destination.lat,
         destination_lng: input.destination.lng,
         distance_km: input.distance_km,
-        estimated_fare: input.estimated_fare,
+        estimated_fare: fareRounded,
         pin_code: pin,
       })
       .select('*')
@@ -928,16 +996,110 @@ export async function createRideRequest(input: {
     throw new Error(error?.message || 'Erro ao registrar corrida no Supabase.');
   }
 
-  return (await fetchRideByIdEnriched(String(data.id))) || mapDbRide(data as Record<string, unknown>);
+  const rideId = String(data.id);
+
+  if (input.payment_method === 'wallet') {
+    const desc = `Pagamento com Saldo do App #${rideId.slice(-4)} · ${
+      input.destination.address.split(',')[0]
+    }`;
+    const { error: rpcErr } = await supabase.rpc('debit_own_wallet_for_ride', {
+      p_ride_id: rideId,
+      p_amount: fareRounded,
+      p_description: desc,
+    });
+    if (rpcErr) {
+      // Fallback direct debit (user updating own profile & inserting own transaction)
+      const { data: freshProf } = await supabase
+        .from('profiles')
+        .select('wallet_balance')
+        .eq('id', input.passenger_id)
+        .maybeSingle();
+      const bal = Number(freshProf?.wallet_balance ?? precheckWalletBalance);
+      if (bal < fareRounded) {
+        await supabase.from('rides').delete().eq('id', rideId);
+        throw new Error('Saldo insuficiente na carteira.');
+      }
+      const nextBal = Number((bal - fareRounded).toFixed(2));
+      const { error: updErr } = await supabase
+        .from('profiles')
+        .update({ wallet_balance: nextBal, updated_at: new Date().toISOString() })
+        .eq('id', input.passenger_id);
+      if (updErr) {
+        await supabase.from('rides').delete().eq('id', rideId);
+        throw new Error(updErr.message);
+      }
+      await supabase.from('wallet_transactions').insert({
+        user_id: input.passenger_id,
+        ride_id: rideId,
+        amount: -fareRounded,
+        type: 'ride_debit',
+        description: desc,
+      });
+    }
+
+    if (input.pending_debt_included && input.pending_debt_included > 0) {
+      await clearPassengerIncludedDebtIfAny({
+        id: rideId,
+        passenger_id: input.passenger_id,
+        pending_debt_included: input.pending_debt_included,
+      } as Ride);
+    }
+  }
+
+  return (await fetchRideByIdEnriched(rideId)) || mapDbRide(data as Record<string, unknown>);
 }
 
 export async function cancelRide(rideId: string): Promise<Ride | null> {
+  const existing = await fetchRideByIdEnriched(rideId);
+
   const { error } = await supabase
     .from('rides')
     .update({ status: 'cancelled' })
     .eq('id', rideId);
 
   if (error) throw new Error(error.message);
+
+  if (
+    existing &&
+    existing.status !== 'completed' &&
+    existing.status !== 'cancelled' &&
+    existing.payment_method === 'wallet' &&
+    existing.payment_status === 'paid_wallet'
+  ) {
+    const { error: rpcErr } = await supabase.rpc('refund_wallet_for_cancelled_ride', {
+      p_ride_id: rideId,
+    });
+    if (rpcErr && existing.passenger_id) {
+      const { data: already } = await supabase
+        .from('wallet_transactions')
+        .select('id')
+        .eq('ride_id', rideId)
+        .eq('user_id', existing.passenger_id)
+        .eq('type', 'ride_refund')
+        .maybeSingle();
+      if (!already) {
+        const refund = Number((existing.final_fare ?? existing.estimated_fare).toFixed(2));
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('wallet_balance')
+          .eq('id', existing.passenger_id)
+          .maybeSingle();
+        const nextBal = Number((Number(prof?.wallet_balance ?? 0) + refund).toFixed(2));
+        await supabase
+          .from('profiles')
+          .update({ wallet_balance: nextBal, updated_at: new Date().toISOString() })
+          .eq('id', existing.passenger_id);
+        await supabase.from('wallet_transactions').insert({
+          user_id: existing.passenger_id,
+          ride_id: rideId,
+          amount: refund,
+          type: 'ride_refund',
+          description: `Estorno de corrida cancelada #${rideId.slice(-4)}`,
+        });
+      }
+    }
+  }
+
   return fetchRideByIdEnriched(rideId);
 }
 
@@ -1116,24 +1278,20 @@ export async function completeRide(
   ride: Ride,
   driverId: string,
   pinInput?: string,
-  overrideFinalFare?: number,
-  deliveryPhotoDataUrl?: string | null
+  overrideFinalFare?: number
 ): Promise<Ride> {
   const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
   const mustVerifyDeliveryPin = isDelivery && ride.require_pin !== false;
   if (mustVerifyDeliveryPin && String(pinInput || '').trim() !== ride.pin_code) {
-    throw new Error('PIN de entrega incorreto. Peça os 4 dígitos no destino.');
-  }
-
-  let storedPhotoUrl: string | null = null;
-  if (deliveryPhotoDataUrl) {
-    storedPhotoUrl = await uploadDeliveryProofPhoto(ride.id, deliveryPhotoDataUrl);
+    throw new Error('Código PIN incorreto. Confirme os 4 dígitos no destino.');
   }
 
   const baseFare = overrideFinalFare ?? ride.final_fare ?? ride.estimated_fare;
   const finalFare = Number(baseFare.toFixed(2));
   const nextPaymentStatus: PaymentStatus =
-    ride.payment_status === 'paid_pix' || ride.payment_status === 'admin_settled'
+    ride.payment_method === 'wallet' || ride.payment_status === 'paid_wallet'
+      ? 'paid_wallet'
+      : ride.payment_status === 'paid_pix' || ride.payment_status === 'admin_settled'
       ? ride.payment_status
       : 'pending';
 
@@ -1142,7 +1300,6 @@ export async function completeRide(
     final_fare: finalFare,
     completed_at: new Date().toISOString(),
     payment_status: nextPaymentStatus,
-    ...(storedPhotoUrl ? { delivery_photo_url: storedPhotoUrl } : {}),
   };
 
   let { error } = await supabase.from('rides').update(updatePayload).eq('id', ride.id);
@@ -1160,14 +1317,24 @@ export async function completeRide(
 
   if (error) throw new Error(error.message);
 
-  if (ride.payment_method === 'pix' && nextPaymentStatus === 'paid_pix') {
+  if (
+    (ride.payment_method === 'pix' && nextPaymentStatus === 'paid_pix') ||
+    nextPaymentStatus === 'paid_wallet'
+  ) {
+    const labelPrefix =
+      nextPaymentStatus === 'paid_wallet'
+        ? isDelivery
+          ? 'Entrega Saldo App'
+          : 'Corrida Saldo App'
+        : isDelivery
+        ? 'Entrega Pix'
+        : 'Corrida Pix';
+
     await creditDriverForPixRideIdempotent(
       driverId,
       ride.id,
       finalFare,
-      `${isDelivery ? 'Entrega Pix' : 'Corrida Pix'} #${ride.id.slice(-4)} · ${
-        ride.destination_address.split(',')[0]
-      }`
+      `${labelPrefix} #${ride.id.slice(-4)} · ${ride.destination_address.split(',')[0]}`
     );
   }
 
@@ -1419,14 +1586,16 @@ export async function fetchAdminOverview(): Promise<{
   rides: Ride[];
   pricing: PricingSetting[];
   transactions: WalletTransaction[];
+  deposits: WalletDeposit[];
 }> {
-  const [platformConfig, pricing, profRes, drvRes, rideRes, txRes] = await Promise.all([
+  const [platformConfig, pricing, profRes, drvRes, rideRes, txRes, depRes] = await Promise.all([
     fetchPlatformConfig(),
     fetchPricingList(),
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('driver_profiles').select('*'),
     supabase.from('rides').select('*').order('created_at', { ascending: false }),
     supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }),
+    supabase.from('wallet_deposits').select('*').order('created_at', { ascending: false }),
   ]);
 
   const drvMap = new Map<string, Record<string, unknown>>();
@@ -1455,7 +1624,19 @@ export async function fetchAdminOverview(): Promise<{
     created_at: String(t.created_at),
   }));
 
-  return { platformConfig, users, rides, pricing, transactions };
+  const deposits: WalletDeposit[] = (depRes.data || []).map((d) => ({
+    id: String(d.id),
+    user_id: String(d.user_id),
+    amount: Number(d.amount),
+    status: (d.status as WalletDepositStatus) || 'pending',
+    pix_payload: d.pix_payload ? String(d.pix_payload) : null,
+    note: d.note ? String(d.note) : null,
+    created_at: String(d.created_at),
+    reviewed_at: d.reviewed_at ? String(d.reviewed_at) : null,
+    user: profilesById.get(String(d.user_id)),
+  }));
+
+  return { platformConfig, users, rides, pricing, transactions, deposits };
 }
 
 export async function adminReviewDriver(
@@ -1528,8 +1709,15 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
         vehicle_img_delivery_car: config.vehicle_img_delivery_car ?? null,
         sound_offer_url: config.sound_offer_url ?? null,
+        sound_delivery_url: config.sound_delivery_url ?? null,
         sound_accepted_url: config.sound_accepted_url ?? null,
         sound_arrived_url: config.sound_arrived_url ?? null,
+        sound_completed_url: config.sound_completed_url ?? null,
+        sound_chat_url: config.sound_chat_url ?? null,
+        sound_cancel_url: config.sound_cancel_url ?? null,
+        ota_latest_version: config.ota_latest_version ?? '1.2.0',
+        ota_apk_url: config.ota_apk_url ?? null,
+        ota_release_notes: config.ota_release_notes ?? null,
       })
     );
   } catch {
@@ -1566,14 +1754,21 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
     vehicle_img_delivery_car: config.vehicle_img_delivery_car ?? null,
     sound_offer_url: config.sound_offer_url ?? null,
+    sound_delivery_url: config.sound_delivery_url ?? null,
     sound_accepted_url: config.sound_accepted_url ?? null,
     sound_arrived_url: config.sound_arrived_url ?? null,
+    sound_completed_url: config.sound_completed_url ?? null,
+    sound_chat_url: config.sound_chat_url ?? null,
+    sound_cancel_url: config.sound_cancel_url ?? null,
+    ota_latest_version: config.ota_latest_version?.trim() || '1.2.0',
+    ota_apk_url: config.ota_apk_url?.trim() || null,
+    ota_release_notes: config.ota_release_notes?.trim() || null,
     updated_at: new Date().toISOString(),
   };
 
   let { error } = await supabase.from('platform_settings').upsert(fullPayload);
   if (error && error.code === '42703') {
-    const midRetry = await supabase.from('platform_settings').upsert({
+    const legacyV15Retry = await supabase.from('platform_settings').upsert({
       id: 1,
       platform_pix_key: config.platform_pix_key.trim(),
       platform_pix_receiver: config.platform_pix_receiver.trim(),
@@ -1582,9 +1777,19 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
       support_whatsapp: config.support_whatsapp.trim(),
       commission_percent: Number(config.commission_percent || 0),
       maintenance_mode: Boolean(config.maintenance_mode),
+      app_logo_url: config.app_logo_url ?? null,
+      primary_color: cleanPrimary,
+      secondary_color: cleanSecondary,
+      vehicle_img_moto: config.vehicle_img_moto ?? null,
+      vehicle_img_pop: config.vehicle_img_pop ?? null,
+      vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
+      vehicle_img_delivery_car: config.vehicle_img_delivery_car ?? null,
+      sound_offer_url: config.sound_offer_url ?? null,
+      sound_accepted_url: config.sound_accepted_url ?? null,
+      sound_arrived_url: config.sound_arrived_url ?? null,
       updated_at: new Date().toISOString(),
     });
-    error = midRetry.error;
+    error = legacyV15Retry.error;
     if (error && error.code === '42703') {
       const retry = await supabase.from('platform_settings').upsert({
         id: 1,
@@ -1597,6 +1802,16 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     }
   }
   if (error) throw new Error(error.message);
+}
+
+export async function updateUserLanguagePref(userId: string, language: string): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ preferred_language: language, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error && error.code !== '42703') {
+    // Non-fatal schema mismatch
+  }
 }
 
 export async function adminDeleteUserAccount(userId: string): Promise<void> {
@@ -1872,6 +2087,164 @@ export async function adminPayDriverPix(
       type: 'payout',
       description: note,
     });
+  }
+}
+
+// --- CARTEIRA DO CLIENTE (DEPÓSITOS PIX) & GESTÃO DE SALDOS ADMIN ---
+
+export async function fetchMyWalletDeposits(userId: string): Promise<WalletDeposit[]> {
+  const { data, error } = await supabase
+    .from('wallet_deposits')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data.map((d) => ({
+    id: String(d.id),
+    user_id: String(d.user_id),
+    amount: Number(d.amount),
+    status: (d.status as WalletDepositStatus) || 'pending',
+    pix_payload: d.pix_payload ? String(d.pix_payload) : null,
+    note: d.note ? String(d.note) : null,
+    created_at: String(d.created_at),
+    reviewed_at: d.reviewed_at ? String(d.reviewed_at) : null,
+  }));
+}
+
+export async function createWalletDepositRequest(
+  userId: string,
+  amount: number,
+  pixPayload: string,
+  note?: string
+): Promise<WalletDeposit> {
+  const cleanAmount = Number(Math.max(1, amount).toFixed(2));
+  const { data, error } = await supabase
+    .from('wallet_deposits')
+    .insert({
+      user_id: userId,
+      amount: cleanAmount,
+      status: 'pending',
+      pix_payload: pixPayload,
+      note: note?.trim() || null,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      error?.message ||
+        'Erro ao registrar solicitação de depósito. Verifique se a seção 17 do SQL foi aplicada.'
+    );
+  }
+
+  return {
+    id: String(data.id),
+    user_id: String(data.user_id),
+    amount: Number(data.amount),
+    status: (data.status as WalletDepositStatus) || 'pending',
+    pix_payload: data.pix_payload ? String(data.pix_payload) : null,
+    note: data.note ? String(data.note) : null,
+    created_at: String(data.created_at),
+    reviewed_at: data.reviewed_at ? String(data.reviewed_at) : null,
+  };
+}
+
+export async function adminApproveWalletDeposit(
+  deposit: WalletDeposit,
+  note?: string
+): Promise<void> {
+  const { error: rpcErr } = await supabase.rpc('admin_approve_wallet_deposit', {
+    p_deposit_id: deposit.id,
+    p_note: note?.trim() || null,
+  });
+
+  if (rpcErr) {
+    const { data: depRow } = await supabase
+      .from('wallet_deposits')
+      .select('status')
+      .eq('id', deposit.id)
+      .maybeSingle();
+    if (depRow?.status === 'approved') return;
+
+    const { error: updDepErr } = await supabase
+      .from('wallet_deposits')
+      .update({
+        status: 'approved',
+        note: note?.trim() || deposit.note || null,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', deposit.id);
+    if (updDepErr) throw new Error(updDepErr.message);
+
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('wallet_balance')
+      .eq('id', deposit.user_id)
+      .maybeSingle();
+    const nextBal = Number((Number(prof?.wallet_balance ?? 0) + deposit.amount).toFixed(2));
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ wallet_balance: nextBal, updated_at: new Date().toISOString() })
+      .eq('id', deposit.user_id);
+    if (profErr) throw new Error(profErr.message);
+
+    await supabase.from('wallet_transactions').insert({
+      user_id: deposit.user_id,
+      amount: deposit.amount,
+      type: 'deposit',
+      description: note?.trim() || 'Depósito Pix confirmado pelo Administrador',
+    });
+  }
+}
+
+export async function adminRejectWalletDeposit(
+  depositId: string,
+  reason?: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('wallet_deposits')
+    .update({
+      status: 'rejected',
+      note: reason?.trim() || 'Depósito não localizado no extrato bancário',
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', depositId);
+  if (error) throw new Error(error.message);
+}
+
+export async function adminUpdateUserWalletBalance(
+  user: UserProfile,
+  newBalance: number,
+  description?: string
+): Promise<void> {
+  const targetBal = Number(Math.max(0, newBalance).toFixed(2));
+  const cleanDesc =
+    description?.trim() || 'Ajuste manual de saldo pelo Administrador';
+
+  const { error: rpcErr } = await supabase.rpc('admin_adjust_user_wallet', {
+    p_user_id: user.id,
+    p_new_balance: targetBal,
+    p_description: cleanDesc,
+  });
+
+  if (rpcErr) {
+    const currentBal = Number(user.wallet_balance || 0);
+    const delta = Number((targetBal - currentBal).toFixed(2));
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ wallet_balance: targetBal, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+    if (updErr) throw new Error(updErr.message);
+
+    if (delta !== 0) {
+      await supabase.from('wallet_transactions').insert({
+        user_id: user.id,
+        amount: delta,
+        type: 'admin_adjustment',
+        description: cleanDesc,
+      });
+    }
   }
 }
 

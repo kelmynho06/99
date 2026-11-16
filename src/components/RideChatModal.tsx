@@ -64,8 +64,8 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
-      <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-950 px-5 py-4 text-white">
+      <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
+        <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 bg-neutral-950 px-5 py-4 text-white">
           <div className="flex items-center gap-3 min-w-0">
             <AvatarImage
               src={peerAvatarUrl}
@@ -90,9 +90,9 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-neutral-50 p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950 p-4 space-y-3">
           {messages.length === 0 ? (
-            <div className="py-10 text-center text-sm text-neutral-500">
+            <div className="py-10 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {isDelivery
                 ? `Combine os detalhes da coleta ou entrega com ${peerName}.`
                 : `Envie uma mensagem para combinar o embarque com ${peerName}.`}
@@ -106,7 +106,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
                     className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
                       mine
                         ? 'bg-[#FFD100] text-neutral-950 font-medium rounded-br-sm'
-                        : 'bg-white text-neutral-900 border border-neutral-200 rounded-bl-sm'
+                        : 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-bl-sm'
                     }`}
                   >
                     {m.content}
@@ -124,14 +124,14 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-neutral-100 bg-white px-3 pt-2.5 pb-safe">
+        <div className="border-t border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 pt-2.5 pb-safe">
           <div className="flex gap-2 overflow-x-auto pb-2.5 no-scrollbar">
             {quickReplies.map((qr) => (
               <button
                 key={qr}
                 type="button"
                 onClick={() => sendMessage(qr)}
-                className="shrink-0 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 active:scale-95 transition whitespace-nowrap"
+                className="shrink-0 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 active:scale-95 transition whitespace-nowrap"
               >
                 {qr}
               </button>
@@ -149,12 +149,12 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Digite sua mensagem..."
-              className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none focus:border-neutral-900"
+              className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-neutral-900 dark:focus:border-[#FFD100]"
             />
             <button
               type="submit"
               disabled={!text.trim() || sending}
-              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100] disabled:opacity-40 transition active:scale-95"
+              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 disabled:opacity-40 transition active:scale-95"
               aria-label="Enviar mensagem"
             >
               <Send className="h-5 w-5" />
