@@ -177,6 +177,9 @@ function formatPhotonAddress(
   return parts.join(' · ') || 'Local selecionado';
 }
 
+const DEFAULT_FALLBACK_LAT = -23.55052;
+const DEFAULT_FALLBACK_LNG = -46.633308;
+
 export async function searchAddresses(
   query: string,
   nearLat?: number,
@@ -192,25 +195,26 @@ export async function searchAddresses(
     Number.isFinite(nearLat) &&
     Number.isFinite(nearLng);
 
-  const MAX_LOCAL_RADIUS_KM = 85;
+  const biasLat = hasLocalCoords ? nearLat : DEFAULT_FALLBACK_LAT;
+  const biasLng = hasLocalCoords ? nearLng : DEFAULT_FALLBACK_LNG;
+  const MAX_LOCAL_RADIUS_KM = 110;
   const results: AddressSuggestion[] = [];
+  const wideFallbackResults: AddressSuggestion[] = [];
   const seen = new Set<string>();
 
-  // 1. Ultra-fast Photon search constrained to local GPS bbox
-  try {
+  const queryPhoton = async (useStrictBbox: boolean) => {
     const params = new URLSearchParams({
       q: clean,
-      limit: '12',
+      limit: '15',
+      lat: String(biasLat),
+      lon: String(biasLng),
+      location_bias_scale: '0.15',
     });
-    if (hasLocalCoords) {
-      params.set('lat', String(nearLat));
-      params.set('lon', String(nearLng));
-      params.set('location_bias_scale', '0.1');
-      // ~90km x 90km bounding box centered on user's current GPS
-      const delta = 0.45;
+    if (useStrictBbox && hasLocalCoords) {
+      const delta = 0.55;
       params.set(
         'bbox',
-        `${nearLng - delta},${nearLat - delta},${nearLng + delta},${nearLat + delta}`
+        `${biasLng - delta},${biasLat - delta},${biasLng + delta},${biasLat + delta}`
       );
     }
 
@@ -218,47 +222,58 @@ export async function searchAddresses(
       signal,
       headers: { Accept: 'application/json' },
     });
+    if (!res.ok) return;
 
-    if (res.ok) {
-      const json = (await res.json()) as { features?: PhotonFeature[] };
-      for (const feat of json.features || []) {
-        const props = feat.properties;
-        const coords = feat.geometry?.coordinates;
-        if (!props || !coords || coords.length < 2) continue;
-        if (props.countrycode && props.countrycode.toUpperCase() !== 'BR') continue;
+    const json = (await res.json()) as { features?: PhotonFeature[] };
+    for (const feat of json.features || []) {
+      const props = feat.properties;
+      const coords = feat.geometry?.coordinates;
+      if (!props || !coords || coords.length < 2) continue;
+      if (props.countrycode && props.countrycode.toUpperCase() !== 'BR') continue;
 
-        const lng = Number(coords[0]);
-        const lat = Number(coords[1]);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const lng = Number(coords[0]);
+      const lat = Number(coords[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-        const distKm = hasLocalCoords ? haversineKm(nearLat, nearLng, lat, lng) : 0;
-        if (hasLocalCoords && distKm > MAX_LOCAL_RADIUS_KM) continue;
+      const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
+      const formatted = formatPhotonAddress(props, clean);
+      const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
 
-        const formatted = formatPhotonAddress(props, clean);
-        const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
+      const city = (props.city || props.county || '').trim();
+      const district = (props.district || props.locality || '').trim();
+      const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
+      const subtitle = [district, city, props.state, distTag].filter(Boolean).join(' · ');
 
-        const city = (props.city || props.county || '').trim();
-        const district = (props.district || props.locality || '').trim();
-        const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
-        const subtitle = [district, city, props.state, distTag].filter(Boolean).join(' · ');
+      const entry: AddressSuggestion = {
+        address: formatted,
+        subtitle: subtitle || formatted,
+        categoryLabel: classifyPhotonType(props),
+        lat,
+        lng,
+      };
 
-        results.push({
-          address: formatted,
-          subtitle: subtitle || formatted,
-          categoryLabel: classifyPhotonType(props),
-          lat,
-          lng,
-        });
+      if (!hasLocalCoords || distKm <= MAX_LOCAL_RADIUS_KM) {
+        results.push(entry);
+      } else {
+        wideFallbackResults.push(entry);
       }
+    }
+  };
+
+  // 1. Ultra-fast Photon proximity search (local bbox first, then proximity-biased wider query if < 3 hits)
+  try {
+    await queryPhoton(true);
+    if (results.length < 3) {
+      await queryPhoton(false);
     }
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') return [];
   }
 
-  // 2. Bounded local Nominatim supplement only if Photon local bbox returned < 2 matches
-  if (results.length < 2 && clean.length >= 3) {
+  // 2. Bounded local Nominatim supplement for exact house numbers / local POIs if Photon has < 3 local matches
+  if (results.length < 3 && clean.length >= 3) {
     try {
       const params = new URLSearchParams({
         q: clean,
@@ -266,16 +281,16 @@ export async function searchAddresses(
         addressdetails: '1',
         namedetails: '1',
         extratags: '1',
-        limit: '6',
+        limit: '8',
         countrycodes: 'br',
         'accept-language': 'pt-BR',
       });
 
       if (hasLocalCoords) {
-        const delta = 0.45;
+        const delta = 0.55;
         params.set(
           'viewbox',
-          `${nearLng - delta},${nearLat + delta},${nearLng + delta},${nearLat - delta}`
+          `${biasLng - delta},${biasLat + delta},${biasLng + delta},${biasLat - delta}`
         );
         params.set('bounded', '1');
       }
@@ -297,7 +312,7 @@ export async function searchAddresses(
           const lat = parseFloat(item.lat);
           const lng = parseFloat(item.lon);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-          const distKm = hasLocalCoords ? haversineKm(nearLat, nearLng, lat, lng) : 0;
+          const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
           if (hasLocalCoords && distKm > MAX_LOCAL_RADIUS_KM) continue;
 
           const formatted = formatShortAddress(item, clean);
@@ -331,15 +346,16 @@ export async function searchAddresses(
     }
   }
 
+  const finalPool = results.length > 0 ? results : wideFallbackResults;
   if (hasLocalCoords) {
-    results.sort(
+    finalPool.sort(
       (a, b) =>
-        haversineKm(nearLat, nearLng, a.lat, a.lng) -
-        haversineKm(nearLat, nearLng, b.lat, b.lng)
+        haversineKm(biasLat, biasLng, a.lat, a.lng) -
+        haversineKm(biasLat, biasLng, b.lat, b.lng)
     );
   }
 
-  return results.slice(0, 8);
+  return finalPool.slice(0, 8);
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

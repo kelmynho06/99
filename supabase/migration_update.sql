@@ -428,4 +428,117 @@ ALTER TABLE public.rides
   ADD COLUMN IF NOT EXISTS delivery_photo_url TEXT,
   ADD COLUMN IF NOT EXISTS pending_debt_included NUMERIC(10,2) NOT NULL DEFAULT 0.00;
 
+-- 16. White-Label Dinâmico (configuracoes_app), Cores da Marca & Storage Público para Avatares/Logo
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS primary_color TEXT NOT NULL DEFAULT '#FFD100',
+  ADD COLUMN IF NOT EXISTS secondary_color TEXT NOT NULL DEFAULT '#111827';
+
+CREATE TABLE IF NOT EXISTS public.configuracoes_app (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  app_name TEXT NOT NULL DEFAULT 'Velo99',
+  logo_url TEXT,
+  primary_color TEXT NOT NULL DEFAULT '#FFD100',
+  secondary_color TEXT NOT NULL DEFAULT '#111827',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO public.configuracoes_app (id, app_name, primary_color, secondary_color)
+VALUES (1, 'Velo99', '#FFD100', '#111827')
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.configuracoes_app ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Todos leem configuracoes_app" ON public.configuracoes_app;
+DROP POLICY IF EXISTS "Somente Admin altera configuracoes_app" ON public.configuracoes_app;
+CREATE POLICY "Todos leem configuracoes_app"
+  ON public.configuracoes_app FOR SELECT USING (TRUE);
+CREATE POLICY "Somente Admin altera configuracoes_app"
+  ON public.configuracoes_app FOR ALL USING (public.is_admin());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'configuracoes_app'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.configuracoes_app;
+  END IF;
+END $$;
+
+-- Bucket público dedicado para avatares, logo, ícones de veículos e comprovantes
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('public-assets', 'public-assets', TRUE)
+ON CONFLICT (id) DO UPDATE SET public = TRUE;
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('driver-documents', 'driver-documents', FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Public read public-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Auth upload public-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Auth update public-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Auth read driver-documents avatars and platform" ON storage.objects;
+DROP POLICY IF EXISTS "Auth write driver-documents own or platform" ON storage.objects;
+
+CREATE POLICY "Public read public-assets"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'public-assets');
+
+CREATE POLICY "Auth upload public-assets"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'public-assets');
+
+CREATE POLICY "Auth update public-assets"
+  ON storage.objects FOR UPDATE
+  TO authenticated
+  USING (bucket_id = 'public-assets');
+
+CREATE POLICY "Auth read driver-documents avatars and platform"
+  ON storage.objects FOR SELECT
+  TO authenticated
+  USING (bucket_id = 'driver-documents');
+
+CREATE POLICY "Auth write driver-documents own or platform"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'driver-documents');
+
+-- Atualizar RPC de motoristas online para incluir avatar_url
+DROP FUNCTION IF EXISTS public.get_online_drivers_public();
+CREATE OR REPLACE FUNCTION public.get_online_drivers_public()
+RETURNS TABLE (
+  id UUID,
+  full_name TEXT,
+  avatar_url TEXT,
+  rating_avg NUMERIC,
+  vehicle_type TEXT,
+  vehicle_model TEXT,
+  vehicle_color TEXT,
+  current_lat DOUBLE PRECISION,
+  current_lng DOUBLE PRECISION,
+  heading DOUBLE PRECISION
+) AS $$
+  SELECT
+    p.id,
+    p.full_name,
+    p.avatar_url,
+    p.rating_avg,
+    dp.vehicle_type,
+    dp.vehicle_model,
+    dp.vehicle_color,
+    dp.current_lat,
+    dp.current_lng,
+    COALESCE(dp.heading, 0)
+  FROM public.profiles p
+  JOIN public.driver_profiles dp ON dp.user_id = p.id
+  WHERE p.role = 'driver'
+    AND p.status = 'active'
+    AND p.is_anonymized = FALSE
+    AND dp.is_online = TRUE
+    AND dp.current_lat IS NOT NULL
+    AND dp.current_lng IS NOT NULL;
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+
 

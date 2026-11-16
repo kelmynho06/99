@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Headphones, Send, ShieldCheck, X } from 'lucide-react';
+import { useAppConfig } from '../context/AppConfigContext';
 import { fetchDirectMessages, sendDirectMessage } from '../lib/mobilityApi';
 import { supabase } from '../lib/supabase';
 import type { DirectMessage, UserProfile } from '../types/mobility';
+import { AvatarImage } from './AvatarImage';
 
 interface DirectChatModalProps {
   threadUser: {
@@ -33,6 +35,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
   currentUser,
   onClose,
 }) => {
+  const { config: appConfig } = useAppConfig();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -123,15 +126,16 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
       <div className="flex h-[84vh] sm:h-[580px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between bg-neutral-950 px-5 py-4 text-white">
           <div className="flex items-center gap-3 min-w-0">
-            {isAdmin && threadUser.avatar_url ? (
-              <img
+            {isAdmin ? (
+              <AvatarImage
                 src={threadUser.avatar_url}
-                alt={threadUser.full_name}
-                className="h-10 w-10 rounded-full object-cover border border-[#FFD100]"
+                name={threadUser.full_name}
+                className="h-10 w-10 rounded-full object-cover border border-[#FFD100] shrink-0"
+                fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold"
               />
             ) : (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold">
-                {isAdmin ? threadUser.full_name.slice(0, 1).toUpperCase() : <Headphones className="h-5 w-5" />}
+                <Headphones className="h-5 w-5" />
               </div>
             )}
             <div className="min-w-0">
@@ -140,7 +144,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
                 {isAdmin ? 'Chat Direto · Super Admin' : 'Atendimento Oficial · Administração'}
               </p>
               <h3 className="text-base font-extrabold truncate">
-                {isAdmin ? threadUser.full_name : 'Central Velo99 / Suporte'}
+                {isAdmin ? threadUser.full_name : `Central ${appConfig.app_name} / Suporte`}
               </h3>
             </div>
           </div>

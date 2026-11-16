@@ -30,6 +30,8 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   commission_percent: 0,
   maintenance_mode: false,
   app_logo_url: null,
+  primary_color: '#FFD100',
+  secondary_color: '#111827',
   vehicle_img_moto: null,
   vehicle_img_pop: null,
   vehicle_img_delivery_moto: null,
@@ -197,7 +199,11 @@ export function mapDbRide(
   };
 }
 
-export async function compressImageFileToDataUrl(file: File, maxDim = 900): Promise<string> {
+export async function compressImageFileToDataUrl(
+  file: File,
+  maxWidth = 1024,
+  quality = 0.7
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Falha ao ler imagem'));
@@ -205,7 +211,7 @@ export async function compressImageFileToDataUrl(file: File, maxDim = 900): Prom
       const img = new Image();
       img.onerror = () => resolve(String(reader.result));
       img.onload = () => {
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
         const w = Math.max(1, Math.round(img.width * scale));
         const h = Math.max(1, Math.round(img.height * scale));
         const canvas = document.createElement('canvas');
@@ -217,7 +223,7 @@ export async function compressImageFileToDataUrl(file: File, maxDim = 900): Prom
           return;
         }
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.src = String(reader.result);
     };
@@ -225,9 +231,60 @@ export async function compressImageFileToDataUrl(file: File, maxDim = 900): Prom
   });
 }
 
+export const compressCameraImage = compressImageFileToDataUrl;
+
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   const res = await fetch(dataUrl);
   return res.blob();
+}
+
+async function isPublicStorageUrlReadable(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function uploadPublicOrSignedAsset(
+  filePath: string,
+  blob: Blob,
+  contentType: string,
+  fallbackDataUrl: string
+): Promise<string> {
+  // 1. Try dedicated public bucket first
+  try {
+    const { error: pubErr } = await supabase.storage
+      .from('public-assets')
+      .upload(filePath, blob, { contentType, upsert: true });
+    if (!pubErr) {
+      const { data: pub } = supabase.storage.from('public-assets').getPublicUrl(filePath);
+      if (pub?.publicUrl && (await isPublicStorageUrlReadable(pub.publicUrl))) {
+        return pub.publicUrl;
+      }
+    }
+  } catch {
+    // Continue to driver-documents bucket fallback
+  }
+
+  // 2. Try driver-documents bucket and store as resolvable signed reference (storage:driver-documents/...)
+  try {
+    const { error: privErr } = await supabase.storage
+      .from('driver-documents')
+      .upload(filePath, blob, { contentType, upsert: true });
+    if (!privErr) {
+      const { data: pub2 } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
+      if (pub2?.publicUrl && (await isPublicStorageUrlReadable(pub2.publicUrl))) {
+        return pub2.publicUrl;
+      }
+      return `storage:driver-documents/${filePath}`;
+    }
+  } catch {
+    // Fallback to inline compressed JPEG/audio Data URL
+  }
+
+  return fallbackDataUrl;
 }
 
 async function uploadDriverDocOrFallback(
@@ -255,18 +312,11 @@ export async function uploadUserAvatar(userId: string, dataUrl: string): Promise
   if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
   try {
     const blob = await dataUrlToBlob(dataUrl);
-    const filePath = `${userId}/avatar_${Date.now()}.jpg`;
-    const { error } = await supabase.storage
-      .from('driver-documents')
-      .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
-    if (!error) {
-      const { data: pub } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
-      if (pub?.publicUrl) return pub.publicUrl;
-    }
+    const filePath = `avatars/${userId}_${Date.now()}.jpg`;
+    return await uploadPublicOrSignedAsset(filePath, blob, 'image/jpeg', dataUrl);
   } catch {
-    // Fallback to inline compressed JPEG dataUrl
+    return dataUrl;
   }
-  return dataUrl;
 }
 
 export async function uploadDeliveryProofPhoto(rideId: string, dataUrl: string): Promise<string> {
@@ -274,17 +324,10 @@ export async function uploadDeliveryProofPhoto(rideId: string, dataUrl: string):
   try {
     const blob = await dataUrlToBlob(dataUrl);
     const filePath = `deliveries/${rideId}_${Date.now()}.jpg`;
-    const { error } = await supabase.storage
-      .from('driver-documents')
-      .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
-    if (!error) {
-      const { data: pub } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
-      if (pub?.publicUrl) return pub.publicUrl;
-    }
+    return await uploadPublicOrSignedAsset(filePath, blob, 'image/jpeg', dataUrl);
   } catch {
-    // Fallback to compressed inline dataUrl
+    return dataUrl;
   }
-  return dataUrl;
 }
 
 export async function fileToDataUrl(file: File): Promise<string> {
@@ -301,28 +344,25 @@ export async function uploadPlatformAssetFile(
   kind: 'logo' | 'moto' | 'pop' | 'delivery_moto' | 'delivery_car' | 'sound_offer' | 'sound_accepted' | 'sound_arrived'
 ): Promise<string> {
   const isImage = file.type.startsWith('image/');
-  const dataUrl = isImage ? await compressImageFileToDataUrl(file, 640) : await fileToDataUrl(file);
+  const dataUrl = isImage
+    ? await compressImageFileToDataUrl(file, 720, 0.72)
+    : await fileToDataUrl(file);
   const ext = isImage ? 'jpg' : file.name.split('.').pop()?.toLowerCase() || 'mp3';
   const contentType = isImage ? 'image/jpeg' : file.type || 'audio/mpeg';
 
   try {
     const blob = await dataUrlToBlob(dataUrl);
     const filePath = `platform/${kind}_${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from('driver-documents')
-      .upload(filePath, blob, { contentType, upsert: true });
-    if (!error) {
-      const { data: pub } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
-      if (pub?.publicUrl) return pub.publicUrl;
-    }
+    return await uploadPublicOrSignedAsset(filePath, blob, contentType, dataUrl);
   } catch {
-    // Fallback to inline dataUrl
+    return dataUrl;
   }
-  return dataUrl;
 }
 
 export async function resolveDocumentDisplayUrl(rawUrl?: string | null): Promise<string> {
   if (!rawUrl) return '';
+  if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
+
   if (rawUrl.startsWith('storage:driver-documents/')) {
     const path = rawUrl.replace('storage:driver-documents/', '');
     const { data } = await supabase.storage
@@ -330,6 +370,20 @@ export async function resolveDocumentDisplayUrl(rawUrl?: string | null): Promise
       .createSignedUrl(path, 3600);
     if (data?.signedUrl) return data.signedUrl;
   }
+
+  // Auto-heal legacy broken public URLs pointing to private driver-documents bucket
+  const legacyPrivateMarker = '/storage/v1/object/public/driver-documents/';
+  const markerIdx = rawUrl.indexOf(legacyPrivateMarker);
+  if (markerIdx !== -1) {
+    const path = rawUrl.slice(markerIdx + legacyPrivateMarker.length).split('?')[0];
+    if (path) {
+      const { data } = await supabase.storage
+        .from('driver-documents')
+        .createSignedUrl(path, 3600);
+      if (data?.signedUrl) return data.signedUrl;
+    }
+  }
+
   return rawUrl;
 }
 
@@ -556,16 +610,57 @@ function readCachedPlatformBrand(): Partial<PlatformConfig> {
   }
 }
 
+export async function fetchAppBrandConfig(): Promise<{
+  app_name: string;
+  logo_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+}> {
+  const cached = readCachedPlatformBrand();
+  const [{ data: appCfg }, { data: platCfg }] = await Promise.all([
+    supabase.from('configuracoes_app').select('*').eq('id', 1).maybeSingle(),
+    supabase.from('platform_settings').select('*').eq('id', 1).maybeSingle(),
+  ]);
+
+  const rawLogo =
+    (appCfg?.logo_url as string | null | undefined) ??
+    (platCfg?.app_logo_url as string | null | undefined) ??
+    cached.app_logo_url ??
+    null;
+
+  const resolvedLogo = rawLogo ? await resolveDocumentDisplayUrl(rawLogo) : null;
+
+  return {
+    app_name: String(
+      appCfg?.app_name || platCfg?.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name
+    ),
+    logo_url: resolvedLogo || rawLogo,
+    primary_color: String(
+      appCfg?.primary_color || platCfg?.primary_color || cached.primary_color || '#FFD100'
+    ),
+    secondary_color: String(
+      appCfg?.secondary_color || platCfg?.secondary_color || cached.secondary_color || '#111827'
+    ),
+  };
+}
+
 export async function fetchPlatformConfig(): Promise<PlatformConfig> {
-  const { data, error } = await supabase
-    .from('platform_settings')
-    .select('*')
-    .eq('id', 1)
-    .maybeSingle();
+  const [{ data, error }, { data: appCfg }] = await Promise.all([
+    supabase.from('platform_settings').select('*').eq('id', 1).maybeSingle(),
+    supabase.from('configuracoes_app').select('*').eq('id', 1).maybeSingle(),
+  ]);
 
   const cached = readCachedPlatformBrand();
   if (error || !data) {
-    return { ...DEFAULT_PLATFORM_CONFIG, ...cached };
+    return {
+      ...DEFAULT_PLATFORM_CONFIG,
+      ...cached,
+      site_name: String(appCfg?.app_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
+      app_logo_url:
+        (appCfg?.logo_url as string | null | undefined) ?? cached.app_logo_url ?? null,
+      primary_color: String(appCfg?.primary_color || cached.primary_color || '#FFD100'),
+      secondary_color: String(appCfg?.secondary_color || cached.secondary_color || '#111827'),
+    };
   }
 
   return {
@@ -574,11 +669,23 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       data.platform_pix_receiver || DEFAULT_PLATFORM_CONFIG.platform_pix_receiver
     ),
     platform_city: String(data.platform_city || DEFAULT_PLATFORM_CONFIG.platform_city),
-    site_name: String(data.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
+    site_name: String(
+      appCfg?.app_name || data.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name
+    ),
     support_whatsapp: String(data.support_whatsapp || cached.support_whatsapp || ''),
     commission_percent: Number(data.commission_percent ?? cached.commission_percent ?? 0),
     maintenance_mode: Boolean(data.maintenance_mode ?? false),
-    app_logo_url: (data.app_logo_url as string | null | undefined) ?? cached.app_logo_url ?? null,
+    app_logo_url:
+      (appCfg?.logo_url as string | null | undefined) ??
+      (data.app_logo_url as string | null | undefined) ??
+      cached.app_logo_url ??
+      null,
+    primary_color: String(
+      appCfg?.primary_color || data.primary_color || cached.primary_color || '#FFD100'
+    ),
+    secondary_color: String(
+      appCfg?.secondary_color || data.secondary_color || cached.secondary_color || '#111827'
+    ),
     vehicle_img_moto:
       (data.vehicle_img_moto as string | null | undefined) ?? cached.vehicle_img_moto ?? null,
     vehicle_img_pop:
@@ -633,7 +740,7 @@ export async function fetchOnlineDriversPublic(): Promise<UserProfile[]> {
       phone: '',
       email: '',
       cpf: '',
-      avatar_url: null,
+      avatar_url: d.avatar_url ? String(d.avatar_url) : null,
       rating_avg: Number(d.rating_avg ?? 5),
       rating_count: 0,
       wallet_balance: 0,
@@ -1402,14 +1509,20 @@ export async function adminSavePricing(pricingList: PricingSetting[]): Promise<v
 }
 
 export async function adminSavePlatformConfig(config: PlatformConfig): Promise<void> {
+  const cleanName = config.site_name.trim() || 'Velo99';
+  const cleanPrimary = config.primary_color || '#FFD100';
+  const cleanSecondary = config.secondary_color || '#111827';
+
   try {
     localStorage.setItem(
       PLATFORM_BRAND_CACHE_KEY,
       JSON.stringify({
-        site_name: config.site_name.trim() || 'Velo99',
+        site_name: cleanName,
         support_whatsapp: config.support_whatsapp.trim(),
         commission_percent: Number(config.commission_percent || 0),
         app_logo_url: config.app_logo_url ?? null,
+        primary_color: cleanPrimary,
+        secondary_color: cleanSecondary,
         vehicle_img_moto: config.vehicle_img_moto ?? null,
         vehicle_img_pop: config.vehicle_img_pop ?? null,
         vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
@@ -1423,16 +1536,31 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     // Ignore storage restriction
   }
 
+  // Sync White-Label table configuracoes_app gracefully
+  await supabase
+    .from('configuracoes_app')
+    .upsert({
+      id: 1,
+      app_name: cleanName,
+      logo_url: config.app_logo_url ?? null,
+      primary_color: cleanPrimary,
+      secondary_color: cleanSecondary,
+      updated_at: new Date().toISOString(),
+    })
+    .then(() => undefined, () => undefined);
+
   const fullPayload = {
     id: 1,
     platform_pix_key: config.platform_pix_key.trim(),
     platform_pix_receiver: config.platform_pix_receiver.trim(),
     platform_city: config.platform_city.trim(),
-    site_name: config.site_name.trim() || 'Velo99',
+    site_name: cleanName,
     support_whatsapp: config.support_whatsapp.trim(),
     commission_percent: Number(config.commission_percent || 0),
     maintenance_mode: Boolean(config.maintenance_mode),
     app_logo_url: config.app_logo_url ?? null,
+    primary_color: cleanPrimary,
+    secondary_color: cleanSecondary,
     vehicle_img_moto: config.vehicle_img_moto ?? null,
     vehicle_img_pop: config.vehicle_img_pop ?? null,
     vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
@@ -1450,7 +1578,7 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
       platform_pix_key: config.platform_pix_key.trim(),
       platform_pix_receiver: config.platform_pix_receiver.trim(),
       platform_city: config.platform_city.trim(),
-      site_name: config.site_name.trim() || 'Velo99',
+      site_name: cleanName,
       support_whatsapp: config.support_whatsapp.trim(),
       commission_percent: Number(config.commission_percent || 0),
       maintenance_mode: Boolean(config.maintenance_mode),

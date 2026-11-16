@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
 import { sendRideMessage } from '../lib/mobilityApi';
 import type { RideMessage, UserProfile } from '../types/mobility';
+import { AvatarImage } from './AvatarImage';
 
 interface RideChatModalProps {
   rideId: string;
@@ -66,17 +67,12 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
       <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-950 px-5 py-4 text-white">
           <div className="flex items-center gap-3 min-w-0">
-            {peerAvatarUrl ? (
-              <img
-                src={peerAvatarUrl}
-                alt={peerName}
-                className="h-10 w-10 rounded-full object-cover border border-[#FFD100] shrink-0"
-              />
-            ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold">
-                {peerName.slice(0, 1).toUpperCase()}
-              </div>
-            )}
+            <AvatarImage
+              src={peerAvatarUrl}
+              name={peerName}
+              className="h-10 w-10 rounded-full object-cover border border-[#FFD100] shrink-0"
+              fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold"
+            />
             <div className="min-w-0">
               <p className="text-xs font-medium text-[#FFD100]">
                 {isDelivery ? 'Chat da entrega (Motoboy ↔ Cliente)' : 'Chat da corrida'}

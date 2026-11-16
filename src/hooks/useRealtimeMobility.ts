@@ -306,6 +306,15 @@ export function useRealtimeMobility(
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'configuracoes_app' },
+        async () => {
+          if (!active) return;
+          const cfg = await fetchPlatformConfig();
+          if (active) setPlatformConfig(cfg);
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'platform_events' },
         async (payload) => {
           if (!active) return;

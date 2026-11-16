@@ -39,6 +39,8 @@ export interface PlatformConfig {
   commission_percent: number;
   maintenance_mode: boolean;
   app_logo_url?: string | null;
+  primary_color?: string | null;
+  secondary_color?: string | null;
   vehicle_img_moto?: string | null;
   vehicle_img_pop?: string | null;
   vehicle_img_delivery_moto?: string | null;
@@ -201,5 +203,6 @@ export interface DevicePermissionsState {
   notifications: PermissionGrantState;
   location: PermissionGrantState;
   camera: PermissionGrantState;
+  microphone: PermissionGrantState;
   photos: PermissionGrantState;
 }

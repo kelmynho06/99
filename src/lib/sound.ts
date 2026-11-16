@@ -73,9 +73,13 @@ export async function playSoundCue(cue: SoundCueType): Promise<void> {
   }
 
   if (cue === 'accepted') {
+    // Pleasant rhythmic acceptance chime ("tam tam tam, plim plim")
     playSynthNotes([
-      { freq: 659.25, start: 0, dur: 0.16, type: 'sine' },
-      { freq: 880, start: 0.14, dur: 0.24, type: 'sine' },
+      { freq: 523.25, start: 0, dur: 0.13, type: 'triangle' },
+      { freq: 659.25, start: 0.14, dur: 0.13, type: 'triangle' },
+      { freq: 783.99, start: 0.28, dur: 0.16, type: 'triangle' },
+      { freq: 1046.5, start: 0.46, dur: 0.18, type: 'sine' },
+      { freq: 1318.51, start: 0.63, dur: 0.34, type: 'sine' },
     ]);
   } else if (cue === 'arrived') {
     playSynthNotes([
@@ -90,6 +94,10 @@ export async function playSoundCue(cue: SoundCueType): Promise<void> {
       { freq: 1318.51, start: 0.22, dur: 0.24, type: 'triangle' },
     ]);
   }
+}
+
+export function playRideAcceptedChime(): void {
+  void playSoundCue('accepted');
 }
 
 export function playOfferAlertSound(): void {

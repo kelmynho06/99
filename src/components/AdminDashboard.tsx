@@ -34,6 +34,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { useAppConfig } from '../context/AppConfigContext';
 import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import {
@@ -67,6 +68,7 @@ import type {
   UserProfile,
   WalletTransaction,
 } from '../types/mobility';
+import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
@@ -94,6 +96,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialPlatformConfig,
   onLogout,
 }) => {
+  const { refreshConfig, applyLocalConfig } = useAppConfig();
   const [tab, setTab] = useState<AdminTab>('livemap');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
@@ -126,6 +129,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [debtNoteInput, setDebtNoteInput] = useState<string>('Corrida não paga');
   const [savingDebt, setSavingDebt] = useState(false);
   const [inspectPhotoUrl, setInspectPhotoUrl] = useState<string | null>(null);
+  const [resolvedInspectPhotoUrl, setResolvedInspectPhotoUrl] = useState<string>('');
   const [showLegalDocs, setShowLegalDocs] = useState(false);
   const [uploadingAssetKind, setUploadingAssetKind] = useState<string | null>(null);
 
@@ -209,6 +213,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     resolveDocumentDisplayUrl(inspectDriver.driver.cnh_url).then(setResolvedCnhUrl);
     resolveDocumentDisplayUrl(inspectDriver.driver.crlv_url).then(setResolvedCrlvUrl);
   }, [inspectDriver]);
+
+  useEffect(() => {
+    if (!inspectPhotoUrl) {
+      setResolvedInspectPhotoUrl('');
+      return;
+    }
+    resolveDocumentDisplayUrl(inspectPhotoUrl).then(setResolvedInspectPhotoUrl);
+  }, [inspectPhotoUrl]);
 
   const passengerDrivers = useMemo(
     () => users.filter((u) => u.role === 'driver' && u.driver?.vehicle_type !== 'delivery'),
@@ -361,7 +373,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await adminSavePlatformConfig(platformConfig);
       syncPlatformSounds(platformConfig);
-      showToast('Configurações, Marca, Pix Oficial e Sons salvos!');
+      applyLocalConfig({
+        app_name: platformConfig.site_name,
+        logo_url: platformConfig.app_logo_url ?? null,
+        primary_color: platformConfig.primary_color || '#FFD100',
+        secondary_color: platformConfig.secondary_color || '#111827',
+      });
+      void refreshConfig();
+      showToast('Configurações, Marca, Cores, Pix Oficial e Sons salvos!');
     } catch (err) {
       showToast(
         err instanceof Error
@@ -456,6 +475,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setPlatformConfig(updatedCfg);
       syncPlatformSounds(updatedCfg);
       await adminSavePlatformConfig(updatedCfg);
+      if (kind === 'logo') {
+        applyLocalConfig({ logo_url: uploadedUrl });
+      }
+      void refreshConfig();
       showToast('Mídia atualizada e salva com sucesso!');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao enviar arquivo.');
@@ -480,6 +503,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     syncPlatformSounds(updatedCfg);
     try {
       await adminSavePlatformConfig(updatedCfg);
+      if (field === 'app_logo_url') {
+        applyLocalConfig({ logo_url: null });
+      }
+      void refreshConfig();
       showToast('Restaurado para o padrão original!');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao restaurar padrão.');
@@ -630,17 +657,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      {d.avatar_url ? (
-                        <img
-                          src={d.avatar_url}
-                          alt={d.full_name}
-                          className="h-10 w-10 rounded-full object-cover border border-neutral-200 shrink-0"
-                        />
-                      ) : (
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-extrabold text-[#FFD100]">
-                          {d.full_name.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
+                      <AvatarImage
+                        src={d.avatar_url}
+                        name={d.full_name}
+                        initialsCount={2}
+                        className="h-10 w-10 rounded-full object-cover border border-neutral-200 shrink-0"
+                        fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-extrabold text-[#FFD100]"
+                      />
                       <div className="min-w-0">
                         <h3 className="font-display text-base font-extrabold text-neutral-950 truncate">
                           {d.full_name}
@@ -1155,17 +1178,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <tr key={c.id} className="hover:bg-neutral-50">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              {c.avatar_url ? (
-                                <img
-                                  src={c.avatar_url}
-                                  alt={c.full_name}
-                                  className="h-8 w-8 rounded-full object-cover border border-neutral-200 shrink-0"
-                                />
-                              ) : (
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[10px] font-extrabold text-neutral-800">
-                                  {c.full_name.slice(0, 2).toUpperCase()}
-                                </div>
-                              )}
+                              <AvatarImage
+                                src={c.avatar_url}
+                                name={c.full_name}
+                                initialsCount={2}
+                                className="h-8 w-8 rounded-full object-cover border border-neutral-200 shrink-0"
+                                fallbackClassName="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[10px] font-extrabold text-neutral-800"
+                              />
                               <span className="font-bold text-neutral-950">{c.full_name}</span>
                             </div>
                           </td>
@@ -2040,6 +2059,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 mb-1">
+                      Cor Primária (Destaque)
+                    </label>
+                    <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5">
+                      <input
+                        type="color"
+                        value={platformConfig.primary_color || '#FFD100'}
+                        onChange={(e) =>
+                          setPlatformConfig((prev) => ({
+                            ...prev,
+                            primary_color: e.target.value,
+                          }))
+                        }
+                        className="h-8 w-9 cursor-pointer rounded-lg border-0 bg-transparent p-0"
+                      />
+                      <input
+                        type="text"
+                        value={platformConfig.primary_color || '#FFD100'}
+                        onChange={(e) =>
+                          setPlatformConfig((prev) => ({
+                            ...prev,
+                            primary_color: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-transparent font-mono-num text-xs font-bold text-neutral-900 outline-none uppercase"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 mb-1">
+                      Cor Secundária (Base)
+                    </label>
+                    <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5">
+                      <input
+                        type="color"
+                        value={platformConfig.secondary_color || '#111827'}
+                        onChange={(e) =>
+                          setPlatformConfig((prev) => ({
+                            ...prev,
+                            secondary_color: e.target.value,
+                          }))
+                        }
+                        className="h-8 w-9 cursor-pointer rounded-lg border-0 bg-transparent p-0"
+                      />
+                      <input
+                        type="text"
+                        value={platformConfig.secondary_color || '#111827'}
+                        onChange={(e) =>
+                          setPlatformConfig((prev) => ({
+                            ...prev,
+                            secondary_color: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-transparent font-mono-num text-xs font-bold text-neutral-900 outline-none uppercase"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <label className="flex items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-3.5 py-3 cursor-pointer">
                   <div>
                     <p className="text-xs font-extrabold text-neutral-950">Modo Manutenção</p>
@@ -2612,12 +2692,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <img
-              src={inspectPhotoUrl}
-              alt="Foto da entrega realizada"
-              referrerPolicy="no-referrer"
-              className="max-h-[70vh] w-full rounded-2xl object-contain bg-neutral-100 border border-neutral-200"
-            />
+            {resolvedInspectPhotoUrl ? (
+              <img
+                src={resolvedInspectPhotoUrl}
+                alt="Foto da entrega realizada"
+                referrerPolicy="no-referrer"
+                className="max-h-[70vh] w-full rounded-2xl object-contain bg-neutral-100 border border-neutral-200"
+              />
+            ) : (
+              <div className="flex h-48 items-center justify-center rounded-2xl bg-neutral-100 text-xs font-semibold text-neutral-500">
+                Carregando foto segura...
+              </div>
+            )}
           </div>
         </div>
       )}

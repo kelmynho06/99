@@ -16,6 +16,7 @@ import {
   Upload,
   User,
 } from 'lucide-react';
+import { useAppConfig } from '../context/AppConfigContext';
 import { resolveBrandLogo } from '../lib/brandAssets';
 import {
   compressImageFileToDataUrl,
@@ -35,8 +36,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onAuthenticated,
   platformConfig,
 }) => {
-  const siteName = platformConfig?.site_name || 'Velo99';
-  const brandLogoUrl = resolveBrandLogo(platformConfig);
+  const { config: appConfig } = useAppConfig();
+  const siteName = platformConfig?.site_name || appConfig.app_name || 'Velo99';
+  const brandLogoUrl = resolveBrandLogo({
+    app_logo_url: platformConfig?.app_logo_url ?? appConfig.logo_url,
+  } as PlatformConfig);
+  const primaryColor = platformConfig?.primary_color || appConfig.primary_color || '#FFD100';
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [accountGoal, setAccountGoal] = useState<'passenger' | 'driver'>('passenger');
   const [showPassword, setShowPassword] = useState(false);
@@ -158,7 +163,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col lg:flex-row">
       {/* Brand showcase column */}
-      <div className="bg-[#FFD100] px-6 py-8 lg:w-[44%] lg:px-12 lg:py-12 flex flex-col justify-between">
+      <div
+        className="px-6 py-8 lg:w-[44%] lg:px-12 lg:py-12 flex flex-col justify-between"
+        style={{ backgroundColor: primaryColor }}
+      >
         <div>
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">

@@ -40,6 +40,7 @@ import type {
   UserPreferences,
   UserProfile,
 } from '../types/mobility';
+import { AvatarImage } from './AvatarImage';
 import { LegalDocsModal } from './LegalDocsModal';
 import { PermissionsPromptModal } from './PermissionsPromptModal';
 
@@ -128,11 +129,15 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    setAvatarUrl(currentUser.avatar_url || null);
+  }, [currentUser.avatar_url]);
+
   const handleAvatarSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressed = await compressImageFileToDataUrl(file, 500);
+      const compressed = await compressImageFileToDataUrl(file, 512, 0.7);
       setAvatarUrl(compressed);
     } catch {
       setFeedback({ type: 'err', msg: 'Não foi possível processar esta foto.' });
@@ -287,17 +292,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'menu' && (
             <div className="space-y-4">
               <div className="flex items-center gap-3.5 rounded-2xl bg-neutral-50 p-4 border border-neutral-100">
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={currentUser.full_name}
-                    className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                  />
-                ) : (
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-xl font-extrabold">
-                    {currentUser.full_name.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
+                <AvatarImage
+                  src={avatarUrl}
+                  name={currentUser.full_name}
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                  fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-xl font-extrabold"
+                />
                 <div className="min-w-0">
                   <p className="font-display text-base font-extrabold text-neutral-950 truncate">
                     {currentUser.full_name}
@@ -396,17 +396,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               {/* Photo Avatar Uploader */}
               <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="relative">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt="Foto de perfil"
-                      className="h-24 w-24 rounded-full object-cover border-4 border-[#FFD100] shadow"
-                    />
-                  ) : (
-                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-3xl font-extrabold shadow">
-                      {fullName.slice(0, 1).toUpperCase()}
-                    </div>
-                  )}
+                  <AvatarImage
+                    src={avatarUrl}
+                    name={fullName || currentUser.full_name}
+                    className="h-24 w-24 rounded-full object-cover border-4 border-[#FFD100] shadow"
+                    fallbackClassName="flex h-24 w-24 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-3xl font-extrabold shadow"
+                  />
                   <label className="absolute -bottom-1 -right-1 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 border-2 border-white shadow">
                     <Camera className="h-4 w-4" />
                     <input

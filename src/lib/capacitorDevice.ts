@@ -117,6 +117,7 @@ export async function checkDevicePermissionsStatus(): Promise<DevicePermissionsS
   let notifications: PermissionGrantState = 'unknown';
   let location: PermissionGrantState = 'unknown';
   let camera: PermissionGrantState = 'unknown';
+  let microphone: PermissionGrantState = 'unknown';
   const photos: PermissionGrantState =
     typeof document !== 'undefined' ? 'granted' : 'unknown';
 
@@ -147,13 +148,21 @@ export async function checkDevicePermissionsStatus(): Promise<DevicePermissionsS
         } catch {
           camera = 'prompt';
         }
+        try {
+          const micStatus = await navigator.permissions.query({
+            name: 'microphone' as PermissionName,
+          });
+          microphone = mapPermValue(micStatus.state);
+        } catch {
+          microphone = 'prompt';
+        }
       }
     }
   } catch {
     // Ignore unsupported checks
   }
 
-  return { notifications, location, camera, photos };
+  return { notifications, location, camera, microphone, photos };
 }
 
 export async function requestNotificationPermission(): Promise<PermissionGrantState> {
@@ -201,14 +210,29 @@ export async function requestCameraPermission(): Promise<PermissionGrantState> {
   return 'prompt';
 }
 
+export async function requestMicrophonePermission(): Promise<PermissionGrantState> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      return 'granted';
+    }
+  } catch {
+    return 'denied';
+  }
+  return 'prompt';
+}
+
 export async function requestAllDevicePermissions(): Promise<DevicePermissionsState> {
   const notifications = await requestNotificationPermission();
   const location = await requestLocationPermission();
   const camera = await requestCameraPermission();
+  const microphone = await requestMicrophonePermission();
   return {
     notifications,
     location,
     camera,
+    microphone,
     photos: 'granted',
   };
 }

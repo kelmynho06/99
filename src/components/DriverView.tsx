@@ -64,7 +64,12 @@ import {
   toggleDriverOnlineStatus,
 } from '../lib/mobilityApi';
 import { PixQrSvg } from '../lib/pixQr';
-import { speakPtBr, startContinuousRideAlarm, stopSpeech } from '../lib/sound';
+import {
+  playRideAcceptedChime,
+  speakPtBr,
+  startContinuousRideAlarm,
+  stopSpeech,
+} from '../lib/sound';
 import {
   getUserPreferences,
   saveUserPreferences,
@@ -81,6 +86,7 @@ import type {
   WeatherInfo,
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
+import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LiveMap } from './LiveMap';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -175,6 +181,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
 
   const [checkoutRide, setCheckoutRide] = useState<Ride | null>(null);
+  const [pixConfirmedSuccess, setPixConfirmedSuccess] = useState(false);
   const [copiedCheckoutPix, setCopiedCheckoutPix] = useState(false);
   const [waitNowMs, setWaitNowMs] = useState<number>(() => Date.now());
 
@@ -182,7 +189,35 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [disputeReason, setDisputeReason] = useState('');
 
   const [chatOpen, setChatOpen] = useState(false);
-  const [dismissedRatingRideId, setDismissedRatingRideId] = useState<string | null>(null);
+
+  const ratingStorageKey = `velo99_driver_dismissed_ratings_${currentUser.id}`;
+  const [dismissedRatingIds, setDismissedRatingIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(ratingStorageKey);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const sessionStartedAtRef = useRef<number>(Date.now());
+  const justCompletedRideIdRef = useRef<string | null>(null);
+  const pixSuccessTimerRef = useRef<number | null>(null);
+
+  const markRatingHandled = useCallback(
+    (rideId: string) => {
+      setDismissedRatingIds((prev) => {
+        if (prev.includes(rideId)) return prev;
+        const next = [...prev, rideId].slice(-120);
+        try {
+          localStorage.setItem(ratingStorageKey, JSON.stringify(next));
+        } catch {
+          // Ignore storage quota issues
+        }
+        return next;
+      });
+    },
+    [ratingStorageKey]
+  );
 
   const isOnline = Boolean(currentUser.driver?.is_online);
 
@@ -263,23 +298,52 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return stopAlarm;
   }, [incomingRide]);
 
-  // Keep checkoutRide synced and auto-unlock once Admin confirms Pix or cash is marked paid
+  // Keep checkoutRide synced and show green confirmation feedback when Admin confirms Pix
   useEffect(() => {
     if (!checkoutRide) return;
     const latest = myDriverRides.find((r) => r.id === checkoutRide.id);
     if (!latest) return;
-    if (
-      latest.payment_status === 'paid_pix' ||
-      latest.payment_status === 'paid_cash' ||
-      latest.payment_status === 'admin_settled'
-    ) {
+
+    if (latest.payment_status === 'paid_pix' || latest.payment_status === 'admin_settled') {
+      if (!pixConfirmedSuccess) {
+        setPixConfirmedSuccess(true);
+        setCheckoutRide(latest);
+        justCompletedRideIdRef.current = latest.id;
+        void playRideAcceptedChime();
+        fetchWalletTransactions(currentUser.id).then(setTransactions).catch(() => {});
+        fetchUserProfileById(currentUser.id)
+          .then((fresh) => fresh && onUserUpdated(fresh))
+          .catch(() => {});
+        if (pixSuccessTimerRef.current) window.clearTimeout(pixSuccessTimerRef.current);
+        pixSuccessTimerRef.current = window.setTimeout(() => {
+          setCheckoutRide(null);
+          setPixConfirmedSuccess(false);
+        }, 2800);
+      }
+      return;
+    }
+
+    if (latest.payment_status === 'paid_cash') {
+      justCompletedRideIdRef.current = latest.id;
       setCheckoutRide(null);
+      setPixConfirmedSuccess(false);
       fetchWalletTransactions(currentUser.id).then(setTransactions).catch(() => {});
-      fetchUserProfileById(currentUser.id).then((fresh) => fresh && onUserUpdated(fresh)).catch(() => {});
-    } else {
+      fetchUserProfileById(currentUser.id)
+        .then((fresh) => fresh && onUserUpdated(fresh))
+        .catch(() => {});
+    } else if (
+      latest.payment_status !== checkoutRide.payment_status ||
+      latest.pix_declared_at !== checkoutRide.pix_declared_at
+    ) {
       setCheckoutRide(latest);
     }
-  }, [myDriverRides, checkoutRide, currentUser.id, onUserUpdated]);
+  }, [myDriverRides, checkoutRide, pixConfirmedSuccess, currentUser.id, onUserUpdated]);
+
+  useEffect(() => {
+    return () => {
+      if (pixSuccessTimerRef.current) window.clearTimeout(pixSuccessTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     return subscribeUserPreferences((prefs) => {
@@ -321,14 +385,17 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const pendingRatingRide = useMemo(
     () =>
       !checkoutRide
-        ? myDriverRides.find(
-            (r) =>
-              r.status === 'completed' &&
-              !r.driver_rating_submitted &&
-              r.id !== dismissedRatingRideId
-          ) || null
+        ? myDriverRides.find((r) => {
+            if (r.status !== 'completed' || r.driver_rating_submitted) return false;
+            if (dismissedRatingIds.includes(r.id)) return false;
+            const completedMs = new Date(r.completed_at || r.created_at).getTime();
+            return (
+              r.id === justCompletedRideIdRef.current ||
+              completedMs >= sessionStartedAtRef.current - 60_000
+            );
+          }) || null
         : null,
-    [myDriverRides, dismissedRatingRideId, checkoutRide]
+    [myDriverRides, dismissedRatingIds, checkoutRide]
   );
 
   useEffect(() => {
@@ -539,7 +606,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressed = await compressImageFileToDataUrl(file, 900);
+      const compressed = await compressImageFileToDataUrl(file, 1024, 0.7);
       setDeliveryPhotoPreview(compressed);
       setPinError(null);
     } catch {
@@ -570,7 +637,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
       setDeliveryProofOpen(false);
       setDeliveryPhotoPreview('');
       setPinInput('');
+      justCompletedRideIdRef.current = updated.id;
       onRideUpsert(updated);
+      setPixConfirmedSuccess(false);
       setCheckoutRide(updated);
       await loadFinancePanel();
     } catch (err) {
@@ -595,7 +664,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
         (activeRide.estimated_fare + waitingStats.waitingFee).toFixed(2)
       );
       const updated = await completeRide(activeRide, currentUser.id, undefined, totalWithWait);
+      justCompletedRideIdRef.current = updated.id;
       onRideUpsert(updated);
+      setPixConfirmedSuccess(false);
       setCheckoutRide(updated);
       await loadFinancePanel();
     } finally {
@@ -1054,17 +1125,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
               {/* Passenger / Client Card with Photo, Rating, Chat & Native Tel Call */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3 min-w-0">
-                  {activeRide.passenger?.avatar_url ? (
-                    <img
-                      src={activeRide.passenger.avatar_url}
-                      alt={activeRide.passenger.full_name}
-                      className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg">
-                      {(activeRide.passenger?.full_name || 'C').slice(0, 1).toUpperCase()}
-                    </div>
-                  )}
+                  <AvatarImage
+                    src={activeRide.passenger?.avatar_url}
+                    name={activeRide.passenger?.full_name || 'Cliente'}
+                    className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                    fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg"
+                  />
                   <div className="min-w-0">
                     <span className="block text-[11px] font-bold text-[#FFD100]">
                       {activeRide.status === 'accepted' &&
@@ -1395,13 +1461,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 {formatBRL(incomingRide.estimated_fare)}
               </p>
               <div className="mt-3 flex items-center justify-center gap-2 text-xs font-bold text-neutral-200">
-                {incomingRide.passenger?.avatar_url && (
-                  <img
-                    src={incomingRide.passenger.avatar_url}
-                    alt={incomingRide.passenger.full_name}
-                    className="h-7 w-7 rounded-full object-cover border border-[#FFD100]"
-                  />
-                )}
+                <AvatarImage
+                  src={incomingRide.passenger?.avatar_url}
+                  name={incomingRide.passenger?.full_name || 'Passageiro'}
+                  className="h-7 w-7 rounded-full object-cover border border-[#FFD100] shrink-0"
+                  fallbackClassName="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-[11px]"
+                />
                 <span>{incomingRide.passenger?.full_name || 'Passageiro'}</span>
                 <span>· ★ {(incomingRide.passenger?.rating_avg ?? 5).toFixed(1)}</span>
               </div>
@@ -1456,8 +1521,48 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* ETAPA C: DESTINATION CHECKOUT WITH ALWAYS-ON PIX QR & ADMIN PIX CONFIRMATION LOCK */}
+      {/* ETAPA C: DESTINATION CHECKOUT WITH ALWAYS-ON PIX QR, ADMIN LOCK & GREEN PIX SUCCESS FEEDBACK */}
       {checkoutRide && (() => {
+        if (pixConfirmedSuccess) {
+          return (
+            <div className="fixed inset-0 z-[1180] flex items-center justify-center bg-black/75 p-4">
+              <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl space-y-4 border border-emerald-200">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <CheckCircle2 className="h-10 w-10" />
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">
+                    Pix Confirmado pelo Admin
+                  </p>
+                  <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950">
+                    Pagamento recebido com sucesso!
+                  </h3>
+                  <p className="mt-1.5 text-xs text-neutral-600">
+                    O valor de{' '}
+                    <strong className="font-mono-num text-neutral-950">
+                      {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
+                    </strong>{' '}
+                    já foi creditado no seu saldo de repasses.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pixSuccessTimerRef.current) {
+                      window.clearTimeout(pixSuccessTimerRef.current);
+                    }
+                    setCheckoutRide(null);
+                    setPixConfirmedSuccess(false);
+                  }}
+                  className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         const waitingAdminPix =
           (checkoutRide.payment_method === 'pix' || Boolean(checkoutRide.pix_declared_at)) &&
           checkoutRide.payment_status === 'pending';
@@ -1823,17 +1928,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 }}
                 className="flex items-center gap-3 text-left"
               >
-                {currentUser.avatar_url ? (
-                  <img
-                    src={currentUser.avatar_url}
-                    alt={currentUser.full_name}
-                    className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                  />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg shrink-0">
-                    {currentUser.full_name.slice(0, 1)}
-                  </div>
-                )}
+                <AvatarImage
+                  src={currentUser.avatar_url}
+                  name={currentUser.full_name}
+                  className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                  fallbackClassName="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg shrink-0"
+                />
                 <div>
                   <h3 className="font-display text-base font-extrabold text-white">
                     {currentUser.full_name}
@@ -2343,8 +2443,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
         <RatingModal
           ride={pendingRatingRide}
           currentUser={currentUser}
-          onSubmitted={(updated) => onRideUpsert(updated)}
-          onSkip={() => setDismissedRatingRideId(pendingRatingRide.id)}
+          onSubmitted={(updated) => {
+            markRatingHandled(updated.id);
+            onRideUpsert(updated);
+          }}
+          onSkip={() => markRatingHandled(pendingRatingRide.id)}
         />
       )}
     </div>

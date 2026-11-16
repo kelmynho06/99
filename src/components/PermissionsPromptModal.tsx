@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   MapPin,
+  Mic,
+  Phone,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -13,6 +15,7 @@ import {
   requestAllDevicePermissions,
   requestCameraPermission,
   requestLocationPermission,
+  requestMicrophonePermission,
   requestNotificationPermission,
 } from '../lib/capacitorDevice';
 import { markPermissionsPromptSeen } from '../lib/userPrefs';
@@ -54,6 +57,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
     notifications: 'prompt',
     location: 'prompt',
     camera: 'prompt',
+    microphone: 'prompt',
     photos: 'granted',
   });
   const [requesting, setRequesting] = useState(false);
@@ -96,7 +100,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 Permissões do Aplicativo ({siteName})
               </h3>
               <p className="text-xs text-neutral-500">
-                Necessárias no Android (APK) e navegador para funcionamento em tempo real
+                Padrão completo para Android (APK) e navegador em segundo plano
               </p>
             </div>
           </div>
@@ -136,7 +140,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
             </button>
           </div>
 
-          {/* Background / Always Location */}
+          {/* Background / Always Location + Battery */}
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5">
             <div className="flex items-start gap-3">
               <MapPin className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
@@ -145,8 +149,8 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   Localização GPS Contínua e Segundo Plano
                 </p>
                 <p className="text-[11px] text-neutral-600">
-                  No Android, selecione &ldquo;Permitir o tempo todo&rdquo; para navegação contínua e
-                  rastreamento ao vivo.
+                  Selecione &ldquo;Permitir o tempo todo&rdquo; e desative restrição de bateria para
+                  manter o rastreamento e chamadas sempre ativos.
                 </p>
               </div>
             </div>
@@ -169,7 +173,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               <div>
                 <p className="text-xs font-extrabold text-neutral-950">Acesso à Câmera</p>
                 <p className="text-[11px] text-neutral-600">
-                  Para tirar foto comprovando a entrega de pacotes e fotografar CNH/CRLV.
+                  Para foto comprobatória da entrega de pacotes e envio de CNH/CRLV.
                 </p>
               </div>
             </div>
@@ -185,18 +189,46 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
             </button>
           </div>
 
-          {/* Photos / Media Gallery */}
+          {/* Microphone / Audio */}
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5">
+            <div className="flex items-start gap-3">
+              <Mic className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-extrabold text-neutral-950">Áudio e Microfone</p>
+                <p className="text-[11px] text-neutral-600">
+                  Garante alertas sonoros nítidos, guia de voz PT-BR e suporte por voz durante corridas.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await requestMicrophonePermission();
+                await refreshStatus();
+              }}
+              className="shrink-0"
+            >
+              <StatusBadge state={status.microphone} />
+            </button>
+          </div>
+
+          {/* Photos & Direct Calls */}
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5">
             <div className="flex items-start gap-3">
               <ImageIcon className="h-5 w-5 text-neutral-700 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-extrabold text-neutral-950">Fotos e Galeria</p>
+                <p className="text-xs font-extrabold text-neutral-950">
+                  Fotos, Galeria e Chamadas Diretas
+                </p>
                 <p className="text-[11px] text-neutral-600">
-                  Permite enviar sua foto de perfil e selecionar documentos salvos no aparelho.
+                  Permite salvar foto de perfil, anexar documentos e ligar com 1 toque para motorista/cliente.
                 </p>
               </div>
             </div>
-            <StatusBadge state={status.photos} />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Phone className="h-3.5 w-3.5 text-emerald-700" />
+              <StatusBadge state={status.photos} />
+            </div>
           </div>
         </div>
 

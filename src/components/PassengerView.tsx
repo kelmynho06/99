@@ -50,6 +50,7 @@ import {
   searchAddresses,
 } from '../lib/geo';
 import { cancelRide, createRideRequest } from '../lib/mobilityApi';
+import { playRideAcceptedChime } from '../lib/sound';
 import type {
   GeoPoint,
   PaymentMethod,
@@ -63,6 +64,7 @@ import type {
   WeatherInfo,
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
+import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
@@ -161,7 +163,35 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const [chatOpen, setChatOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
-  const [dismissedCompletedRideId, setDismissedCompletedRideId] = useState<string | null>(null);
+
+  const ratingStorageKey = `velo99_passenger_dismissed_ratings_${currentUser.id}`;
+  const [dismissedRatingIds, setDismissedRatingIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(ratingStorageKey);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const sessionStartedAtRef = useRef<number>(Date.now());
+  const justCompletedRideIdRef = useRef<string | null>(null);
+  const prevRideStatusMapRef = useRef<Record<string, Ride['status']>>({});
+
+  const markRatingHandled = useCallback(
+    (rideId: string) => {
+      setDismissedRatingIds((prev) => {
+        if (prev.includes(rideId)) return prev;
+        const next = [...prev, rideId].slice(-120);
+        try {
+          localStorage.setItem(ratingStorageKey, JSON.stringify(next));
+        } catch {
+          // Ignore storage quota issues
+        }
+        return next;
+      });
+    },
+    [ratingStorageKey]
+  );
 
   const [sheetMinimized, setSheetMinimized] = useState(false);
   const [driverSpeedKmh, setDriverSpeedKmh] = useState(0);
@@ -223,16 +253,40 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     return { remainingFreeSec, extraSec, waitingFee, isCharging: extraSec > 0 };
   }, [activeRide, waitNowMs]);
 
+  // Play pleasant chime on ride acceptance and track freshly completed rides for RatingModal
+  useEffect(() => {
+    const prevMap = prevRideStatusMapRef.current;
+    const nextMap: Record<string, Ride['status']> = {};
+    for (const r of myRides) {
+      nextMap[r.id] = r.status;
+      const prevStatus = prevMap[r.id];
+      if (prevStatus === 'searching' && r.status === 'accepted') {
+        void playRideAcceptedChime();
+      }
+      if (
+        prevStatus &&
+        prevStatus !== 'completed' &&
+        r.status === 'completed'
+      ) {
+        justCompletedRideIdRef.current = r.id;
+      }
+    }
+    prevRideStatusMapRef.current = nextMap;
+  }, [myRides]);
+
   const pendingRatingRide = useMemo(
     () =>
-      myRides.find(
-        (r) =>
-          r.status === 'completed' &&
-          !r.passenger_rating_submitted &&
-          r.id !== dismissedCompletedRideId &&
-          !(r.payment_method === 'pix' && r.payment_status === 'pending')
-      ) || null,
-    [myRides, dismissedCompletedRideId]
+      myRides.find((r) => {
+        if (r.status !== 'completed' || r.passenger_rating_submitted) return false;
+        if (dismissedRatingIds.includes(r.id)) return false;
+        if (r.payment_method === 'pix' && r.payment_status === 'pending') return false;
+        const completedMs = new Date(r.completed_at || r.created_at).getTime();
+        return (
+          r.id === justCompletedRideIdRef.current ||
+          completedMs >= sessionStartedAtRef.current - 60_000
+        );
+      }) || null,
+    [myRides, dismissedRatingIds]
   );
 
   const detectMyGps = useCallback(async () => {
@@ -1175,69 +1229,160 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </div>
             ) : null
           ) : activeRide.status === 'searching' ? (
-            /* SEARCHING RADAR */
-            <div className="py-4 text-center">
-              <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
-                <span className="absolute inset-0 rounded-full bg-[#FFD100]/50 animate-radar-ring" />
-                <span className="absolute inset-0 rounded-full bg-[#FFD100]/40 animate-radar-ring-delayed" />
-                <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] shadow-lg">
+            /* MODERN CLEAN LIGHT SEARCHING POP-UP */
+            <div className="space-y-4 py-1">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+                <div className="h-full w-1/2 rounded-full bg-[#FFD100] animate-pulse" />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                    {isDeliveryActive ? 'Seu pedido foi solicitado' : 'Sua corrida foi solicitada'}
+                  </h3>
+                  <p className="text-xs font-medium text-neutral-500">
+                    {isDeliveryActive
+                      ? 'Encontraremos o entregador mais próximo de você'
+                      : 'Encontraremos o motorista mais indicado na sua região'}
+                  </p>
+                </div>
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-50 border border-amber-200">
+                  <span className="absolute inset-0 rounded-full bg-[#FFD100]/45 animate-radar-ring" />
                   {isDeliveryActive ? (
-                    <Package className="h-7 w-7" />
+                    <Package className="relative h-6 w-6 text-amber-600" />
                   ) : (
-                    <Car className="h-7 w-7" />
+                    <Car className="relative h-6 w-6 text-neutral-900" />
                   )}
                 </div>
               </div>
-              <h3 className="mt-4 font-display text-lg font-extrabold text-neutral-950">
-                {isDeliveryActive ? 'Procurando entregador...' : 'Procurando motorista...'}
-              </h3>
-              <p className="mt-1 text-xs text-neutral-600 truncate">
-                {activeRide.origin_address} → {activeRide.destination_address}
-              </p>
-              <p className="mt-1 text-sm font-extrabold text-neutral-950 font-mono-num">
-                {CATEGORY_LABELS[activeRide.category]} · {formatBRL(activeRide.estimated_fare)} ·{' '}
-                {activeRide.distance_km} km
-              </p>
+
+              <div className="flex items-center justify-between rounded-2xl border border-neutral-200/80 bg-neutral-50 px-3.5 py-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img
+                    src={resolveCategoryVehicleImage(activeRide.category, platformConfig)}
+                    alt={CATEGORY_LABELS[activeRide.category]}
+                    className="h-11 w-14 rounded-xl object-cover bg-white border border-neutral-200 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-extrabold text-neutral-950">
+                      {CATEGORY_LABELS[activeRide.category]} · {activeRide.distance_km} km
+                    </p>
+                    <p className="text-[11px] text-neutral-500 truncate">
+                      {activeRide.origin_address} → {activeRide.destination_address}
+                    </p>
+                  </div>
+                </div>
+                <span className="font-mono-num text-base font-extrabold text-neutral-950 shrink-0 pl-2">
+                  {formatBRL(activeRide.estimated_fare)}
+                </span>
+              </div>
+
               <button
                 type="button"
                 onClick={handleCancelRide}
-                className="mt-5 min-h-[46px] w-full rounded-2xl border border-neutral-300 bg-neutral-50 text-sm font-bold text-neutral-800 hover:bg-neutral-100 transition"
+                className="min-h-[46px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 text-sm font-bold text-neutral-700 hover:bg-neutral-100 transition"
               >
                 Cancelar solicitação
               </button>
             </div>
           ) : (
-            /* ACTIVE MATCHED RIDE / DELIVERY */
+            /* MODERN CLEAN LIGHT MATCHED / LIVE TRACKING POP-UP (99 STYLE) */
             <div className="space-y-3.5">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 pr-2">
-                  <span className="text-xs font-bold text-amber-700">
-                    {activeRide.status === 'accepted' &&
-                      (isDeliveryActive
-                        ? 'Entregador a caminho da coleta'
-                        : 'Motorista a caminho do embarque')}
-                    {activeRide.status === 'arrived' &&
-                      (isDeliveryActive
-                        ? 'Entregador chegou para retirar o pacote!'
-                        : 'Motorista chegou no local de embarque!')}
-                    {activeRide.status === 'in_progress' &&
-                      (isDeliveryActive ? 'Pacote em rota de entrega' : 'Em viagem para o destino')}
-                  </span>
-                  <h3 className="font-display text-lg font-extrabold text-neutral-950 truncate">
-                    {activeRide.driver?.driver?.vehicle_model || 'Veículo'}
-                  </h3>
+              {/* Live ETA & Status Banner */}
+              <div className="text-center space-y-2">
+                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                  {activeRide.status === 'accepted' && (
+                    <>
+                      {isDeliveryActive ? 'Coleta em ' : 'Embarque em '}
+                      <span className="text-blue-600 font-mono-num">
+                        {durationMin > 0 ? `${durationMin} min` : 'instantes'}
+                      </span>
+                    </>
+                  )}
+                  {activeRide.status === 'arrived' && (
+                    <span className="text-emerald-700">
+                      {isDeliveryActive
+                        ? 'Entregador chegou para a coleta!'
+                        : 'Motorista no ponto de embarque!'}
+                    </span>
+                  )}
+                  {activeRide.status === 'in_progress' && (
+                    <>
+                      {isDeliveryActive ? 'Entrega em rota · ' : 'Chegada em '}
+                      <span className="text-blue-600 font-mono-num">
+                        {durationMin > 0 ? `${durationMin} min` : 'em breve'}
+                      </span>
+                    </>
+                  )}
+                </h3>
+
+                <div className="rounded-xl bg-amber-50 border border-amber-200/70 px-3 py-2 text-xs font-bold text-amber-800">
+                  {activeRide.status === 'accepted' &&
+                    (isDeliveryActive
+                      ? 'Pedido aceito · Entregador a caminho da coleta'
+                      : 'Corrida aceita · Acompanhe seu motorista no mapa')}
+                  {activeRide.status === 'arrived' &&
+                    (isDeliveryActive
+                      ? 'Encontre seu entregador com o pacote'
+                      : 'Seu motorista está aguardando no embarque')}
+                  {activeRide.status === 'in_progress' &&
+                    (isDeliveryActive
+                      ? 'Pacote coletado · Em rota para o destino'
+                      : 'Viagem em andamento · Trajeto acompanhado por GPS')}
                 </div>
-                <div className="rounded-2xl bg-neutral-950 px-3.5 py-2 text-center text-white shrink-0">
-                  <span className="block text-[10px] font-semibold text-neutral-400">PLACA</span>
-                  <span className="font-mono-num text-sm font-extrabold text-[#FFD100]">
+              </div>
+
+              {/* Plate + Vehicle & Driver Avatar Cluster */}
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="font-mono-num text-2xl font-extrabold tracking-tight text-neutral-950 leading-none">
                     {activeRide.driver?.driver?.vehicle_plate || '---'}
-                  </span>
+                  </p>
+                  <p className="text-xs font-semibold text-neutral-600 truncate">
+                    {activeRide.driver?.driver?.vehicle_color || ''}{' '}
+                    {activeRide.driver?.driver?.vehicle_model || 'Veículo'}
+                  </p>
+                  <div className="flex items-center gap-1.5 pt-1 text-xs text-neutral-800">
+                    <span className="font-extrabold uppercase truncate">
+                      {activeRide.driver?.full_name || 'Parceiro'}
+                    </span>
+                    <span className="font-mono-num font-bold text-neutral-950 flex items-center gap-0.5 shrink-0">
+                      {(activeRide.driver?.rating_avg ?? 5).toFixed(1)}
+                      <Star className="h-3.5 w-3.5 fill-[#FFD100] text-[#F59E0B]" />
+                    </span>
+                  </div>
+                  <div className="pt-0.5 flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      {isDeliveryActive ? 'Entregador verificado' : 'Motorista verificado'}
+                    </span>
+                    <span className="font-mono-num text-xs font-extrabold text-neutral-900">
+                      {formatBRL(activeRide.estimated_fare)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Overlapping Vehicle Photo + Driver Avatar */}
+                <div className="relative flex items-center shrink-0 pr-1">
+                  <img
+                    src={resolveCategoryVehicleImage(activeRide.category, platformConfig)}
+                    alt={CATEGORY_LABELS[activeRide.category]}
+                    className="h-14 w-20 rounded-2xl object-cover border border-neutral-200 bg-neutral-50 shadow-xs"
+                  />
+                  <div className="-ml-4 rounded-full border-2 border-white shadow-md">
+                    <AvatarImage
+                      src={activeRide.driver?.avatar_url}
+                      name={activeRide.driver?.full_name || 'M'}
+                      className="h-14 w-14 rounded-full object-cover shrink-0"
+                      fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg shrink-0"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* 4-Digit Security PIN Box (Required on boarding for rides; Optional on deliveries) */}
               {(!isDeliveryActive || activeRide.require_pin !== false) ? (
-                <div className="flex items-center justify-between rounded-2xl bg-[#FFD100]/25 border border-[#FFD100] px-4 py-3">
+                <div className="flex items-center justify-between rounded-2xl bg-[#FFD100]/20 border border-[#FFD100] px-4 py-2.5">
                   <div className="flex items-center gap-2.5">
                     <ShieldCheck className="h-5 w-5 text-neutral-950 shrink-0" />
                     <div>
@@ -1253,7 +1398,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       </p>
                     </div>
                   </div>
-                  <div className="rounded-xl bg-neutral-950 px-3.5 py-1.5 font-mono-num text-xl font-extrabold tracking-widest text-[#FFD100]">
+                  <div className="rounded-xl bg-neutral-950 px-3.5 py-1 font-mono-num text-xl font-extrabold tracking-widest text-[#FFD100]">
                     {activeRide.pin_code}
                   </div>
                 </div>
@@ -1263,47 +1408,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   <span>Entrega configurada sem PIN · Foto comprobatória no destino</span>
                 </div>
               )}
-
-              {/* Driver Info & Fare */}
-              <div className="flex items-center justify-between rounded-2xl bg-neutral-50 p-3 border border-neutral-100">
-                <div className="flex items-center gap-3 min-w-0">
-                  {activeRide.driver?.avatar_url ? (
-                    <img
-                      src={activeRide.driver.avatar_url}
-                      alt={activeRide.driver.full_name}
-                      className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-bold shrink-0">
-                      {activeRide.driver?.full_name.slice(0, 1) || 'M'}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-sm font-extrabold text-neutral-950 truncate">
-                      {activeRide.driver?.full_name}
-                    </p>
-                    <p className="text-xs text-neutral-600 flex items-center gap-1">
-                      <Star className="h-3.5 w-3.5 fill-[#FFD100] text-[#F59E0B]" />
-                      <span className="font-bold font-mono-num">
-                        {activeRide.driver?.rating_avg.toFixed(2)}
-                      </span>
-                      <span>· {activeRide.driver?.driver?.vehicle_color}</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="block font-mono-num text-sm font-extrabold text-neutral-950">
-                    {formatBRL(activeRide.estimated_fare)}
-                  </span>
-                  <span className="text-[11px] font-bold text-neutral-600">
-                    {activeRide.payment_method === 'pix'
-                      ? activeRide.payment_status === 'paid_pix'
-                        ? 'Pix confirmado'
-                        : 'Pix pendente'
-                      : 'Dinheiro'}
-                  </span>
-                </div>
-              </div>
 
               {/* 2-Minute Wait Timer synced with Driver */}
               {activeRide.status === 'arrived' && (
@@ -1365,30 +1469,35 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
               )}
 
+              {/* Clean Light Action Row matching 99 UI */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(true)}
+                  className="min-h-[48px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-neutral-100 border border-neutral-200/80 text-sm font-bold text-neutral-900 hover:bg-neutral-200/70 active:scale-[0.98] transition"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <span>
+                    {currentChatMessages.length > 0
+                      ? `Chat (${currentChatMessages.length})`
+                      : 'Alguma observação?'}
+                  </span>
+                </button>
                 {activeRide.driver?.phone && (
                   <a
                     href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
-                    className="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white active:scale-[0.98] transition"
+                    className="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-2xl bg-neutral-100 border border-neutral-200/80 text-neutral-900 hover:bg-neutral-200/70 active:scale-[0.98] transition"
                     aria-label="Ligar para motorista"
                     title="Ligar para motorista"
                   >
                     <Phone className="h-5 w-5" />
                   </a>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setChatOpen(true)}
-                  className="min-h-[48px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-neutral-950 text-sm font-bold text-[#FFD100] active:scale-[0.98] transition"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  <span>Chat ({currentChatMessages.length})</span>
-                </button>
                 {activeRide.status !== 'in_progress' && (
                   <button
                     type="button"
                     onClick={handleCancelRide}
-                    className="min-h-[48px] rounded-2xl border border-neutral-300 px-4 text-xs font-bold text-neutral-700 hover:bg-neutral-100"
+                    className="min-h-[48px] rounded-2xl border border-neutral-200 bg-white px-3.5 text-xs font-bold text-neutral-600 hover:bg-neutral-100"
                   >
                     Cancelar
                   </button>
@@ -1703,17 +1812,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 }}
                 className="flex items-center gap-3 text-left"
               >
-                {currentUser.avatar_url ? (
-                  <img
-                    src={currentUser.avatar_url}
-                    alt={currentUser.full_name}
-                    className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                  />
-                ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-200 text-neutral-900 font-display text-xl font-extrabold shrink-0">
-                    {currentUser.full_name.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
+                <AvatarImage
+                  src={currentUser.avatar_url}
+                  name={currentUser.full_name}
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                  fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-200 text-neutral-900 font-display text-xl font-extrabold shrink-0"
+                />
                 <div>
                   <h3 className="font-display text-xl font-extrabold text-neutral-950 leading-tight">
                     {currentUser.full_name.split(' ')[0]}
@@ -2087,8 +2191,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         <RatingModal
           ride={pendingRatingRide}
           currentUser={currentUser}
-          onSubmitted={(updated) => onRideUpsert(updated)}
-          onSkip={() => setDismissedCompletedRideId(pendingRatingRide.id)}
+          onSubmitted={(updated) => {
+            markRatingHandled(updated.id);
+            onRideUpsert(updated);
+          }}
+          onSkip={() => markRatingHandled(pendingRatingRide.id)}
         />
       )}
     </div>
