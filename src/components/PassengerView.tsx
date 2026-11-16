@@ -1,12 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Banknote,
   Briefcase,
   Car,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock,
   Crosshair,
+  Eye,
+  EyeOff,
+  FileText,
   Flag,
   Headphones,
   HelpCircle,
@@ -33,10 +38,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import deliveryCarImg from '../assets/images/vehicle_delivery_car_99_1794777202799.jpg';
-import deliveryMotoImg from '../assets/images/vehicle_delivery_moto_99_1794777202546.jpg';
-import motoImg from '../assets/images/vehicle_moto_99_1794777201679.jpg';
-import popCarImg from '../assets/images/vehicle_pop_99_1794777203734.jpg';
+import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
 import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import {
   type AddressSuggestion,
@@ -62,6 +64,7 @@ import type {
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
 import { DirectChatModal } from './DirectChatModal';
+import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
 import { PixPaymentModal } from './PixPaymentModal';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -101,14 +104,6 @@ const CATEGORY_LABELS: Record<RideCategory, string> = {
   negocia: 'Negocia',
   delivery_moto: 'Entrega Moto',
   delivery_car: 'Entrega Carro',
-};
-
-const CATEGORY_IMAGES: Record<RideCategory, string> = {
-  moto: motoImg,
-  pop: popCarImg,
-  negocia: popCarImg,
-  delivery_moto: deliveryMotoImg,
-  delivery_car: deliveryCarImg,
 };
 
 export const PassengerView: React.FC<PassengerViewProps> = ({
@@ -158,12 +153,25 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     currentUser.preferred_payment === 'cash' ? 'cash' : 'pix'
   );
   const [deliveryNotes, setDeliveryNotes] = useState('');
+  const [requireDeliveryPin, setRequireDeliveryPin] = useState(true);
+  const [idleCleanMap, setIdleCleanMap] = useState(false);
+  const [legalDocsOpen, setLegalDocsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [dismissedCompletedRideId, setDismissedCompletedRideId] = useState<string | null>(null);
+
+  const [sheetMinimized, setSheetMinimized] = useState(false);
+  const [driverSpeedKmh, setDriverSpeedKmh] = useState(0);
+  const dragStartYRef = useRef<number | null>(null);
+  const prevDriverSampleRef = useRef<{ lat: number; lng: number; ts: number } | null>(null);
+  const fetchedRideRouteStageRef = useRef<string | null>(null);
+
+  const siteName = platformConfig.site_name || 'Velo99';
+  const brandLogoUrl = resolveBrandLogo(platformConfig);
+  const pendingDebt = Number(currentUser.pending_debt_amount || 0);
 
   const myRides = useMemo(
     () => rides.filter((r) => r.passenger_id === currentUser.id),
@@ -254,9 +262,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   useEffect(() => {
     if (!addressScreenOpen || activeSearchField !== 'origin') return;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       if (
-        originQuery.trim().length < 3 ||
+        originQuery.trim().length < 2 ||
         originQuery === 'Localização atual' ||
         originQuery === origin.address
       ) {
@@ -265,38 +274,49 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         return;
       }
       setSearchingAddress(true);
-      const res = await searchAddresses(originQuery, origin.lat, origin.lng);
-      setOriginSuggestions(res);
-      setSearchingAddress(false);
-    }, 350);
-    return () => clearTimeout(timer);
+      const res = await searchAddresses(originQuery, origin.lat, origin.lng, controller.signal);
+      if (!controller.signal.aborted) {
+        setOriginSuggestions(res);
+        setSearchingAddress(false);
+      }
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [originQuery, addressScreenOpen, activeSearchField, origin.address, origin.lat, origin.lng]);
 
   useEffect(() => {
     if (!addressScreenOpen || activeSearchField !== 'destination') return;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
-      if (destQuery.trim().length < 3 || (destination && destQuery === destination.address)) {
+      if (destQuery.trim().length < 2 || (destination && destQuery === destination.address)) {
         setDestSuggestions([]);
         setSearchingAddress(false);
         return;
       }
       setSearchingAddress(true);
-      const res = await searchAddresses(destQuery, origin.lat, origin.lng);
-      setDestSuggestions(res);
-      setSearchingAddress(false);
-    }, 350);
-    return () => clearTimeout(timer);
+      const res = await searchAddresses(destQuery, origin.lat, origin.lng, controller.signal);
+      if (!controller.signal.aborted) {
+        setDestSuggestions(res);
+        setSearchingAddress(false);
+      }
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [destQuery, addressScreenOpen, activeSearchField, destination, origin.lat, origin.lng]);
 
   useEffect(() => {
-    const o = activeRide
-      ? { lat: activeRide.origin_lat, lng: activeRide.origin_lng }
-      : origin;
-    const d = activeRide
-      ? { lat: activeRide.destination_lat, lng: activeRide.destination_lng }
-      : destination;
+    setSheetMinimized(false);
+  }, [activeRide?.id]);
 
-    if (!d) {
+  // Pre-ride route preview
+  useEffect(() => {
+    if (activeRide) return;
+    fetchedRideRouteStageRef.current = null;
+    if (!destination) {
       setRouteCoords([]);
       setDistanceKm(0);
       setDurationMin(0);
@@ -304,7 +324,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     }
 
     let cancelled = false;
-    fetchRouteGeometry(o.lat, o.lng, d.lat, d.lng).then((res) => {
+    fetchRouteGeometry(origin.lat, origin.lng, destination.lat, destination.lng).then((res) => {
       if (cancelled) return;
       setRouteCoords(res.coords);
       setDistanceKm(res.distanceKm);
@@ -314,6 +334,66 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       cancelled = true;
     };
   }, [origin, destination, activeRide]);
+
+  // Persistent stage route for active ride so traveled segment turns gray and ahead stays blue
+  useEffect(() => {
+    if (!activeRide) return;
+    const stage = activeRide.status === 'in_progress' ? 'B' : 'A';
+    const stageKey = `${activeRide.id}:${stage}`;
+    if (fetchedRideRouteStageRef.current === stageKey) return;
+
+    const drvLat = activeRide.driver?.driver?.current_lat;
+    const drvLng = activeRide.driver?.driver?.current_lng;
+
+    if (stage === 'A' && activeRide.status === 'searching') {
+      fetchedRideRouteStageRef.current = `${activeRide.id}:searching`;
+      let cancelled = false;
+      fetchRouteGeometry(
+        activeRide.origin_lat,
+        activeRide.origin_lng,
+        activeRide.destination_lat,
+        activeRide.destination_lng
+      ).then((res) => {
+        if (cancelled) return;
+        setRouteCoords(res.coords);
+        setDistanceKm(res.distanceKm);
+        setDurationMin(res.durationMin);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const startLat = stage === 'A' && drvLat ? drvLat : activeRide.origin_lat;
+    const startLng = stage === 'A' && drvLng ? drvLng : activeRide.origin_lng;
+    const targetLat = stage === 'B' ? activeRide.destination_lat : activeRide.origin_lat;
+    const targetLng = stage === 'B' ? activeRide.destination_lng : activeRide.origin_lng;
+
+    if (stage === 'A' && (!drvLat || !drvLng)) {
+      return;
+    }
+
+    fetchedRideRouteStageRef.current = stageKey;
+    let cancelled = false;
+    fetchRouteGeometry(startLat, startLng, targetLat, targetLng).then((res) => {
+      if (cancelled) return;
+      setRouteCoords(res.coords);
+      setDistanceKm(res.distanceKm);
+      setDurationMin(res.durationMin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeRide?.id,
+    activeRide?.status,
+    activeRide?.origin_lat,
+    activeRide?.origin_lng,
+    activeRide?.destination_lat,
+    activeRide?.destination_lng,
+    activeRide?.driver?.driver?.current_lat,
+    activeRide?.driver?.driver?.current_lng,
+  ]);
 
   const getFareForCategory = useCallback(
     (cat: PricingSetting): number => {
@@ -361,6 +441,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       : selectedCategoryObj
       ? getFareForCategory(selectedCategoryObj)
       : 0;
+  const totalFareWithDebt = Number((selectedCategoryFare + pendingDebt).toFixed(2));
 
   const handleRequestRide = async () => {
     if (!destination || submitting) return;
@@ -375,9 +456,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         origin,
         destination,
         distance_km: Math.max(0.6, distanceKm),
-        estimated_fare: selectedCategoryFare,
+        estimated_fare: totalFareWithDebt,
         negotiated_fare: category === 'negocia' ? activeNegociaFare : null,
         delivery_notes: isDelivery ? deliveryNotes : null,
+        require_pin: isDelivery ? requireDeliveryPin : true,
+        pending_debt_included: pendingDebt,
       });
       setDeliveryNotes('');
       onRideUpsert(created);
@@ -423,6 +506,29 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         }
       : null;
 
+  useEffect(() => {
+    if (!activeDriverPos || !activeRide || activeRide.status === 'searching') {
+      prevDriverSampleRef.current = null;
+      setDriverSpeedKmh(0);
+      return;
+    }
+    const now = Date.now();
+    const prev = prevDriverSampleRef.current;
+    if (prev && (prev.lat !== activeDriverPos.lat || prev.lng !== activeDriverPos.lng)) {
+      const distKm = haversineKm(prev.lat, prev.lng, activeDriverPos.lat, activeDriverPos.lng);
+      const dtHours = Math.max(0.0005, (now - prev.ts) / 3600000);
+      const computed = Math.min(120, Math.round(distKm / dtHours));
+      setDriverSpeedKmh(computed > 1 ? computed : 0);
+    }
+    prevDriverSampleRef.current = {
+      lat: activeDriverPos.lat,
+      lng: activeDriverPos.lng,
+      ts: now,
+    };
+    const decay = window.setTimeout(() => setDriverSpeedKmh(0), 5000);
+    return () => window.clearTimeout(decay);
+  }, [activeDriverPos?.lat, activeDriverPos?.lng, activeRide]);
+
   const currentChatMessages = activeRide ? messagesByRide[activeRide.id] || [] : [];
   const isDeliveryActive =
     activeRide?.category === 'delivery_moto' || activeRide?.category === 'delivery_car';
@@ -453,221 +559,372 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         }
         routeCoords={routeCoords}
         driverPosition={activeDriverPos}
+        followVehicle={Boolean(activeRide && activeDriverPos && activeRide.status !== 'searching')}
+        showSpeedometer={Boolean(activeRide && activeRide.status === 'in_progress')}
+        speedKmh={driverSpeedKmh}
+        controlsTopClassName={
+          !activeRide && !destination && !idleCleanMap
+            ? 'bottom-6'
+            : activeRide
+            ? 'top-24'
+            : 'top-20'
+        }
         nearbyDrivers={activeRide ? [] : onlineDrivers}
         pickOnMapMode={pickOnMapMode}
         onMapPick={handleMapPick}
         onRecenter={detectMyGps}
       />
 
-      {/* Top Floating Bar */}
-      <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] flex items-center justify-between px-4 pt-safe py-3">
-        <button
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-neutral-950 shadow-lg border border-neutral-200 active:scale-95 transition"
-          aria-label="Abrir menu"
-        >
-          <Menu className="h-6 w-6" />
-        </button>
-
-        <div className="pointer-events-auto flex items-center gap-2">
-          {pickOnMapMode ? (
+      {/* Top Floating Bar + Top Search Card ("Para onde vamos?" at top + Clean Map toggle) */}
+      <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] px-3 sm:px-4 pt-safe py-3 space-y-2.5">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setPickOnMapMode(null)}
-              className="flex min-h-[44px] items-center gap-2 rounded-full bg-neutral-950 px-4 text-xs font-bold text-[#FFD100] shadow-lg"
+              onClick={() => setMenuOpen(true)}
+              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-neutral-950 shadow-lg border border-neutral-200 active:scale-95 transition"
+              aria-label="Abrir menu"
             >
-              <MapPin className="h-4 w-4" />
-              Toque no mapa ({pickOnMapMode === 'origin' ? 'Embarque' : 'Destino'}) · Cancelar
+              <Menu className="h-5 w-5" />
             </button>
-          ) : destination && !activeRide ? (
-            <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-neutral-950 shadow-lg border border-neutral-200 font-mono-num">
-              <span>
-                {distanceKm} km · {durationMin} min
-              </span>
-            </div>
-          ) : null}
-          <PWAInstallButton />
-        </div>
-      </div>
+            {!activeRide && !destination && !idleCleanMap && (
+              <div className="pointer-events-auto hidden xs:flex items-center gap-2 rounded-2xl bg-white px-3 py-1.5 shadow-md border border-neutral-200">
+                <img
+                  src={brandLogoUrl}
+                  alt={siteName}
+                  className="h-7 w-7 rounded-lg object-cover shrink-0"
+                />
+                <span className="font-display text-sm font-extrabold text-neutral-950">
+                  {siteName}
+                </span>
+              </div>
+            )}
+          </div>
 
-      {/* Bottom Sheet / Floating Card */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-0 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
-        <div className="pointer-events-auto rounded-t-3xl sm:rounded-3xl bg-white p-5 pb-safe shadow-2xl border-t sm:border border-neutral-200 max-h-[78vh] overflow-y-auto">
-          {!activeRide ? (
-            !destination ? (
-              /* HOME CARD ("Para onde vamos?" + Viagem / Entrega + Casa / Trabalho / Favoritos) */
-              <div className="space-y-3.5">
-                <div className="mx-auto h-1 w-10 rounded-full bg-neutral-200 sm:hidden" />
-
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 min-w-0">
-                    <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                    <span className="truncate">
-                      {weather?.city || platformConfig.platform_city}
-                    </span>
-                    {weather && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-extrabold text-neutral-950 font-mono-num shrink-0">
-                        <Thermometer className="h-3 w-3 text-amber-700" />
-                        {weather.temperatureC}°C
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs font-bold text-neutral-600 shrink-0">
-                    {onlineDrivers.length > 0
-                      ? `${onlineDrivers.length} online`
-                      : 'Ao vivo'}
-                  </span>
-                </div>
-
-                {currentUser.status === 'suspended' && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
-                    Sua conta está temporariamente bloqueada/suspensa. Fale com a administração no menu Suporte.
-                  </div>
-                )}
-
-                {platformConfig.maintenance_mode && (
-                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900">
-                    Plataforma em manutenção programada. Algumas solicitações podem estar pausadas.
-                  </div>
-                )}
-
-                {/* Mode quick selector: Viagem vs 99 Entrega */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setServiceTab('rides');
-                      setCategory('pop');
-                      setActiveSearchField('destination');
-                      setAddressTab('search');
-                      setAddressScreenOpen(true);
-                    }}
-                    className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-left hover:border-neutral-950 transition active:scale-[0.98]"
-                  >
-                    <img
-                      src={popCarImg}
-                      alt="Corridas"
-                      className="h-11 w-11 rounded-xl object-contain bg-white p-0.5 shrink-0"
-                    />
-                    <div>
-                      <p className="font-display text-sm font-extrabold text-neutral-950">
-                        Corrida
-                      </p>
-                      <p className="text-[11px] text-neutral-500">Carro e Moto</p>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setServiceTab('delivery');
-                      setCategory('delivery_moto');
-                      setActiveSearchField('destination');
-                      setAddressTab('search');
-                      setAddressScreenOpen(true);
-                    }}
-                    className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-left hover:border-neutral-950 transition active:scale-[0.98]"
-                  >
-                    <img
-                      src={deliveryMotoImg}
-                      alt="Entregas"
-                      className="h-11 w-11 rounded-xl object-contain bg-white p-0.5 shrink-0"
-                    />
-                    <div>
-                      <p className="font-display text-sm font-extrabold text-neutral-950">
-                        Entrega
-                      </p>
-                      <p className="text-[11px] text-neutral-500">Moto e Carro</p>
-                    </div>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveSearchField('destination');
-                    setAddressTab('search');
-                    setAddressScreenOpen(true);
-                  }}
-                  className="flex min-h-[54px] w-full items-center gap-3 rounded-2xl bg-neutral-100 px-4 text-left hover:bg-neutral-200/70 active:scale-[0.99] transition"
-                >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 shrink-0">
-                    <Search className="h-4 w-4" />
-                  </span>
-                  <span className="font-display text-lg font-extrabold text-neutral-950">
-                    Para onde vamos?
-                  </span>
-                </button>
-
-                {/* Casa / Trabalho / Favoritos Quick Row */}
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (currentUser.home_address) {
-                        selectDestinationPoint(currentUser.home_address);
-                      } else {
-                        setSettingsOpen(true);
-                      }
-                    }}
-                    className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl border border-neutral-200 bg-neutral-50 px-2.5 text-xs font-bold text-neutral-900 hover:border-neutral-950"
-                  >
-                    <Home className="h-4 w-4 shrink-0" />
-                    <span className="truncate">Casa</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (currentUser.work_address) {
-                        selectDestinationPoint(currentUser.work_address);
-                      } else {
-                        setSettingsOpen(true);
-                      }
-                    }}
-                    className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl border border-neutral-200 bg-neutral-50 px-2.5 text-xs font-bold text-neutral-900 hover:border-neutral-950"
-                  >
-                    <Briefcase className="h-4 w-4 shrink-0" />
-                    <span className="truncate">Trabalho</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddressTab('favorites');
-                      setAddressScreenOpen(true);
-                    }}
-                    className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl border border-neutral-200 bg-neutral-50 px-2.5 text-xs font-bold text-neutral-900 hover:border-neutral-950"
-                  >
-                    <Star className="h-4 w-4 shrink-0" />
-                    <span className="truncate">Favoritos</span>
-                  </button>
-                </div>
-
-                {unpaidCompletedPixRide && (
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-3.5">
-                    <div className="min-w-0">
-                      <p className="text-xs font-extrabold text-neutral-950">
-                        Pix pendente da última viagem
-                      </p>
-                      <p className="text-[11px] text-neutral-700 font-mono-num">
-                        {formatBRL(
-                          unpaidCompletedPixRide.final_fare ??
-                            unpaidCompletedPixRide.estimated_fare
-                        )}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPixModalRide(unpaidCompletedPixRide)}
-                      className="min-h-[42px] shrink-0 rounded-xl bg-[#FFD100] px-3.5 text-xs font-extrabold text-neutral-950"
-                    >
-                      Pagar Pix
-                    </button>
-                  </div>
-                )}
+          <div className="pointer-events-auto flex items-center gap-2">
+            {pickOnMapMode ? (
+              <button
+                type="button"
+                onClick={() => setPickOnMapMode(null)}
+                className="flex min-h-[44px] items-center gap-2 rounded-full bg-neutral-950 px-4 text-xs font-bold text-[#FFD100] shadow-lg"
+              >
+                <MapPin className="h-4 w-4" />
+                Toque no mapa ({pickOnMapMode === 'origin' ? 'Embarque' : 'Destino'}) · Cancelar
+              </button>
+            ) : activeRide && activeRide.status !== 'searching' ? (
+              <div className="flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2 text-xs font-extrabold text-white shadow-lg font-mono-num">
+                <span className="text-[#FFD100]">
+                  {activeRide.status === 'in_progress'
+                    ? 'Em rota'
+                    : activeRide.status === 'arrived'
+                    ? 'No embarque'
+                    : 'A caminho'}
+                </span>
+                {durationMin > 0 && <span>· ~{durationMin} min</span>}
+              </div>
+            ) : destination && !activeRide ? (
+              <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-neutral-950 shadow-lg border border-neutral-200 font-mono-num">
+                <span>
+                  {distanceKm} km · {durationMin} min
+                </span>
               </div>
             ) : (
-              /* CATEGORY & FARE SELECTION BOTTOM SHEET (Matching 99 Screenshots) */
+              <button
+                type="button"
+                onClick={() => setIdleCleanMap((v) => !v)}
+                className="flex min-h-[42px] items-center gap-1.5 rounded-full bg-white px-3.5 text-xs font-extrabold text-neutral-900 shadow-lg border border-neutral-200 active:scale-95 transition"
+                title={idleCleanMap ? 'Mostrar barra de destino' : 'Ocultar cartões e ver mapa livre'}
+              >
+                {idleCleanMap ? (
+                  <>
+                    <Eye className="h-4 w-4 text-neutral-950" />
+                    <span>Para onde vamos?</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="h-4 w-4 text-neutral-600" />
+                    <span>Mapa limpo</span>
+                  </>
+                )}
+              </button>
+            )}
+            <PWAInstallButton />
+          </div>
+        </div>
+
+        {/* TOP SEARCH CARD ("Para onde vamos?") — LEAVES BOTTOM OF MAP 100% OPEN */}
+        {!activeRide && !destination && !idleCleanMap && !pickOnMapMode && (
+          <div className="pointer-events-auto mx-auto max-w-lg rounded-3xl bg-white p-3.5 shadow-2xl border border-neutral-200 space-y-2.5">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 min-w-0">
+                <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                <span className="truncate">{weather?.city || platformConfig.platform_city}</span>
+                {weather && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-extrabold text-neutral-950 font-mono-num shrink-0">
+                    <Thermometer className="h-3 w-3 text-amber-700" />
+                    {weather.temperatureC}°C
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] font-extrabold text-emerald-700 shrink-0">
+                {onlineDrivers.length > 0 ? `${onlineDrivers.length} online` : 'GPS ao vivo'}
+              </span>
+            </div>
+
+            {currentUser.status === 'suspended' && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-2.5 text-xs font-bold text-red-700">
+                Sua conta está temporariamente bloqueada/suspensa. Fale com a administração no Suporte.
+              </div>
+            )}
+
+            {platformConfig.maintenance_mode && (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-2.5 text-xs font-bold text-amber-900">
+                Plataforma em manutenção programada. Algumas solicitações podem estar pausadas.
+              </div>
+            )}
+
+            {pendingDebt > 0 && (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <span className="font-extrabold">
+                  Pendência anterior ({currentUser.pending_debt_note || 'Corrida não paga'}):{' '}
+                  <span className="font-mono-num">{formatBRL(pendingDebt)}</span>
+                </span>
+                <span className="block text-[11px] text-amber-800">
+                  Será somado automaticamente ao valor da sua próxima corrida.
+                </span>
+              </div>
+            )}
+
+            {unpaidCompletedPixRide && (
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold text-neutral-950">
+                    Pix pendente da última viagem
+                  </p>
+                  <p className="text-[11px] text-neutral-700 font-mono-num">
+                    {formatBRL(
+                      unpaidCompletedPixRide.final_fare ?? unpaidCompletedPixRide.estimated_fare
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPixModalRide(unpaidCompletedPixRide)}
+                  className="min-h-[38px] shrink-0 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950"
+                >
+                  Pagar Pix
+                </button>
+              </div>
+            )}
+
+            {/* PRIMARY TOP SEARCH TRIGGER */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSearchField('destination');
+                setAddressTab('search');
+                setAddressScreenOpen(true);
+              }}
+              className="flex min-h-[50px] w-full items-center gap-3 rounded-2xl bg-neutral-100 px-3.5 text-left hover:bg-neutral-200/70 active:scale-[0.99] transition"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 shrink-0">
+                <Search className="h-4 w-4" />
+              </span>
+              <span className="font-display text-base sm:text-lg font-extrabold text-neutral-950">
+                Para onde vamos?
+              </span>
+            </button>
+
+            {/* Quick Mode + Saved Shortcut Row */}
+            <div className="grid grid-cols-5 gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setServiceTab('rides');
+                  setCategory('pop');
+                  setActiveSearchField('destination');
+                  setAddressTab('search');
+                  setAddressScreenOpen(true);
+                }}
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 py-2 px-1 text-center hover:border-neutral-950"
+              >
+                <img
+                  src={resolveCategoryVehicleImage('pop', platformConfig)}
+                  alt="Corrida"
+                  className="h-7 w-9 object-contain"
+                />
+                <span className="text-[10px] font-extrabold text-neutral-900">Corrida</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setServiceTab('delivery');
+                  setCategory('delivery_moto');
+                  setActiveSearchField('destination');
+                  setAddressTab('search');
+                  setAddressScreenOpen(true);
+                }}
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 py-2 px-1 text-center hover:border-neutral-950"
+              >
+                <img
+                  src={resolveCategoryVehicleImage('delivery_moto', platformConfig)}
+                  alt="Entrega"
+                  className="h-7 w-9 object-contain"
+                />
+                <span className="text-[10px] font-extrabold text-neutral-900">Entrega</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentUser.home_address) {
+                    selectDestinationPoint(currentUser.home_address);
+                  } else {
+                    setSettingsOpen(true);
+                  }
+                }}
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 py-2 px-1 text-center hover:border-neutral-950"
+              >
+                <Home className="h-4 w-4 text-neutral-800" />
+                <span className="text-[10px] font-bold text-neutral-800">Casa</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentUser.work_address) {
+                    selectDestinationPoint(currentUser.work_address);
+                  } else {
+                    setSettingsOpen(true);
+                  }
+                }}
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 py-2 px-1 text-center hover:border-neutral-950"
+              >
+                <Briefcase className="h-4 w-4 text-neutral-800" />
+                <span className="text-[10px] font-bold text-neutral-800">Trabalho</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddressTab('favorites');
+                  setAddressScreenOpen(true);
+                }}
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 py-2 px-1 text-center hover:border-neutral-950"
+              >
+                <Star className="h-4 w-4 text-neutral-800" />
+                <span className="text-[10px] font-bold text-neutral-800">Favoritos</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Sheet / Floating Card (Shown ONLY when choosing fare/category OR active ride) */}
+      {(Boolean(destination) || Boolean(activeRide)) && (
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-0 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
+        {activeRide && activeRide.status !== 'searching' && sheetMinimized ? (
+          <div
+            onPointerDown={(e) => {
+              dragStartYRef.current = e.clientY;
+            }}
+            onPointerUp={(e) => {
+              if (dragStartYRef.current !== null && dragStartYRef.current - e.clientY > 25) {
+                setSheetMinimized(false);
+              }
+              dragStartYRef.current = null;
+            }}
+            className="pointer-events-auto m-2.5 sm:m-0 flex items-center justify-between gap-2 rounded-2xl bg-white px-3.5 py-3 shadow-2xl border border-neutral-200"
+          >
+            <button
+              type="button"
+              onClick={() => setSheetMinimized(false)}
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-950 font-mono-num text-xs font-extrabold text-[#FFD100]">
+                {isDeliveryActive && activeRide.require_pin === false ? 'OK' : activeRide.pin_code}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-neutral-950 truncate">
+                  {activeRide.driver?.driver?.vehicle_plate || 'Veículo'} ·{' '}
+                  {activeRide.driver?.full_name.split(' ')[0]}
+                </p>
+                <p className="text-[11px] font-semibold text-amber-700 truncate">
+                  {activeRide.status === 'arrived'
+                    ? passengerWaitingStats.isCharging
+                      ? `Espera +${formatBRL(passengerWaitingStats.waitingFee)}`
+                      : `Aguardando (${String(Math.floor(passengerWaitingStats.remainingFreeSec / 60)).padStart(2, '0')}:${String(passengerWaitingStats.remainingFreeSec % 60).padStart(2, '0')})`
+                    : activeRide.status === 'in_progress'
+                    ? 'Em viagem para o destino'
+                    : 'Motorista a caminho'}
+                </p>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {activeRide.driver?.phone && (
+                <a
+                  href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white active:scale-95"
+                  aria-label="Ligar para motorista"
+                >
+                  <Phone className="h-4 w-4" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setChatOpen(true)}
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-950 text-[#FFD100] active:scale-95"
+                aria-label="Abrir chat"
+              >
+                <MessageSquare className="h-4 w-4" />
+                {currentChatMessages.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#FFD100] px-1 text-[9px] font-extrabold text-neutral-950 font-mono-num">
+                    {currentChatMessages.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSheetMinimized(false)}
+                className="flex h-10 items-center gap-1 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950 active:scale-95"
+                aria-label="Expandir painel"
+              >
+                <ChevronUp className="h-4 w-4" />
+                <span>Abrir</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+        <div className="pointer-events-auto rounded-t-3xl sm:rounded-3xl bg-white p-5 pb-safe shadow-2xl border-t sm:border border-neutral-200 max-h-[78vh] overflow-y-auto">
+          {activeRide && activeRide.status !== 'searching' && (
+            <div
+              onPointerDown={(e) => {
+                dragStartYRef.current = e.clientY;
+              }}
+              onPointerUp={(e) => {
+                if (dragStartYRef.current !== null && e.clientY - dragStartYRef.current > 28) {
+                  setSheetMinimized(true);
+                }
+                dragStartYRef.current = null;
+              }}
+              className="mb-3 -mt-2 flex items-center justify-between border-b border-neutral-100 pb-2 touch-none"
+            >
+              <div className="h-1 w-10 rounded-full bg-neutral-300" />
+              <button
+                type="button"
+                onClick={() => setSheetMinimized(true)}
+                className="flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+                <span>Minimizar mapa</span>
+              </button>
+            </div>
+          )}
+          {!activeRide ? (
+            destination ? (
+              /* CATEGORY & FARE SELECTION BOTTOM SHEET */
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2 pb-2 border-b border-neutral-100">
                   <button
@@ -754,7 +1011,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         : getFareForCategory(cat);
                     const isMoto =
                       cat.category === 'moto' || cat.category === 'delivery_moto';
-                    const imgSrc = CATEGORY_IMAGES[cat.category];
+                    const imgSrc = resolveCategoryVehicleImage(cat.category, platformConfig);
 
                     return (
                       <div
@@ -787,7 +1044,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           </div>
                           <div className="text-right shrink-0">
                             <p className="font-mono-num text-sm font-extrabold text-neutral-950">
-                              {formatBRL(fare)}
+                              {formatBRL(fare + pendingDebt)}
                             </p>
                             <p className="text-[10px] text-neutral-500 font-mono-num">
                               ~
@@ -848,13 +1105,35 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
 
                 {(category === 'delivery_moto' || category === 'delivery_car') && (
-                  <input
-                    type="text"
-                    value={deliveryNotes}
-                    onChange={(e) => setDeliveryNotes(e.target.value)}
-                    placeholder="Instruções de coleta ou destinatário (opcional)"
-                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs outline-none focus:border-neutral-950"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={deliveryNotes}
+                      onChange={(e) => setDeliveryNotes(e.target.value)}
+                      placeholder="Instruções de coleta ou destinatário (opcional)"
+                      className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs outline-none focus:border-neutral-950"
+                    />
+                    <label className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 cursor-pointer">
+                      <span className="text-xs font-bold text-neutral-800">
+                        Exigir PIN de 4 dígitos na entrega (opcional)
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={requireDeliveryPin}
+                        onChange={(e) => setRequireDeliveryPin(e.target.checked)}
+                        className="h-4 w-4 accent-neutral-950"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {pendingDebt > 0 && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    <span className="font-extrabold">
+                      Débito pendente incluído: +{formatBRL(pendingDebt)}
+                    </span>{' '}
+                    ({currentUser.pending_debt_note || 'Corrida não paga'})
+                  </div>
                 )}
 
                 {/* Payment Method: Pix vs Dinheiro */}
@@ -891,10 +1170,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 >
                   {submitting
                     ? 'Solicitando...'
-                    : `${formatBRL(selectedCategoryFare)} · Solicitar ${CATEGORY_LABELS[category]}`}
+                    : `${formatBRL(totalFareWithDebt)} · Solicitar ${CATEGORY_LABELS[category]}`}
                 </button>
               </div>
-            )
+            ) : null
           ) : activeRide.status === 'searching' ? (
             /* SEARCHING RADAR */
             <div className="py-4 text-center">
@@ -956,25 +1235,34 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
               </div>
 
-              {/* 4-Digit Security PIN Box */}
-              <div className="flex items-center justify-between rounded-2xl bg-[#FFD100]/25 border border-[#FFD100] px-4 py-3">
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="h-5 w-5 text-neutral-950 shrink-0" />
-                  <div>
-                    <p className="text-xs font-extrabold text-neutral-950">
-                      {isDeliveryActive ? 'PIN de Coleta e Entrega' : 'PIN de segurança'}
-                    </p>
-                    <p className="text-[11px] text-neutral-700">
-                      {isDeliveryActive
-                        ? 'Valida a retirada e a entrega final'
-                        : 'Informe ao motorista ao embarcar'}
-                    </p>
+              {/* 4-Digit Security PIN Box (Required on boarding for rides; Optional on deliveries) */}
+              {(!isDeliveryActive || activeRide.require_pin !== false) ? (
+                <div className="flex items-center justify-between rounded-2xl bg-[#FFD100]/25 border border-[#FFD100] px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="h-5 w-5 text-neutral-950 shrink-0" />
+                    <div>
+                      <p className="text-xs font-extrabold text-neutral-950">
+                        {isDeliveryActive ? 'PIN de Coleta e Entrega' : 'PIN de segurança (Embarque)'}
+                      </p>
+                      <p className="text-[11px] text-neutral-700">
+                        {isDeliveryActive
+                          ? 'Informe ao entregador na coleta e entrega'
+                          : activeRide.status === 'in_progress'
+                          ? 'Embarque validado · Chegada sem PIN'
+                          : 'Informe ao motorista ao embarcar'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-neutral-950 px-3.5 py-1.5 font-mono-num text-xl font-extrabold tracking-widest text-[#FFD100]">
+                    {activeRide.pin_code}
                   </div>
                 </div>
-                <div className="rounded-xl bg-neutral-950 px-3.5 py-1.5 font-mono-num text-xl font-extrabold tracking-widest text-[#FFD100]">
-                  {activeRide.pin_code}
+              ) : (
+                <div className="flex items-center gap-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-xs font-bold text-emerald-900">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-700" />
+                  <span>Entrega configurada sem PIN · Foto comprobatória no destino</span>
                 </div>
-              </div>
+              )}
 
               {/* Driver Info & Fare */}
               <div className="flex items-center justify-between rounded-2xl bg-neutral-50 p-3 border border-neutral-100">
@@ -1109,7 +1397,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
           )}
         </div>
+        )}
       </div>
+      )}
 
       {/* FULL-SCREEN "SELECIONAR ENDEREÇO" VIEW (Matching 99 Screenshot) */}
       {addressScreenOpen && (
@@ -1535,6 +1825,21 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <ChevronRight className="h-4 w-4 text-neutral-400" />
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setLegalDocsOpen(true);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-2.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-100"
+              >
+                <span className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-neutral-700" />
+                  Termos, Segurança e Privacidade
+                </span>
+                <ChevronRight className="h-4 w-4 text-neutral-400" />
+              </button>
+
               <div className="pt-2">
                 <PWAInstallButton variant="menu" />
               </div>
@@ -1577,7 +1882,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             {infoModal === 'help' && (
               <div className="text-xs text-neutral-700 space-y-2.5 leading-relaxed">
                 <p className="font-bold text-neutral-950">
-                  Atendimento local Velo99 ({platformConfig.platform_city})
+                  Atendimento local {siteName} ({platformConfig.platform_city})
                 </p>
                 <p>
                   • Esquecimento de objeto ou dúvida sobre cobrança? Use o chat da viagem ou informe
@@ -1737,9 +2042,18 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       {settingsOpen && (
         <AccountSettingsModal
           currentUser={currentUser}
+          platformConfig={platformConfig}
           onUserUpdated={onUserUpdated}
           onAccountDeleted={onLogout}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {legalDocsOpen && (
+        <LegalDocsModal
+          initialTab="terms"
+          siteName={siteName}
+          onClose={() => setLegalDocsOpen(false)}
         />
       )}
 

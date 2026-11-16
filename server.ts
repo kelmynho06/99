@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { createServer as createViteServer } from 'vite';
 
@@ -8,6 +9,7 @@ const PORT = 3000;
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   app.use(express.json());
 
   app.get('/api/health', (_req, res) => {
@@ -31,13 +33,18 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        ws: { server: httpServer },
+        allowedHosts: true,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Velo99 Mobilidade server running at http://0.0.0.0:${PORT}`);
   });
 }

@@ -1,12 +1,22 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import type { DevicePermissionsState, PermissionGrantState } from '../types/mobility';
 import { playOfferAlertSound } from './sound';
+import { getUserPreferences } from './userPrefs';
 
 export interface DeviceCoords {
   lat: number;
   lng: number;
   heading: number;
+  speedKmh: number;
+}
+
+function toSpeedKmh(rawSpeed: number | null | undefined): number {
+  if (typeof rawSpeed !== 'number' || !Number.isFinite(rawSpeed) || rawSpeed < 0) {
+    return 0;
+  }
+  return Math.round(rawSpeed * 3.6);
 }
 
 let notificationsInitialized = false;
@@ -47,11 +57,14 @@ export async function triggerLocalNotification(input: {
   body: string;
   playSound?: boolean;
 }): Promise<void> {
+  const prefs = getUserPreferences();
   const { title, body, playSound = true } = input;
 
-  if (playSound) {
+  if (playSound && prefs.sounds_enabled) {
     playOfferAlertSound();
   }
+
+  if (!prefs.notifications_enabled) return;
 
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
     try {
@@ -93,6 +106,113 @@ export async function triggerLocalNotification(input: {
   }
 }
 
+function mapPermValue(val?: string | null): PermissionGrantState {
+  if (val === 'granted') return 'granted';
+  if (val === 'denied') return 'denied';
+  if (val === 'prompt' || val === 'prompt-with-rationale' || val === 'default') return 'prompt';
+  return 'unknown';
+}
+
+export async function checkDevicePermissionsStatus(): Promise<DevicePermissionsState> {
+  let notifications: PermissionGrantState = 'unknown';
+  let location: PermissionGrantState = 'unknown';
+  let camera: PermissionGrantState = 'unknown';
+  const photos: PermissionGrantState =
+    typeof document !== 'undefined' ? 'granted' : 'unknown';
+
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const nPerm = await LocalNotifications.checkPermissions();
+      notifications = mapPermValue(nPerm.display);
+      const lPerm = await Geolocation.checkPermissions();
+      location = mapPermValue(lPerm.location || lPerm.coarseLocation);
+    } else {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        notifications = mapPermValue(Notification.permission);
+      }
+      if (typeof navigator !== 'undefined' && 'permissions' in navigator) {
+        try {
+          const geoStatus = await navigator.permissions.query({
+            name: 'geolocation' as PermissionName,
+          });
+          location = mapPermValue(geoStatus.state);
+        } catch {
+          location = 'prompt';
+        }
+        try {
+          const camStatus = await navigator.permissions.query({
+            name: 'camera' as PermissionName,
+          });
+          camera = mapPermValue(camStatus.state);
+        } catch {
+          camera = 'prompt';
+        }
+      }
+    }
+  } catch {
+    // Ignore unsupported checks
+  }
+
+  return { notifications, location, camera, photos };
+}
+
+export async function requestNotificationPermission(): Promise<PermissionGrantState> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const res = await LocalNotifications.requestPermissions();
+      await initLocalNotifications();
+      return mapPermValue(res.display);
+    }
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const res = await Notification.requestPermission();
+      return mapPermValue(res);
+    }
+  } catch {
+    // Ignore
+  }
+  return 'unknown';
+}
+
+export async function requestLocationPermission(): Promise<PermissionGrantState> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const res = await Geolocation.requestPermissions({
+        permissions: ['location', 'coarseLocation'],
+      });
+      return mapPermValue(res.location || res.coarseLocation);
+    }
+    const pos = await getCurrentGpsPosition();
+    return pos ? 'granted' : 'prompt';
+  } catch {
+    return 'denied';
+  }
+}
+
+export async function requestCameraPermission(): Promise<PermissionGrantState> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((track) => track.stop());
+      return 'granted';
+    }
+  } catch {
+    return 'denied';
+  }
+  return 'prompt';
+}
+
+export async function requestAllDevicePermissions(): Promise<DevicePermissionsState> {
+  const notifications = await requestNotificationPermission();
+  const location = await requestLocationPermission();
+  const camera = await requestCameraPermission();
+  return {
+    notifications,
+    location,
+    camera,
+    photos: 'granted',
+  };
+}
+
 export async function getCurrentGpsPosition(): Promise<DeviceCoords | null> {
   if (Capacitor.isNativePlatform()) {
     try {
@@ -108,6 +228,7 @@ export async function getCurrentGpsPosition(): Promise<DeviceCoords | null> {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         heading: pos.coords.heading ?? 0,
+        speedKmh: toSpeedKmh(pos.coords.speed),
       };
     } catch {
       // Fallback below
@@ -122,6 +243,7 @@ export async function getCurrentGpsPosition(): Promise<DeviceCoords | null> {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           heading: pos.coords.heading ?? 0,
+          speedKmh: toSpeedKmh(pos.coords.speed),
         }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 8000 }
@@ -142,13 +264,14 @@ export function watchGpsPosition(
       .finally(() => {
         if (!active) return;
         Geolocation.watchPosition(
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 2500 },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 2000 },
           (pos) => {
             if (!active || !pos) return;
             onUpdate({
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
               heading: pos.coords.heading ?? 0,
+              speedKmh: toSpeedKmh(pos.coords.speed),
             });
           }
         )
@@ -169,10 +292,11 @@ export function watchGpsPosition(
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           heading: pos.coords.heading ?? 0,
+          speedKmh: toSpeedKmh(pos.coords.speed),
         });
       },
       () => {},
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
     );
   }
 

@@ -19,6 +19,8 @@ import type {
 
 export const ADMIN_EMAIL = 'driver@admin.com';
 
+export const PLATFORM_BRAND_CACHE_KEY = 'velo99_platform_brand_cache_v1';
+
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   platform_pix_key: 'pix@velo99.app',
   platform_pix_receiver: 'Velo99 Mobilidade Ltda',
@@ -27,6 +29,14 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   support_whatsapp: '',
   commission_percent: 0,
   maintenance_mode: false,
+  app_logo_url: null,
+  vehicle_img_moto: null,
+  vehicle_img_pop: null,
+  vehicle_img_delivery_moto: null,
+  vehicle_img_delivery_car: null,
+  sound_offer_url: null,
+  sound_accepted_url: null,
+  sound_arrived_url: null,
 };
 
 export const DEFAULT_PRICING_LIST: PricingSetting[] = [
@@ -125,6 +135,8 @@ export function mapDbProfile(
     rating_avg: Number(row.rating_avg ?? 5),
     rating_count: Number(row.rating_count ?? 0),
     wallet_balance: Number(row.wallet_balance ?? 0),
+    pending_debt_amount: Number(row.pending_debt_amount ?? 0),
+    pending_debt_note: row.pending_debt_note ? String(row.pending_debt_note) : null,
     is_anonymized: Boolean(row.is_anonymized ?? false),
     created_at: String(row.created_at || new Date().toISOString()),
     driver: driverRow ? mapDbDriver(driverRow) : null,
@@ -167,6 +179,9 @@ export function mapDbRide(
       typeof row.negotiated_fare === 'number' ? row.negotiated_fare : null,
     final_fare: typeof row.final_fare === 'number' ? row.final_fare : null,
     pin_code: String(row.pin_code || '0000'),
+    require_pin: row.require_pin === undefined ? true : Boolean(row.require_pin),
+    delivery_photo_url: row.delivery_photo_url ? String(row.delivery_photo_url) : null,
+    pending_debt_included: Number(row.pending_debt_included ?? 0),
     delivery_notes: row.delivery_notes ? String(row.delivery_notes) : null,
     dispute_reason: row.dispute_reason ? String(row.dispute_reason) : null,
     pix_declared_at: row.pix_declared_at ? String(row.pix_declared_at) : null,
@@ -250,6 +265,58 @@ export async function uploadUserAvatar(userId: string, dataUrl: string): Promise
     }
   } catch {
     // Fallback to inline compressed JPEG dataUrl
+  }
+  return dataUrl;
+}
+
+export async function uploadDeliveryProofPhoto(rideId: string, dataUrl: string): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+  try {
+    const blob = await dataUrlToBlob(dataUrl);
+    const filePath = `deliveries/${rideId}_${Date.now()}.jpg`;
+    const { error } = await supabase.storage
+      .from('driver-documents')
+      .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+    if (!error) {
+      const { data: pub } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
+      if (pub?.publicUrl) return pub.publicUrl;
+    }
+  } catch {
+    // Fallback to compressed inline dataUrl
+  }
+  return dataUrl;
+}
+
+export async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Falha ao ler arquivo selecionado.'));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadPlatformAssetFile(
+  file: File,
+  kind: 'logo' | 'moto' | 'pop' | 'delivery_moto' | 'delivery_car' | 'sound_offer' | 'sound_accepted' | 'sound_arrived'
+): Promise<string> {
+  const isImage = file.type.startsWith('image/');
+  const dataUrl = isImage ? await compressImageFileToDataUrl(file, 640) : await fileToDataUrl(file);
+  const ext = isImage ? 'jpg' : file.name.split('.').pop()?.toLowerCase() || 'mp3';
+  const contentType = isImage ? 'image/jpeg' : file.type || 'audio/mpeg';
+
+  try {
+    const blob = await dataUrlToBlob(dataUrl);
+    const filePath = `platform/${kind}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('driver-documents')
+      .upload(filePath, blob, { contentType, upsert: true });
+    if (!error) {
+      const { data: pub } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
+      if (pub?.publicUrl) return pub.publicUrl;
+    }
+  } catch {
+    // Fallback to inline dataUrl
   }
   return dataUrl;
 }
@@ -480,6 +547,15 @@ export async function logoutUser(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+function readCachedPlatformBrand(): Partial<PlatformConfig> {
+  try {
+    const raw = localStorage.getItem(PLATFORM_BRAND_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PlatformConfig>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchPlatformConfig(): Promise<PlatformConfig> {
   const { data, error } = await supabase
     .from('platform_settings')
@@ -487,17 +563,40 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     .eq('id', 1)
     .maybeSingle();
 
-  if (error || !data) return DEFAULT_PLATFORM_CONFIG;
+  const cached = readCachedPlatformBrand();
+  if (error || !data) {
+    return { ...DEFAULT_PLATFORM_CONFIG, ...cached };
+  }
+
   return {
     platform_pix_key: String(data.platform_pix_key || DEFAULT_PLATFORM_CONFIG.platform_pix_key),
     platform_pix_receiver: String(
       data.platform_pix_receiver || DEFAULT_PLATFORM_CONFIG.platform_pix_receiver
     ),
     platform_city: String(data.platform_city || DEFAULT_PLATFORM_CONFIG.platform_city),
-    site_name: String(data.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
-    support_whatsapp: String(data.support_whatsapp || ''),
-    commission_percent: Number(data.commission_percent ?? 0),
+    site_name: String(data.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
+    support_whatsapp: String(data.support_whatsapp || cached.support_whatsapp || ''),
+    commission_percent: Number(data.commission_percent ?? cached.commission_percent ?? 0),
     maintenance_mode: Boolean(data.maintenance_mode ?? false),
+    app_logo_url: (data.app_logo_url as string | null | undefined) ?? cached.app_logo_url ?? null,
+    vehicle_img_moto:
+      (data.vehicle_img_moto as string | null | undefined) ?? cached.vehicle_img_moto ?? null,
+    vehicle_img_pop:
+      (data.vehicle_img_pop as string | null | undefined) ?? cached.vehicle_img_pop ?? null,
+    vehicle_img_delivery_moto:
+      (data.vehicle_img_delivery_moto as string | null | undefined) ??
+      cached.vehicle_img_delivery_moto ??
+      null,
+    vehicle_img_delivery_car:
+      (data.vehicle_img_delivery_car as string | null | undefined) ??
+      cached.vehicle_img_delivery_car ??
+      null,
+    sound_offer_url:
+      (data.sound_offer_url as string | null | undefined) ?? cached.sound_offer_url ?? null,
+    sound_accepted_url:
+      (data.sound_accepted_url as string | null | undefined) ?? cached.sound_accepted_url ?? null,
+    sound_arrived_url:
+      (data.sound_arrived_url as string | null | undefined) ?? cached.sound_arrived_url ?? null,
   };
 }
 
@@ -656,6 +755,8 @@ export async function createRideRequest(input: {
   estimated_fare: number;
   negotiated_fare?: number | null;
   delivery_notes?: string | null;
+  require_pin?: boolean;
+  pending_debt_included?: number;
 }): Promise<Ride> {
   const pin = String(Math.floor(1000 + Math.random() * 9000));
   const payload = {
@@ -674,6 +775,8 @@ export async function createRideRequest(input: {
     estimated_fare: input.estimated_fare,
     negotiated_fare: input.negotiated_fare ?? null,
     pin_code: pin,
+    require_pin: input.require_pin ?? true,
+    pending_debt_included: Number(input.pending_debt_included ?? 0),
     delivery_notes: input.delivery_notes || null,
   };
 
@@ -809,10 +912,12 @@ export async function markRideArrived(rideId: string): Promise<Ride> {
 
 export async function startRideWithPin(
   ride: Ride,
-  pinInput: string
+  pinInput?: string
 ): Promise<Ride> {
-  if (pinInput.trim() !== ride.pin_code) {
-    const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+  const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+  const mustCheckPin = !isDelivery || ride.require_pin !== false;
+
+  if (mustCheckPin && (pinInput || '').trim() !== ride.pin_code) {
     throw new Error(
       isDelivery
         ? 'PIN de coleta incorreto. Confirme os 4 dígitos com o remetente.'
@@ -832,6 +937,31 @@ export async function startRideWithPin(
   const enriched = await fetchRideByIdEnriched(ride.id);
   if (!enriched) throw new Error('Corrida não encontrada.');
   return enriched;
+}
+
+async function clearPassengerIncludedDebtIfAny(ride: Ride) {
+  if (!ride.passenger_id || !ride.pending_debt_included || ride.pending_debt_included <= 0) return;
+  try {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('pending_debt_amount')
+      .eq('id', ride.passenger_id)
+      .maybeSingle();
+    const currentDebt = Number(prof?.pending_debt_amount ?? 0);
+    if (currentDebt > 0) {
+      const nextDebt = Number(Math.max(0, currentDebt - ride.pending_debt_included).toFixed(2));
+      await supabase
+        .from('profiles')
+        .update({
+          pending_debt_amount: nextDebt,
+          pending_debt_note: nextDebt === 0 ? null : undefined,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ride.passenger_id);
+    }
+  } catch {
+    // Ignore if pending_debt_amount column hasn't been migrated yet
+  }
 }
 
 async function creditDriverForPixRideIdempotent(
@@ -879,20 +1009,25 @@ export async function completeRide(
   ride: Ride,
   driverId: string,
   pinInput?: string,
-  overrideFinalFare?: number
+  overrideFinalFare?: number,
+  deliveryPhotoDataUrl?: string | null
 ): Promise<Ride> {
   const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
-  if (isDelivery && String(pinInput || '').trim() !== ride.pin_code) {
+  const mustVerifyDeliveryPin = isDelivery && ride.require_pin !== false;
+  if (mustVerifyDeliveryPin && String(pinInput || '').trim() !== ride.pin_code) {
     throw new Error('PIN de entrega incorreto. Peça os 4 dígitos no destino.');
+  }
+
+  let storedPhotoUrl: string | null = null;
+  if (deliveryPhotoDataUrl) {
+    storedPhotoUrl = await uploadDeliveryProofPhoto(ride.id, deliveryPhotoDataUrl);
   }
 
   const baseFare = overrideFinalFare ?? ride.final_fare ?? ride.estimated_fare;
   const finalFare = Number(baseFare.toFixed(2));
   const nextPaymentStatus: PaymentStatus =
-    ride.payment_method === 'cash'
-      ? 'paid_cash'
-      : ride.payment_status === 'paid_pix'
-      ? 'paid_pix'
+    ride.payment_status === 'paid_pix' || ride.payment_status === 'admin_settled'
+      ? ride.payment_status
       : 'pending';
 
   const updatePayload: Record<string, unknown> = {
@@ -900,6 +1035,7 @@ export async function completeRide(
     final_fare: finalFare,
     completed_at: new Date().toISOString(),
     payment_status: nextPaymentStatus,
+    ...(storedPhotoUrl ? { delivery_photo_url: storedPhotoUrl } : {}),
   };
 
   let { error } = await supabase.from('rides').update(updatePayload).eq('id', ride.id);
@@ -917,7 +1053,6 @@ export async function completeRide(
 
   if (error) throw new Error(error.message);
 
-  // If paid via centralized Platform Pix, credit the driver's receivable wallet balance
   if (ride.payment_method === 'pix' && nextPaymentStatus === 'paid_pix') {
     await creditDriverForPixRideIdempotent(
       driverId,
@@ -935,37 +1070,20 @@ export async function completeRide(
 }
 
 export async function declarePixPaid(ride: Ride): Promise<Ride> {
-  const amount = Number((ride.final_fare ?? ride.estimated_fare).toFixed(2));
+  // Marks Pix as declared/sent by the customer — awaits Admin confirmation to unlock Driver checkout
   const { error } = await supabase
     .from('rides')
     .update({
       payment_method: 'pix',
-      payment_status: 'paid_pix',
+      payment_status: ride.payment_status === 'paid_pix' ? 'paid_pix' : 'pending',
       pix_declared_at: new Date().toISOString(),
     })
     .eq('id', ride.id);
 
   if (error) throw new Error(error.message);
-
-  if (ride.status === 'completed' && ride.driver_id) {
-    const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
-    await creditDriverForPixRideIdempotent(
-      ride.driver_id,
-      ride.id,
-      amount,
-      `${isDelivery ? 'Entrega Pix' : 'Corrida Pix'} #${ride.id.slice(-4)} · ${
-        ride.destination_address.split(',')[0]
-      }`
-    );
-  }
-
   const enriched = await fetchRideByIdEnriched(ride.id);
   if (!enriched) throw new Error('Corrida não encontrada.');
   return enriched;
-}
-
-export async function confirmPixValidatedByDriver(ride: Ride): Promise<Ride> {
-  return declarePixPaid(ride);
 }
 
 export async function confirmCashReceived(ride: Ride): Promise<Ride> {
@@ -982,6 +1100,7 @@ export async function confirmCashReceived(ride: Ride): Promise<Ride> {
   if (error && error.code !== '42703') {
     throw new Error(error.message);
   }
+  await clearPassengerIncludedDebtIfAny(ride);
   const enriched = await fetchRideByIdEnriched(ride.id);
   if (!enriched) throw new Error('Corrida não encontrada.');
   return enriched;
@@ -1283,6 +1402,27 @@ export async function adminSavePricing(pricingList: PricingSetting[]): Promise<v
 }
 
 export async function adminSavePlatformConfig(config: PlatformConfig): Promise<void> {
+  try {
+    localStorage.setItem(
+      PLATFORM_BRAND_CACHE_KEY,
+      JSON.stringify({
+        site_name: config.site_name.trim() || 'Velo99',
+        support_whatsapp: config.support_whatsapp.trim(),
+        commission_percent: Number(config.commission_percent || 0),
+        app_logo_url: config.app_logo_url ?? null,
+        vehicle_img_moto: config.vehicle_img_moto ?? null,
+        vehicle_img_pop: config.vehicle_img_pop ?? null,
+        vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
+        vehicle_img_delivery_car: config.vehicle_img_delivery_car ?? null,
+        sound_offer_url: config.sound_offer_url ?? null,
+        sound_accepted_url: config.sound_accepted_url ?? null,
+        sound_arrived_url: config.sound_arrived_url ?? null,
+      })
+    );
+  } catch {
+    // Ignore storage restriction
+  }
+
   const fullPayload = {
     id: 1,
     platform_pix_key: config.platform_pix_key.trim(),
@@ -1292,19 +1432,41 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     support_whatsapp: config.support_whatsapp.trim(),
     commission_percent: Number(config.commission_percent || 0),
     maintenance_mode: Boolean(config.maintenance_mode),
+    app_logo_url: config.app_logo_url ?? null,
+    vehicle_img_moto: config.vehicle_img_moto ?? null,
+    vehicle_img_pop: config.vehicle_img_pop ?? null,
+    vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
+    vehicle_img_delivery_car: config.vehicle_img_delivery_car ?? null,
+    sound_offer_url: config.sound_offer_url ?? null,
+    sound_accepted_url: config.sound_accepted_url ?? null,
+    sound_arrived_url: config.sound_arrived_url ?? null,
     updated_at: new Date().toISOString(),
   };
 
   let { error } = await supabase.from('platform_settings').upsert(fullPayload);
   if (error && error.code === '42703') {
-    const retry = await supabase.from('platform_settings').upsert({
+    const midRetry = await supabase.from('platform_settings').upsert({
       id: 1,
       platform_pix_key: config.platform_pix_key.trim(),
       platform_pix_receiver: config.platform_pix_receiver.trim(),
       platform_city: config.platform_city.trim(),
+      site_name: config.site_name.trim() || 'Velo99',
+      support_whatsapp: config.support_whatsapp.trim(),
+      commission_percent: Number(config.commission_percent || 0),
+      maintenance_mode: Boolean(config.maintenance_mode),
       updated_at: new Date().toISOString(),
     });
-    error = retry.error;
+    error = midRetry.error;
+    if (error && error.code === '42703') {
+      const retry = await supabase.from('platform_settings').upsert({
+        id: 1,
+        platform_pix_key: config.platform_pix_key.trim(),
+        platform_pix_receiver: config.platform_pix_receiver.trim(),
+        platform_city: config.platform_city.trim(),
+        updated_at: new Date().toISOString(),
+      });
+      error = retry.error;
+    }
   }
   if (error) throw new Error(error.message);
 }
@@ -1450,7 +1612,65 @@ export async function sendDirectMessage(input: {
   };
 }
 
-export async function adminSettleDispute(ride: Ride): Promise<void> {
+export async function adminConfirmPixRide(ride: Ride): Promise<void> {
+  const fare = Number((ride.final_fare ?? ride.estimated_fare).toFixed(2));
+  const { error } = await supabase
+    .from('rides')
+    .update({
+      payment_method: 'pix',
+      payment_status: 'paid_pix',
+      final_fare: fare,
+      pix_declared_at: ride.pix_declared_at || new Date().toISOString(),
+    })
+    .eq('id', ride.id);
+
+  if (error) throw new Error(error.message);
+
+  if (ride.driver_id) {
+    const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+    await creditDriverForPixRideIdempotent(
+      ride.driver_id,
+      ride.id,
+      fare,
+      `${isDelivery ? 'Entrega Pix confirmada' : 'Corrida Pix confirmada'} #${ride.id.slice(-4)} · ${
+        ride.destination_address.split(',')[0]
+      }`
+    );
+  }
+
+  await clearPassengerIncludedDebtIfAny(ride);
+}
+
+export async function adminAssignClientDebt(
+  clientId: string,
+  amount: number,
+  note?: string
+): Promise<void> {
+  const cleanAmount = Number(Math.max(0, amount).toFixed(2));
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      pending_debt_amount: cleanAmount,
+      pending_debt_note:
+        cleanAmount > 0 ? note?.trim() || 'Corrida não paga' : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', clientId);
+
+  if (error) {
+    if (error.code === '42703') {
+      throw new Error(
+        'Aplique o SQL incremental na aba "SQL & APK" para habilitar cobrança de corridas não pagas no banco.'
+      );
+    }
+    throw new Error(error.message);
+  }
+}
+
+export async function adminSettleDispute(
+  ride: Ride,
+  chargeClientAsUnpaid = false
+): Promise<void> {
   const fare = Number((ride.final_fare ?? ride.estimated_fare).toFixed(2));
   const { error } = await supabase
     .from('rides')
@@ -1471,6 +1691,20 @@ export async function adminSettleDispute(ride: Ride): Promise<void> {
       fare,
       `Disputa assumida pelo Admin · Corrida #${ride.id.slice(-4)}`,
       'dispute_settlement'
+    );
+  }
+
+  if (chargeClientAsUnpaid && ride.passenger_id) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('pending_debt_amount')
+      .eq('id', ride.passenger_id)
+      .maybeSingle();
+    const existingDebt = Number(prof?.pending_debt_amount ?? 0);
+    await adminAssignClientDebt(
+      ride.passenger_id,
+      Number((existingDebt + fare).toFixed(2)),
+      `Corrida não paga #${ride.id.slice(-4)}`
     );
   }
 }

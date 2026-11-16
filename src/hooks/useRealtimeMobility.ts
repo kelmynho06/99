@@ -13,6 +13,7 @@ import {
   fetchUserProfileById,
   pushDriverLocation,
 } from '../lib/mobilityApi';
+import { playSoundCue, speakPtBr, syncPlatformSounds } from '../lib/sound';
 import { supabase } from '../lib/supabase';
 import type {
   PlatformConfig,
@@ -39,6 +40,10 @@ export function useRealtimeMobility(
 
   const ridesRef = useRef<Ride[]>([]);
   ridesRef.current = rides;
+
+  useEffect(() => {
+    syncPlatformSounds(platformConfig);
+  }, [platformConfig]);
 
   const upsertRide = useCallback((ride: Ride) => {
     setRides((prev) => {
@@ -80,6 +85,7 @@ export function useRealtimeMobility(
         fetchOnlineDriversPublic(),
       ]);
       setPlatformConfig(cfg);
+      syncPlatformSounds(cfg);
       setPlatformEvents(evs);
       setPricing(pr);
       if (userRef.current) setRides(rd);
@@ -115,16 +121,18 @@ export function useRealtimeMobility(
           const row = payload.new as {
             id?: string;
             status?: string;
+            payment_status?: string;
             passenger_id?: string;
             driver_id?: string | null;
             origin_address?: string;
             destination_address?: string;
           } | undefined;
-          const oldRow = payload.old as { status?: string } | undefined;
+          const oldRow = payload.old as { status?: string; payment_status?: string } | undefined;
 
           if (row?.id) {
             const prevLocal = ridesRef.current.find((r) => r.id === row.id);
             const prevStatus = oldRow?.status ?? prevLocal?.status;
+            const prevPayStatus = oldRow?.payment_status ?? prevLocal?.payment_status;
             const enriched = await fetchRideByIdEnriched(row.id);
             if (enriched && active) {
               upsertRide(enriched);
@@ -144,30 +152,82 @@ export function useRealtimeMobility(
                   triggerLocalNotification({
                     title: isDelivery ? 'Nova Entrega Disponível!' : 'Nova Corrida Disponível!',
                     body: `${enriched.origin_address} → ${enriched.destination_address}`,
+                    playSound: false,
                   });
                 }
 
-                // Passenger receives immediate local notification on status changes
+                // Driver receives voice confirmation when Admin approves Pix
+                if (
+                  u.role === 'driver' &&
+                  enriched.driver_id === u.id &&
+                  prevPayStatus !== 'paid_pix' &&
+                  enriched.payment_status === 'paid_pix'
+                ) {
+                  void playSoundCue('accepted');
+                  speakPtBr('Pagamento Pix confirmado pelo administrador. Corrida liberada.');
+                  triggerLocalNotification({
+                    title: 'Pix Confirmado pelo Admin!',
+                    body: 'Saldo creditado e tela liberada para sua próxima corrida.',
+                    playSound: false,
+                  });
+                }
+
+                // Passenger receives immediate sound + PT-BR voice + local notification on status changes
                 if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
+                  const driverFirstName = enriched.driver?.full_name?.split(' ')[0] || 'seu parceiro';
                   if (enriched.status === 'accepted') {
+                    void playSoundCue('accepted');
+                    speakPtBr(
+                      isDelivery
+                        ? `O entregador ${driverFirstName} aceitou seu pedido e está a caminho da coleta.`
+                        : `O motorista ${driverFirstName} aceitou sua corrida e está a caminho.`
+                    );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entregador aceitou seu pedido!' : 'Motorista a caminho!',
                       body: `${enriched.driver?.full_name || 'Parceiro'} está indo até você.`,
+                      playSound: false,
                     });
                   } else if (enriched.status === 'arrived') {
+                    void playSoundCue('arrived');
+                    const pinSpeech =
+                      !isDelivery || enriched.require_pin !== false
+                        ? ` Informe o código PIN ${enriched.pin_code.split('').join(' ')}.`
+                        : '';
+                    speakPtBr(
+                      isDelivery
+                        ? `O entregador chegou no local de coleta.${pinSpeech}`
+                        : `Seu motorista chegou no ponto de embarque.${pinSpeech}`
+                    );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entregador chegou para a coleta!' : 'Seu motorista chegou!',
-                      body: `Informe o código PIN ${enriched.pin_code} ao encontrar.`,
+                      body:
+                        !isDelivery || enriched.require_pin !== false
+                          ? `Informe o código PIN ${enriched.pin_code} ao encontrar.`
+                          : 'Encontre seu entregador no ponto combinado.',
+                      playSound: false,
                     });
                   } else if (enriched.status === 'in_progress') {
+                    speakPtBr(
+                      isDelivery
+                        ? 'Pacote coletado e em rota de entrega.'
+                        : 'Viagem iniciada. Bom trajeto.'
+                    );
                     triggerLocalNotification({
                       title: isDelivery ? 'Pacote em rota de entrega!' : 'Viagem iniciada!',
                       body: `Destino: ${enriched.destination_address}`,
+                      playSound: false,
                     });
                   } else if (enriched.status === 'completed') {
+                    void playSoundCue('accepted');
+                    speakPtBr(
+                      isDelivery
+                        ? 'Entrega concluída com sucesso.'
+                        : 'Você chegou ao seu destino. Obrigado por viajar conosco.'
+                    );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entrega concluída!' : 'Você chegou ao destino!',
                       body: 'Avalie a experiência no aplicativo.',
+                      playSound: false,
                     });
                   }
                 }

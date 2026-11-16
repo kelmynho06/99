@@ -1,16 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowUp,
   Banknote,
+  Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock,
   Copy,
   CornerUpLeft,
   CornerUpRight,
   ExternalLink,
+  Eye,
+  EyeOff,
   Flag,
   Headphones,
   History,
@@ -30,6 +35,8 @@ import {
   Sparkles,
   Star,
   Thermometer,
+  Volume2,
+  VolumeX,
   Wallet,
   X,
 } from 'lucide-react';
@@ -40,13 +47,15 @@ import {
   fetchLocalWeather,
   fetchRouteGeometry,
   formatBRL,
+  haversineKm,
   type RouteStep,
 } from '../lib/geo';
 import {
   acceptRide,
   completeRide,
+  compressImageFileToDataUrl,
   confirmCashReceived,
-  confirmPixValidatedByDriver,
+  declarePixPaid,
   fetchUserProfileById,
   fetchWalletTransactions,
   markRideArrived,
@@ -54,7 +63,13 @@ import {
   startRideWithPin,
   toggleDriverOnlineStatus,
 } from '../lib/mobilityApi';
-import { startContinuousRideAlarm } from '../lib/sound';
+import { PixQrSvg } from '../lib/pixQr';
+import { speakPtBr, startContinuousRideAlarm, stopSpeech } from '../lib/sound';
+import {
+  getUserPreferences,
+  saveUserPreferences,
+  subscribeUserPreferences,
+} from '../lib/userPrefs';
 import type {
   PlatformConfig,
   PlatformEvent,
@@ -136,13 +151,25 @@ export const DriverView: React.FC<DriverViewProps> = ({
     currentUser.driver?.current_lat ?? -23.55052,
     currentUser.driver?.current_lng ?? -46.633308,
   ]);
+  const [driverHeading, setDriverHeading] = useState<number>(currentUser.driver?.heading ?? 0);
+  const [driverSpeedKmh, setDriverSpeedKmh] = useState<number>(0);
+  const [sheetMinimized, setSheetMinimized] = useState<boolean>(false);
+  const [idleCleanMap, setIdleCleanMap] = useState<boolean>(false);
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(() => getUserPreferences().voice_enabled);
+  const dragStartYRef = useRef<number | null>(null);
+  const speedDecayRef = useRef<number | null>(null);
+  const fetchedRouteStageRef = useRef<string | null>(null);
+  const lastSpokenStepRef = useRef<string>('');
+
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [routeSteps, setRouteSteps] = useState<RouteStep[]>([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number>(0);
   const [routeDurationMin, setRouteDurationMin] = useState<number>(0);
   const [declinedRideIds, setDeclinedRideIds] = useState<string[]>([]);
 
-  const [pinModalMode, setPinModalMode] = useState<'pickup' | 'delivery' | null>(null);
+  const [pinModalMode, setPinModalMode] = useState<'pickup' | null>(null);
+  const [deliveryProofOpen, setDeliveryProofOpen] = useState(false);
+  const [deliveryPhotoPreview, setDeliveryPhotoPreview] = useState<string>('');
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -236,12 +263,29 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return stopAlarm;
   }, [incomingRide]);
 
-  // Keep checkoutRide synced if passenger confirms Pix while checkout modal is open
+  // Keep checkoutRide synced and auto-unlock once Admin confirms Pix or cash is marked paid
   useEffect(() => {
     if (!checkoutRide) return;
     const latest = myDriverRides.find((r) => r.id === checkoutRide.id);
-    if (latest) setCheckoutRide(latest);
-  }, [myDriverRides, checkoutRide]);
+    if (!latest) return;
+    if (
+      latest.payment_status === 'paid_pix' ||
+      latest.payment_status === 'paid_cash' ||
+      latest.payment_status === 'admin_settled'
+    ) {
+      setCheckoutRide(null);
+      fetchWalletTransactions(currentUser.id).then(setTransactions).catch(() => {});
+      fetchUserProfileById(currentUser.id).then((fresh) => fresh && onUserUpdated(fresh)).catch(() => {});
+    } else {
+      setCheckoutRide(latest);
+    }
+  }, [myDriverRides, checkoutRide, currentUser.id, onUserUpdated]);
+
+  useEffect(() => {
+    return subscribeUserPreferences((prefs) => {
+      setVoiceEnabled(prefs.voice_enabled);
+    });
+  }, []);
 
   // 1-second waiting timer when arrived at pickup
   useEffect(() => {
@@ -291,6 +335,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
     getCurrentGpsPosition().then((pos) => {
       if (pos) {
         setDriverCoords([pos.lat, pos.lng]);
+        setDriverHeading(pos.heading ?? 0);
+        setDriverSpeedKmh(pos.speedKmh ?? 0);
         fetchLocalWeather(pos.lat, pos.lng).then((w) => w && setWeather(w));
       } else {
         fetchLocalWeather(driverCoords[0], driverCoords[1]).then((w) => w && setWeather(w));
@@ -303,6 +349,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
     if (!isOnline) return;
     const stopWatch = watchGpsPosition((pos) => {
       setDriverCoords([pos.lat, pos.lng]);
+      if (pos.heading !== undefined) setDriverHeading(pos.heading);
+      setDriverSpeedKmh(pos.speedKmh ?? 0);
       onEmitLocation(currentUser.id, pos.lat, pos.lng, pos.heading);
     });
     return stopWatch;
@@ -315,24 +363,38 @@ export const DriverView: React.FC<DriverViewProps> = ({
   }, [activeRide, onLoadMessages]);
 
   useEffect(() => {
+    setSheetMinimized(false);
+  }, [activeRide?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (speedDecayRef.current) window.clearTimeout(speedDecayRef.current);
+    };
+  }, []);
+
+  // Fetch persistent OSRM route once per ride stage (so traveled polyline behind vehicle turns gray)
+  useEffect(() => {
     if (!activeRide) {
+      fetchedRouteStageRef.current = null;
       setRouteCoords([]);
       setRouteSteps([]);
       setRouteDistanceKm(0);
       setRouteDurationMin(0);
       return;
     }
-    const targetLat =
-      activeRide.status === 'in_progress'
-        ? activeRide.destination_lat
-        : activeRide.origin_lat;
-    const targetLng =
-      activeRide.status === 'in_progress'
-        ? activeRide.destination_lng
-        : activeRide.origin_lng;
+
+    const stage = activeRide.status === 'in_progress' ? 'B' : 'A';
+    const stageKey = `${activeRide.id}:${stage}`;
+    if (fetchedRouteStageRef.current === stageKey) return;
+    fetchedRouteStageRef.current = stageKey;
+
+    const startLat = stage === 'B' ? activeRide.origin_lat : driverCoords[0];
+    const startLng = stage === 'B' ? activeRide.origin_lng : driverCoords[1];
+    const targetLat = stage === 'B' ? activeRide.destination_lat : activeRide.origin_lat;
+    const targetLng = stage === 'B' ? activeRide.destination_lng : activeRide.origin_lng;
 
     let cancelled = false;
-    fetchRouteGeometry(driverCoords[0], driverCoords[1], targetLat, targetLng).then((res) => {
+    fetchRouteGeometry(startLat, startLng, targetLat, targetLng).then((res) => {
       if (!cancelled) {
         setRouteCoords(res.coords);
         setRouteSteps(res.steps);
@@ -343,7 +405,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeRide, driverCoords]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRide?.id, activeRide?.status]);
 
   const refreshProfile = useCallback(async () => {
     const fresh = await fetchUserProfileById(currentUser.id);
@@ -383,11 +446,33 @@ export const DriverView: React.FC<DriverViewProps> = ({
   };
 
   const nudgeDriverTowardTarget = (targetLat: number, targetLng: number) => {
-    const nextLat = driverCoords[0] + (targetLat - driverCoords[0]) * 0.45;
-    const nextLng = driverCoords[1] + (targetLng - driverCoords[1]) * 0.45;
+    let nextLat = driverCoords[0] + (targetLat - driverCoords[0]) * 0.35;
+    let nextLng = driverCoords[1] + (targetLng - driverCoords[1]) * 0.35;
+
+    if (routeCoords.length >= 2) {
+      let closestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < routeCoords.length; i++) {
+        const d = haversineKm(driverCoords[0], driverCoords[1], routeCoords[i][0], routeCoords[i][1]);
+        if (d < bestDist) {
+          bestDist = d;
+          closestIdx = i;
+        }
+      }
+      const stepForward = Math.max(1, Math.ceil((routeCoords.length - 1 - closestIdx) * 0.25));
+      const nextIdx = Math.min(routeCoords.length - 1, closestIdx + stepForward);
+      nextLat = routeCoords[nextIdx][0];
+      nextLng = routeCoords[nextIdx][1];
+    }
+
     const heading =
-      (Math.atan2(targetLng - driverCoords[1], targetLat - driverCoords[0]) * 180) / Math.PI;
+      ((Math.atan2(nextLng - driverCoords[1], nextLat - driverCoords[0]) * 180) / Math.PI + 360) %
+      360;
     setDriverCoords([nextLat, nextLng]);
+    setDriverHeading(heading);
+    setDriverSpeedKmh(42);
+    if (speedDecayRef.current) window.clearTimeout(speedDecayRef.current);
+    speedDecayRef.current = window.setTimeout(() => setDriverSpeedKmh(0), 3500);
     onEmitLocation(currentUser.id, nextLat, nextLng, heading);
   };
 
@@ -419,28 +504,77 @@ export const DriverView: React.FC<DriverViewProps> = ({
     }
   };
 
+  const handlePickupWithoutPin = async () => {
+    if (!activeRide) return;
+    setStatusError(null);
+    setActionLoading(true);
+    try {
+      const updated = await startRideWithPin(activeRide);
+      onRideUpsert(updated);
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Não foi possível iniciar entrega.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const submitPinAction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRide || !pinModalMode) return;
     setPinError(null);
     setActionLoading(true);
     try {
-      const totalWithWait = Number(
-        (activeRide.estimated_fare + waitingStats.waitingFee).toFixed(2)
-      );
-      const updated =
-        pinModalMode === 'pickup'
-          ? await startRideWithPin(activeRide, pinInput)
-          : await completeRide(activeRide, currentUser.id, pinInput, totalWithWait);
+      const updated = await startRideWithPin(activeRide, pinInput);
       setPinModalMode(null);
       setPinInput('');
       onRideUpsert(updated);
-      if (pinModalMode === 'delivery') {
-        setCheckoutRide(updated);
-        await loadFinancePanel();
-      }
     } catch (err) {
       setPinError(err instanceof Error ? err.message : 'Código PIN incorreto.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeliveryPhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageFileToDataUrl(file, 900);
+      setDeliveryPhotoPreview(compressed);
+      setPinError(null);
+    } catch {
+      setPinError('Não foi possível processar a foto da entrega.');
+    }
+  };
+
+  const submitDeliveryCompletion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRide) return;
+    if (!deliveryPhotoPreview) {
+      setPinError('Tire uma foto do pacote no local de entrega para confirmar.');
+      return;
+    }
+    setPinError(null);
+    setActionLoading(true);
+    try {
+      const totalWithWait = Number(
+        (activeRide.estimated_fare + waitingStats.waitingFee).toFixed(2)
+      );
+      const updated = await completeRide(
+        activeRide,
+        currentUser.id,
+        activeRide.require_pin !== false ? pinInput : undefined,
+        totalWithWait,
+        deliveryPhotoPreview
+      );
+      setDeliveryProofOpen(false);
+      setDeliveryPhotoPreview('');
+      setPinInput('');
+      onRideUpsert(updated);
+      setCheckoutRide(updated);
+      await loadFinancePanel();
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : 'Não foi possível concluir a entrega.');
     } finally {
       setActionLoading(false);
     }
@@ -451,7 +585,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
     if (isDeliveryCategory(activeRide.category)) {
       setPinError(null);
       setPinInput('');
-      setPinModalMode('delivery');
+      setDeliveryPhotoPreview('');
+      setDeliveryProofOpen(true);
       return;
     }
     setActionLoading(true);
@@ -485,16 +620,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
     }
   };
 
-  const handleConfirmPixPayment = async (targetRide: Ride | null) => {
+  const handleDeclareCheckoutPix = async (targetRide: Ride | null) => {
     if (!targetRide) return;
     setActionLoading(true);
     try {
-      const updated = await confirmPixValidatedByDriver(targetRide);
+      const updated = await declarePixPaid(targetRide);
       onRideUpsert(updated);
-      setCheckoutRide(null);
-      await loadFinancePanel();
+      setCheckoutRide(updated);
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : 'Erro ao validar Pix recebido.');
+      setStatusError(err instanceof Error ? err.message : 'Erro ao enviar aviso Pix ao Admin.');
     } finally {
       setActionLoading(false);
     }
@@ -539,6 +673,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return routeSteps[0];
   }, [routeSteps]);
 
+  // Spoken Portuguese turn-by-turn guidance when navigation step changes
+  useEffect(() => {
+    if (!activeRide || !currentNavStep) {
+      if (!activeRide) lastSpokenStepRef.current = '';
+      return;
+    }
+    const key = `${activeRide.id}:${activeRide.status}:${currentNavStep.instruction}`;
+    if (lastSpokenStepRef.current === key) return;
+    lastSpokenStepRef.current = key;
+    const distLabel =
+      currentNavStep.distanceMeters >= 1000
+        ? `${(currentNavStep.distanceMeters / 1000).toFixed(1).replace('.', ',')} quilômetros`
+        : `${Math.max(20, Math.round(currentNavStep.distanceMeters / 10) * 10)} metros`;
+    speakPtBr(`${currentNavStep.instruction} em ${distLabel}.`);
+  }, [activeRide, currentNavStep]);
+
   const formatTimerClock = (totalSec: number) => {
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
@@ -557,8 +707,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return <ArrowUp className="h-7 w-7 text-[#FFD100]" />;
   };
 
+  // Always compute EMV Pix QR payload for destination checkout (even if ride started as cash)
   const checkoutEmvPayload = useMemo(() => {
-    if (!checkoutRide || checkoutRide.payment_method !== 'pix') return '';
+    if (!checkoutRide) return '';
     const amount = checkoutRide.final_fare ?? checkoutRide.estimated_fare;
     return buildPixEmvPayload(
       platformConfig.platform_pix_key,
@@ -593,10 +744,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
         }
         routeCoords={routeCoords}
         controlsTopClassName={activeRide ? 'top-28' : 'top-20'}
+        followVehicle={Boolean(activeRide)}
+        showSpeedometer={Boolean(activeRide)}
+        speedKmh={driverSpeedKmh}
         driverPosition={{
           lat: driverCoords[0],
           lng: driverCoords[1],
-          heading: currentUser.driver?.heading || 0,
+          heading: driverHeading,
           vehicleType: currentUser.driver?.vehicle_type || 'car',
           label: 'Você (GPS ativo)',
         }}
@@ -605,6 +759,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
             .then((pos) => {
               if (!pos) return;
               setDriverCoords([pos.lat, pos.lng]);
+              setDriverHeading(pos.heading ?? 0);
+              setDriverSpeedKmh(pos.speedKmh ?? 0);
               onEmitLocation(currentUser.id, pos.lat, pos.lng, pos.heading ?? 0);
               fetchLocalWeather(pos.lat, pos.lng).then((w) => w && setWeather(w));
             })
@@ -612,8 +768,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
         }}
       />
 
-      {/* NORMAL IDLE TOP BAR — HIDDEN IN IMMERSIVE NAVIGATION MODE */}
-      {!activeRide && (
+      {/* NORMAL IDLE TOP BAR — HIDDEN IN IMMERSIVE NAVIGATION OR CLEAN MAP MODE */}
+      {!activeRide && !idleCleanMap && (
         <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] flex items-center justify-between gap-2 px-4 pt-safe py-3">
           <button
             type="button"
@@ -652,48 +808,83 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* IMMERSIVE TURN-BY-TURN NAVIGATION HUD (SHOWN ONLY DURING ACTIVE RIDE) */}
+      {/* DISCREET RESTORE BUTTON WHEN CLEAN MAP MODE IS ACTIVE */}
+      {!activeRide && idleCleanMap && (
+        <div className="pointer-events-none fixed top-0 right-0 z-[600] p-4 pt-safe">
+          <button
+            type="button"
+            onClick={() => setIdleCleanMap(false)}
+            className="pointer-events-auto flex min-h-[42px] items-center gap-2 rounded-full bg-[#181B22] px-4 text-xs font-extrabold text-white shadow-xl border border-white/15 active:scale-95"
+          >
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-[#FFD100]'
+              }`}
+            />
+            <Eye className="h-4 w-4 text-[#FFD100]" />
+            <span>Mostrar painel</span>
+          </button>
+        </div>
+      )}
+
+      {/* COMPACT IMMERSIVE TURN-BY-TURN NAVIGATION BANNER */}
       {activeRide && (
-        <div className="pointer-events-none fixed top-0 left-0 right-0 z-[700] px-3 pt-safe py-2.5">
-          <div className="pointer-events-auto mx-auto max-w-xl rounded-3xl bg-[#14171D] p-3.5 text-white shadow-2xl border border-white/15">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#1F242E] border border-[#FFD100]/40">
+        <div className="pointer-events-none fixed top-0 left-0 right-0 z-[700] px-3 pt-safe py-2">
+          <div className="pointer-events-auto mx-auto max-w-xl rounded-2xl bg-[#14171D] px-3.5 py-2.5 text-white shadow-2xl border border-white/15">
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#1F242E] border border-[#FFD100]/40">
                   {renderManeuverIcon(currentNavStep)}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono-num text-base font-extrabold text-[#FFD100]">
-                      {currentNavStep ? formatStepMeters(currentNavStep.distanceMeters) : `${routeDistanceKm} km`}
-                    </span>
-                    <span className="text-[11px] font-bold text-neutral-400">
-                      · {routeDurationMin || 3} min até{' '}
-                      {activeRide.status === 'in_progress'
-                        ? 'o destino'
-                        : activeIsDelivery
-                        ? 'a coleta'
-                        : 'o embarque'}
-                    </span>
-                  </div>
-                  <p className="text-sm font-extrabold text-white truncate">
-                    {currentNavStep?.instruction ||
-                      (activeRide.status === 'in_progress'
-                        ? activeRide.destination_address
-                        : activeRide.origin_address)}
+                  <p className="text-xs sm:text-sm font-extrabold text-white truncate">
+                    {currentNavStep
+                      ? `${currentNavStep.instruction} em ${formatStepMeters(currentNavStep.distanceMeters)}`
+                      : `Siga para ${
+                          activeRide.status === 'in_progress'
+                            ? activeRide.destination_address
+                            : activeRide.origin_address
+                        }`}
+                  </p>
+                  <p className="text-[11px] font-bold text-[#FFD100] font-mono-num truncate">
+                    {routeDistanceKm} km · {routeDurationMin || 3} min ·{' '}
+                    {activeRide.status === 'in_progress'
+                      ? 'Destino'
+                      : activeIsDelivery
+                      ? 'Coleta'
+                      : 'Embarque'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = saveUserPreferences({ voice_enabled: !voiceEnabled });
+                    setVoiceEnabled(next.voice_enabled);
+                    if (!next.voice_enabled) stopSpeech();
+                    else speakPtBr('Guia por voz reativado.');
+                  }}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+                    voiceEnabled
+                      ? 'bg-[#FFD100]/20 border-[#FFD100]/40 text-[#FFD100]'
+                      : 'bg-white/10 border-white/10 text-neutral-400'
+                  }`}
+                  title={voiceEnabled ? 'Silenciar voz' : 'Ativar guia por voz'}
+                  aria-label="Alternar guia por voz"
+                >
+                  {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                </button>
                 <a
                   href={googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex h-10 items-center gap-1 rounded-xl bg-white/10 px-2.5 text-[11px] font-bold text-[#FFD100]"
+                  className="flex h-9 items-center gap-1 rounded-xl bg-white/10 px-2.5 text-[11px] font-bold text-[#FFD100]"
                   title="Abrir no Google Maps"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
-                  <span>Maps</span>
+                  <span className="hidden xs:inline">Maps</span>
                 </a>
                 <button
                   type="button"
@@ -707,7 +898,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         : activeRide.origin_lng
                     )
                   }
-                  className="flex h-10 items-center rounded-xl bg-[#FFD100] px-2.5 text-[11px] font-extrabold text-neutral-950 active:scale-95"
+                  className="flex h-9 items-center rounded-xl bg-[#FFD100] px-2.5 text-[11px] font-extrabold text-neutral-950 active:scale-95"
                   title="Simular avanço GPS na rota"
                 >
                   +GPS
@@ -718,9 +909,107 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* BOTTOM FLOATING DRIVER PANEL */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-3 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
+      {/* BOTTOM FLOATING DRIVER PANEL (RETRACTABLE DURING ACTIVE RIDE, HIDABLE ON IDLE) */}
+      {(!idleCleanMap || activeRide) && (
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[600] p-2.5 sm:p-4 lg:inset-y-auto lg:left-6 lg:bottom-6 lg:w-[440px]">
+        {activeRide && sheetMinimized ? (
+          <div
+            onPointerDown={(e) => {
+              dragStartYRef.current = e.clientY;
+            }}
+            onPointerUp={(e) => {
+              if (dragStartYRef.current !== null && dragStartYRef.current - e.clientY > 25) {
+                setSheetMinimized(false);
+              }
+              dragStartYRef.current = null;
+            }}
+            className="pointer-events-auto flex items-center justify-between gap-2 rounded-2xl bg-[#14171D] px-3.5 py-3 text-white shadow-2xl border border-white/15"
+          >
+            <button
+              type="button"
+              onClick={() => setSheetMinimized(false)}
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            >
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#FFD100]" />
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-white truncate">
+                  {activeRide.passenger?.full_name || 'Cliente'} ·{' '}
+                  <span className="text-[#FFD100] font-mono-num">
+                    {formatBRL(activeRide.estimated_fare + waitingStats.waitingFee)}
+                  </span>
+                </p>
+                <p className="text-[11px] text-neutral-400 truncate">
+                  {activeRide.status === 'arrived'
+                    ? waitingStats.isCharging
+                      ? `Espera +${formatTimerClock(waitingStats.extraSec)}`
+                      : `Aguardando (${formatTimerClock(waitingStats.remainingFreeSec)})`
+                    : activeRide.status === 'in_progress'
+                    ? 'Em rota para o destino'
+                    : 'Indo para embarque'}
+                </p>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {activeRide.passenger?.phone && (
+                <a
+                  href={`tel:${activeRide.passenger.phone.replace(/\D/g, '')}`}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white active:scale-95"
+                  aria-label="Ligar para cliente"
+                >
+                  <Phone className="h-4 w-4" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setChatOpen(true)}
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#FFD100] active:scale-95"
+                aria-label="Abrir chat"
+              >
+                <MessageSquare className="h-4 w-4" />
+                {currentChatMessages.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#FFD100] px-1 text-[9px] font-extrabold text-neutral-950 font-mono-num">
+                    {currentChatMessages.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSheetMinimized(false)}
+                className="flex h-10 items-center gap-1 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950 active:scale-95"
+                aria-label="Expandir painel"
+              >
+                <ChevronUp className="h-4 w-4" />
+                <span>Abrir</span>
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="pointer-events-auto rounded-3xl bg-[#14171D] p-5 text-white shadow-2xl border border-white/10 max-h-[76vh] overflow-y-auto">
+          {activeRide && (
+            <div
+              onPointerDown={(e) => {
+                dragStartYRef.current = e.clientY;
+              }}
+              onPointerUp={(e) => {
+                if (dragStartYRef.current !== null && e.clientY - dragStartYRef.current > 28) {
+                  setSheetMinimized(true);
+                }
+                dragStartYRef.current = null;
+              }}
+              className="mb-3 -mt-2 flex items-center justify-between border-b border-white/10 pb-2 touch-none"
+            >
+              <div className="h-1 w-10 rounded-full bg-white/25" />
+              <button
+                type="button"
+                onClick={() => setSheetMinimized(true)}
+                className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-neutral-200 hover:bg-white/15"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+                <span>Minimizar mapa</span>
+              </button>
+            </div>
+          )}
           {statusError && (
             <div className="mb-3 rounded-2xl bg-red-950/70 border border-red-500/40 px-3.5 py-2.5 text-xs font-semibold text-red-200">
               {statusError}
@@ -932,14 +1221,20 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <SlideToConfirm
                   label={
                     activeIsDelivery
-                      ? 'Arraste para coletar (PIN 4 dígitos)'
+                      ? activeRide.require_pin === false
+                        ? 'Arraste para confirmar coleta (Sem PIN)'
+                        : 'Arraste para coletar (PIN 4 dígitos)'
                       : 'Arraste para embarcar (PIN 4 dígitos)'
                   }
                   disabled={actionLoading}
                   onConfirm={() => {
-                    setPinError(null);
-                    setPinInput('');
-                    setPinModalMode('pickup');
+                    if (activeIsDelivery && activeRide.require_pin === false) {
+                      void handlePickupWithoutPin();
+                    } else {
+                      setPinError(null);
+                      setPinInput('');
+                      setPinModalMode('pickup');
+                    }
                   }}
                 />
               )}
@@ -949,7 +1244,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   variant="emerald"
                   label={
                     activeIsDelivery
-                      ? 'Arraste para finalizar entrega (PIN)'
+                      ? 'Arraste para finalizar entrega (Foto)'
                       : 'Arraste para finalizar corrida no destino'
                   }
                   disabled={actionLoading}
@@ -973,17 +1268,28 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between text-[11px] text-neutral-400">
+              <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-400">
                 <span className="flex items-center gap-1 truncate">
                   <MapPin className="h-3.5 w-3.5 text-[#FFD100] shrink-0" />
                   {weather?.city || platformConfig.platform_city}
                 </span>
-                {weather && (
-                  <span className="flex items-center gap-1 font-mono-num font-bold text-[#FFD100] shrink-0">
-                    <Thermometer className="h-3.5 w-3.5" />
-                    {weather.temperatureC}°C · {weather.label}
-                  </span>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {weather && (
+                    <span className="flex items-center gap-1 font-mono-num font-bold text-[#FFD100]">
+                      <Thermometer className="h-3.5 w-3.5" />
+                      {weather.temperatureC}°C · {weather.label}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIdleCleanMap(true)}
+                    className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-neutral-200 hover:bg-white/15"
+                    title="Ocultar painel e ver mapa 100% livre"
+                  >
+                    <EyeOff className="h-3 w-3" />
+                    Mapa limpo
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between gap-4">
@@ -1055,7 +1361,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
           )}
         </div>
+        )}
       </div>
+      )}
 
       {/* FULL-SCREEN INCOMING RIDE / DELIVERY ALERT (SOUND + VIBRATION + ACCEPT/DECLINE) */}
       {incomingRide && (
@@ -1148,128 +1456,266 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* ETAPA C: AUTOMATIC PAYMENT CHECKOUT SCREEN UPON DESTINATION ARRIVAL */}
-      {checkoutRide && (
-        <div className="fixed inset-0 z-[1180] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4">
-          <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-[#14171D] p-6 text-white shadow-2xl border border-white/15 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div>
-                <p className="text-xs font-extrabold text-[#FFD100]">
-                  Etapa C · Chegada ao Destino
+      {/* ETAPA C: DESTINATION CHECKOUT WITH ALWAYS-ON PIX QR & ADMIN PIX CONFIRMATION LOCK */}
+      {checkoutRide && (() => {
+        const waitingAdminPix =
+          (checkoutRide.payment_method === 'pix' || Boolean(checkoutRide.pix_declared_at)) &&
+          checkoutRide.payment_status === 'pending';
+
+        return (
+          <div className="fixed inset-0 z-[1180] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4">
+            <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-[#14171D] p-5 text-white shadow-2xl border border-white/15 space-y-3.5 max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div>
+                  <p className="text-xs font-extrabold text-[#FFD100]">
+                    Etapa C · Chegada ao Destino
+                  </p>
+                  <h3 className="font-display text-lg font-extrabold text-white">
+                    {waitingAdminPix
+                      ? 'Aguardando Confirmação Pix (Admin)'
+                      : 'Conferência de Pagamento'}
+                  </h3>
+                </div>
+                {!waitingAdminPix && (
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutRide(null)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white"
+                    aria-label="Fechar checkout"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-2xl bg-[#1D212B] p-3.5 text-center border border-white/10">
+                <p className="text-xs font-semibold text-neutral-400">
+                  Valor total ({checkoutRide.passenger?.full_name || 'Cliente'})
                 </p>
-                <h3 className="font-display text-lg font-extrabold text-white">
-                  {checkoutRide.payment_method === 'pix'
-                    ? 'Conferência de Pagamento Pix'
-                    : 'Recebimento em Dinheiro'}
+                <p className="mt-1 font-display text-4xl font-extrabold text-[#FFD100] font-mono-num">
+                  {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
+                </p>
+                {(checkoutRide.final_fare ?? checkoutRide.estimated_fare) >
+                  checkoutRide.estimated_fare && (
+                  <p className="mt-1 text-[11px] font-bold text-amber-300">
+                    Inclui taxa de espera após 2 minutos gratuitos
+                  </p>
+                )}
+                {Boolean(
+                  checkoutRide.pending_debt_included && checkoutRide.pending_debt_included > 0
+                ) && (
+                  <p className="mt-1 text-[11px] font-bold text-emerald-300">
+                    Inclui débito anterior quitado: {formatBRL(checkoutRide.pending_debt_included || 0)}
+                  </p>
+                )}
+              </div>
+
+              {waitingAdminPix && (
+                <div className="rounded-2xl border border-amber-500/50 bg-amber-950/60 px-3.5 py-3 text-xs font-bold text-amber-200 flex items-start gap-2.5">
+                  <Clock className="h-5 w-5 shrink-0 text-[#FFD100] animate-pulse mt-0.5" />
+                  <div>
+                    <p className="text-white font-extrabold">
+                      Aguardando confirmação do Pix pelo Administrador
+                    </p>
+                    <p className="mt-0.5 font-normal text-amber-100/80">
+                      Assim que o Admin confirmar o recebimento do Pix, seu painel é desbloqueado
+                      automaticamente e o saldo entra na sua carteira.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ALWAYS SHOW QR CODE PIX (FOR PIX RIDES OR UNFORESEEN SWITCH FROM CASH) */}
+              <div className="rounded-2xl bg-[#1D212B] p-3.5 border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-extrabold text-[#FFD100]">
+                    {checkoutRide.payment_method === 'cash'
+                      ? 'QR Code Pix Oficial (caso o cliente prefira pagar por Pix)'
+                      : `QR Code Pix · ${platformConfig.platform_pix_receiver}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(checkoutEmvPayload);
+                      setCopiedCheckoutPix(true);
+                      setTimeout(() => setCopiedCheckoutPix(false), 2000);
+                    }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
+                  >
+                    {copiedCheckoutPix ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {copiedCheckoutPix ? 'Copiado' : 'Copiar Pix'}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-white p-2 shrink-0">
+                    <PixQrSvg payload={checkoutEmvPayload} size={112} />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-[10px] font-bold text-neutral-400">
+                      Chave: <span className="text-white font-mono-num">{platformConfig.platform_pix_key}</span>
+                    </p>
+                    <p className="font-mono-num text-[10px] text-neutral-300 break-all line-clamp-3 select-all">
+                      {checkoutEmvPayload}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {checkoutRide.payment_method === 'cash' && !checkoutRide.pix_declared_at && (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => handleDeclareCheckoutPix(checkoutRide)}
+                    className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-xs font-extrabold text-neutral-950 active:scale-[0.98]"
+                  >
+                    <QrCode className="h-4 w-4" />
+                    Cliente pagou via QR Pix (Enviar p/ Admin confirmar)
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => handleConfirmCashPayment(checkoutRide)}
+                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-extrabold text-neutral-950 active:scale-[0.98]"
+                >
+                  <Banknote className="h-5 w-5" />
+                  {actionLoading
+                    ? 'Confirmando...'
+                    : `Recebi ${formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)} em Dinheiro`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDisputeRide(checkoutRide);
+                    setDisputeReason('');
+                  }}
+                  className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-red-500/40 bg-red-950/40 text-xs font-bold text-red-300"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  Tive problemas ao receber (Relatar não pagamento)
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* DELIVERY COMPLETION MODAL (CAMERA PHOTO PROOF + OPTIONAL 4-DIGIT PIN) */}
+      {deliveryProofOpen && activeRide && (
+        <div className="fixed inset-0 z-[1140] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
+          <form
+            onSubmit={submitDeliveryCompletion}
+            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                  Finalizar Entrega com Foto
                 </h3>
+                <p className="text-xs text-neutral-500">
+                  Registre a foto do pacote entregue no destino
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setCheckoutRide(null)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white"
-                aria-label="Fechar checkout"
+                onClick={() => setDeliveryProofOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="rounded-2xl bg-[#1D212B] p-4 text-center border border-white/10">
-              <p className="text-xs font-semibold text-neutral-400">
-                Valor total a receber ({checkoutRide.passenger?.full_name || 'Cliente'})
-              </p>
-              <p className="mt-1 font-display text-4xl font-extrabold text-[#FFD100] font-mono-num">
-                {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
-              </p>
-              {(checkoutRide.final_fare ?? checkoutRide.estimated_fare) >
-                checkoutRide.estimated_fare && (
-                <p className="mt-1 text-[11px] font-bold text-amber-300">
-                  Inclui taxa de espera após 2 minutos gratuitos
-                </p>
-              )}
+            {pinError && (
+              <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">
+                {pinError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-neutral-800">
+                1. Foto comprobatória da entrega (Câmera)
+              </label>
+              <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-neutral-300 bg-neutral-50 p-4 text-center hover:border-neutral-950 transition">
+                {deliveryPhotoPreview ? (
+                  <div className="w-full space-y-2">
+                    <img
+                      src={deliveryPhotoPreview}
+                      alt="Comprovante da entrega"
+                      className="h-44 w-full rounded-xl object-cover"
+                    />
+                    <span className="inline-block text-xs font-extrabold text-neutral-950 underline">
+                      Tirar outra foto
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950">
+                      <Camera className="h-6 w-6" />
+                    </div>
+                    <span className="mt-2 text-xs font-extrabold text-neutral-950">
+                      Abrir câmera e fotografar entrega
+                    </span>
+                    <span className="text-[11px] text-neutral-500">
+                      Foto salva automaticamente como comprovante
+                    </span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleDeliveryPhotoSelected}
+                  className="sr-only"
+                />
+              </label>
             </div>
 
-            {checkoutRide.payment_method === 'pix' ? (
-              <div className="space-y-3">
-                <div
-                  className={`rounded-2xl border px-3.5 py-2.5 text-xs font-bold ${
-                    checkoutRide.payment_status === 'paid_pix'
-                      ? 'border-emerald-500/40 bg-emerald-950/50 text-emerald-300'
-                      : 'border-amber-500/40 bg-amber-950/40 text-amber-200'
-                  }`}
-                >
-                  {checkoutRide.payment_status === 'paid_pix'
-                    ? 'Cliente informou pagamento Pix! Valide o comprovante abaixo ou libere sua próxima chamada.'
-                    : 'Mostre o Pix Copia e Cola ao cliente e valide o recebimento após conferir o comprovante.'}
-                </div>
-
-                <div className="rounded-2xl bg-[#1D212B] p-3 border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-neutral-400">
-                      Pix Copia e Cola · {platformConfig.platform_pix_receiver}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(checkoutEmvPayload);
-                        setCopiedCheckoutPix(true);
-                        setTimeout(() => setCopiedCheckoutPix(false), 2000);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
-                    >
-                      {copiedCheckoutPix ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copiedCheckoutPix ? 'Copiado' : 'Copiar Pix'}
-                    </button>
-                  </div>
-                  <p className="font-mono-num text-[11px] text-neutral-300 break-all select-all">
-                    {checkoutEmvPayload}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleConfirmPixPayment(checkoutRide)}
-                  className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-extrabold text-neutral-950 active:scale-[0.98]"
-                >
-                  <CheckCircle2 className="h-5 w-5" />
-                  {actionLoading ? 'Validando...' : 'Validar Comprovante Pix e Encerrar'}
-                </button>
+            {activeRide.require_pin !== false ? (
+              <div>
+                <label className="block text-xs font-bold text-neutral-800 mb-1.5">
+                  2. PIN de Segurança de 4 dígitos
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  required
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="0000"
+                  className="min-h-[56px] w-full rounded-2xl border-2 border-neutral-300 bg-neutral-50 text-center font-mono-num text-3xl font-extrabold tracking-[0.45em] text-neutral-950 outline-none focus:border-neutral-950 focus:bg-white"
+                />
               </div>
             ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-neutral-300 text-center">
-                  Receba o valor exato em espécie diretamente com o passageiro antes de liberar sua próxima chamada.
-                </p>
-                <button
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleConfirmCashPayment(checkoutRide)}
-                  className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-extrabold text-neutral-950 active:scale-[0.98]"
-                >
-                  <Banknote className="h-5 w-5" />
-                  {actionLoading
-                    ? 'Confirmando...'
-                    : `Confirmar ${formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)} em Dinheiro`}
-                </button>
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs font-bold text-emerald-800">
+                O cliente optou por entrega sem código PIN (somente foto obrigatória).
               </div>
             )}
 
             <button
-              type="button"
-              onClick={() => {
-                setDisputeRide(checkoutRide);
-                setDisputeReason('');
-              }}
-              className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-red-500/40 bg-red-950/40 text-xs font-bold text-red-300"
+              type="submit"
+              disabled={
+                actionLoading ||
+                !deliveryPhotoPreview ||
+                (activeRide.require_pin !== false && pinInput.length !== 4)
+              }
+              className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm disabled:opacity-45"
             >
-              <ShieldAlert className="h-4 w-4" />
-              Relatar erro ou não pagamento ao Admin
+              {actionLoading ? 'Enviando foto e concluindo...' : 'Concluir Entrega e Cobrar'}
             </button>
-          </div>
+          </form>
         </div>
       )}
 
-      {/* 4-Digit PIN Modal */}
+      {/* 4-Digit Pickup PIN Modal (Passenger Boarding or Optional Delivery Pickup) */}
       {pinModalMode && activeRide && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/70 p-4">
           <form
@@ -1278,11 +1724,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
-                {pinModalMode === 'delivery'
-                  ? 'PIN de Entrega Final'
-                  : activeIsDelivery
-                  ? 'PIN de Retirada / Coleta'
-                  : 'Confirmar Código PIN'}
+                {activeIsDelivery ? 'PIN de Retirada / Coleta' : 'Confirmar Código PIN'}
               </h3>
               <button
                 type="button"
@@ -1293,11 +1735,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </button>
             </div>
             <p className="mt-1 text-xs text-neutral-600">
-              {pinModalMode === 'delivery'
-                ? 'Informe o código PIN de 4 dígitos para confirmar a entrega no destino.'
-                : `Peça os 4 dígitos exibidos no celular de ${
-                    activeRide.passenger?.full_name || 'cliente'
-                  } para liberar a partida.`}
+              Peça os 4 dígitos exibidos no celular de{' '}
+              {activeRide.passenger?.full_name || 'cliente'} para liberar a partida.
             </p>
 
             {pinError && (
@@ -1323,11 +1762,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               disabled={pinInput.length !== 4 || actionLoading}
               className="mt-4 min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 disabled:opacity-40"
             >
-              {actionLoading
-                ? 'Validando PIN...'
-                : pinModalMode === 'delivery'
-                ? 'Confirmar Entrega e Receber'
-                : 'Liberar Partida'}
+              {actionLoading ? 'Validando PIN...' : 'Liberar Partida'}
             </button>
           </form>
         </div>
@@ -1871,6 +2306,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
       {settingsOpen && (
         <AccountSettingsModal
           currentUser={currentUser}
+          platformConfig={platformConfig}
           onUserUpdated={onUserUpdated}
           onAccountDeleted={onLogout}
           onClose={() => setSettingsOpen(false)}

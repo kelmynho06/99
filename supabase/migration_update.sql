@@ -408,3 +408,24 @@ BEGIN
   END IF;
 END $$;
 
+-- 15. White-Label (Logo, Veículos, Áudios), Dívidas de Corrida Não Paga, Foto Entrega & PIN Opcional
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS app_logo_url TEXT,
+  ADD COLUMN IF NOT EXISTS vehicle_img_moto TEXT,
+  ADD COLUMN IF NOT EXISTS vehicle_img_pop TEXT,
+  ADD COLUMN IF NOT EXISTS vehicle_img_delivery_moto TEXT,
+  ADD COLUMN IF NOT EXISTS vehicle_img_delivery_car TEXT,
+  ADD COLUMN IF NOT EXISTS sound_offer_url TEXT,
+  ADD COLUMN IF NOT EXISTS sound_accepted_url TEXT,
+  ADD COLUMN IF NOT EXISTS sound_arrived_url TEXT;
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS pending_debt_amount NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS pending_debt_note TEXT;
+
+ALTER TABLE public.rides
+  ADD COLUMN IF NOT EXISTS require_pin BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS delivery_photo_url TEXT,
+  ADD COLUMN IF NOT EXISTS pending_debt_included NUMERIC(10,2) NOT NULL DEFAULT 0.00;
+
+

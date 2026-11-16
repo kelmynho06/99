@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import {
   MapContainer,
@@ -31,20 +31,56 @@ interface LiveMapProps {
   layerMode?: MapLayerMode;
   onLayerModeChange?: (mode: MapLayerMode) => void;
   controlsTopClassName?: string;
+  followVehicle?: boolean;
+  speedKmh?: number;
+  showSpeedometer?: boolean;
+}
+
+function findClosestRouteIndex(
+  routeCoords: [number, number][],
+  lat: number,
+  lng: number
+): number {
+  if (routeCoords.length === 0) return 0;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  let bestIdx = 0;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < routeCoords.length; i++) {
+    const dLat = routeCoords[i][0] - lat;
+    const dLng = (routeCoords[i][1] - lng) * cosLat;
+    const distSq = dLat * dLat + dLng * dLng;
+    if (distSq < bestDist) {
+      bestDist = distSq;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
 }
 
 function MapController({
   center,
   routeCoords,
+  driverPosition,
+  followVehicle,
+  userPanned,
+  onUserPanChange,
+  recenterNonce,
   pickOnMapMode,
   onMapPick,
 }: {
   center: [number, number];
   routeCoords?: [number, number][];
+  driverPosition?: LiveMapProps['driverPosition'];
+  followVehicle?: boolean;
+  userPanned: boolean;
+  onUserPanChange: (panned: boolean) => void;
+  recenterNonce: number;
   pickOnMapMode?: 'origin' | 'destination' | null;
   onMapPick?: (lat: number, lng: number) => void;
 }) {
   const map = useMap();
+  const initialFollowFittedRef = useRef(false);
 
   useMapEvents({
     click(e) {
@@ -52,20 +88,40 @@ function MapController({
         onMapPick(e.latlng.lat, e.latlng.lng);
       }
     },
+    dragstart() {
+      onUserPanChange(true);
+    },
   });
 
   useEffect(() => {
-    if (routeCoords && routeCoords.length >= 2) {
-      const bounds = L.latLngBounds(routeCoords.map(([lat, lng]) => L.latLng(lat, lng)));
-      map.fitBounds(bounds, { padding: [70, 70], maxZoom: 16 });
+    if (!followVehicle) {
+      initialFollowFittedRef.current = false;
     }
-  }, [map, routeCoords]);
+  }, [followVehicle]);
 
   useEffect(() => {
-    if (!routeCoords || routeCoords.length < 2) {
+    if (routeCoords && routeCoords.length >= 2) {
+      if (followVehicle && initialFollowFittedRef.current) return;
+      const bounds = L.latLngBounds(routeCoords.map(([lat, lng]) => L.latLng(lat, lng)));
+      map.fitBounds(bounds, { padding: [70, 70], maxZoom: 16 });
+      if (followVehicle) {
+        initialFollowFittedRef.current = true;
+      }
+    }
+  }, [map, routeCoords, followVehicle]);
+
+  // Real-time vehicle camera follow during navigation
+  useEffect(() => {
+    if (!followVehicle || !driverPosition || userPanned) return;
+    const targetZoom = Math.max(map.getZoom(), 16);
+    map.setView([driverPosition.lat, driverPosition.lng], targetZoom, { animate: true });
+  }, [map, followVehicle, driverPosition?.lat, driverPosition?.lng, userPanned, recenterNonce]);
+
+  useEffect(() => {
+    if (!followVehicle && (!routeCoords || routeCoords.length < 2)) {
       map.setView(center, map.getZoom(), { animate: true });
     }
-  }, [map, center, routeCoords]);
+  }, [map, center, routeCoords, followVehicle]);
 
   return null;
 }
@@ -155,15 +211,54 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   layerMode: controlledLayerMode,
   onLayerModeChange,
   controlsTopClassName,
+  followVehicle = false,
+  speedKmh = 0,
+  showSpeedometer = false,
 }) => {
   const [internalLayerMode, setInternalLayerMode] = useState<MapLayerMode>('urban');
+  const [userPanned, setUserPanned] = useState(false);
+  const [recenterNonce, setRecenterNonce] = useState(0);
   const layerMode = controlledLayerMode ?? internalLayerMode;
+
+  useEffect(() => {
+    if (!followVehicle) {
+      setUserPanned(false);
+    }
+  }, [followVehicle]);
 
   const toggleLayerMode = () => {
     const next: MapLayerMode = layerMode === 'urban' ? 'satellite' : 'urban';
     setInternalLayerMode(next);
     onLayerModeChange?.(next);
   };
+
+  const handleRecenterClick = () => {
+    setUserPanned(false);
+    setRecenterNonce((n) => n + 1);
+    onRecenter?.();
+  };
+
+  // Split OSRM route into traveled (Gray) and remaining ahead (Blue)
+  const { traveledCoords, remainingCoords } = useMemo(() => {
+    if (!routeCoords || routeCoords.length < 2) {
+      return { traveledCoords: [] as [number, number][], remainingCoords: [] as [number, number][] };
+    }
+    if (!driverPosition || !followVehicle) {
+      return { traveledCoords: [] as [number, number][], remainingCoords: routeCoords };
+    }
+    const closestIdx = findClosestRouteIndex(routeCoords, driverPosition.lat, driverPosition.lng);
+    const traveled =
+      closestIdx > 0 ? routeCoords.slice(0, closestIdx + 1) : ([] as [number, number][]);
+    const tail = routeCoords.slice(closestIdx);
+    const remaining: [number, number][] =
+      tail.length >= 1
+        ? [[driverPosition.lat, driverPosition.lng], ...tail]
+        : [
+            [driverPosition.lat, driverPosition.lng],
+            routeCoords[routeCoords.length - 1],
+          ];
+    return { traveledCoords: traveled, remainingCoords: remaining };
+  }, [routeCoords, driverPosition, followVehicle]);
 
   const originIcon = useMemo(
     () =>
@@ -194,21 +289,28 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   ) =>
     L.divIcon({
       className: 'velo-smooth-marker',
-      html: `<div style="transform:rotate(${heading}deg);width:40px;height:40px;border-radius:9999px;background:${
-        active ? '#111827' : '#ffffff'
-      };border:3px solid ${active ? '#FFCC00' : '#2563EB'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,0.35);">
+      html: `<div style="position:relative;transform:rotate(${heading}deg);width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
         ${
-          vehicleType === 'moto' || vehicleType === 'delivery'
-            ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${
-                active ? '#FFCC00' : '#111827'
-              }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h3"/></svg>`
-            : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${
-                active ? '#FFCC00' : '#111827'
-              }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`
+          active
+            ? `<div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:10px solid #FFCC00;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></div>`
+            : ''
         }
+        <div style="width:38px;height:38px;border-radius:9999px;background:${
+          active ? '#111827' : '#ffffff'
+        };border:3px solid ${active ? '#FFCC00' : '#2563EB'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,0.35);">
+          ${
+            vehicleType === 'moto' || vehicleType === 'delivery'
+              ? `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="${
+                  active ? '#FFCC00' : '#111827'
+                }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h3"/></svg>`
+              : `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="${
+                  active ? '#FFCC00' : '#111827'
+                }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`
+          }
+        </div>
       </div>`,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
     });
 
   return (
@@ -246,11 +348,16 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         <MapController
           center={center}
           routeCoords={routeCoords}
+          driverPosition={driverPosition}
+          followVehicle={followVehicle}
+          userPanned={userPanned}
+          onUserPanChange={setUserPanned}
+          recenterNonce={recenterNonce}
           pickOnMapMode={pickOnMapMode}
           onMapPick={onMapPick}
         />
         <ZoomControls
-          onRecenter={onRecenter}
+          onRecenter={onRecenter ? handleRecenterClick : undefined}
           layerMode={layerMode}
           onToggleLayer={toggleLayerMode}
           topClassName={controlsTopClassName}
@@ -276,15 +383,23 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           </Marker>
         )}
 
-        {/* OSRM Blue Route Polyline */}
-        {routeCoords && routeCoords.length >= 2 && (
+        {/* Traveled Route Portion (Gray) */}
+        {traveledCoords.length >= 2 && (
+          <Polyline
+            positions={traveledCoords}
+            pathOptions={{ color: '#9CA3AF', weight: 6.5, opacity: 0.85 }}
+          />
+        )}
+
+        {/* Remaining Route Ahead (Two-tone Blue) */}
+        {remainingCoords.length >= 2 && (
           <>
             <Polyline
-              positions={routeCoords}
-              pathOptions={{ color: '#1E3A8A', weight: 8, opacity: 0.85 }}
+              positions={remainingCoords}
+              pathOptions={{ color: '#1E3A8A', weight: 8, opacity: 0.9 }}
             />
             <Polyline
-              positions={routeCoords}
+              positions={remainingCoords}
               pathOptions={{ color: '#3B82F6', weight: 4.5, opacity: 1 }}
             />
           </>
@@ -331,20 +446,37 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         })}
       </MapContainer>
 
-      {/* Subtle Map Mode Badge Bottom Left (hidden on small screens when covered, useful on Admin/desktop) */}
-      <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold text-neutral-700 shadow border border-neutral-200">
-        {layerMode === 'satellite' ? (
-          <>
-            <Satellite className="h-3 w-3 text-amber-600" />
-            <span>Satélite Rural</span>
-          </>
-        ) : (
-          <>
-            <MapIcon className="h-3 w-3 text-blue-600" />
-            <span>Modo Urbano</span>
-          </>
-        )}
-      </div>
+      {/* Real-time Floating GPS Speedometer */}
+      {showSpeedometer && (
+        <div
+          className="pointer-events-none absolute left-3 top-28 z-[500] flex h-[68px] w-[68px] flex-col items-center justify-center rounded-2xl bg-[#14171D] text-white shadow-xl border-2 border-[#FFD100]"
+          aria-label={`Velocidade atual ${Math.max(0, Math.round(speedKmh))} quilômetros por hora`}
+        >
+          <span className="font-mono-num text-2xl font-extrabold leading-none text-[#FFD100]">
+            {Math.max(0, Math.round(speedKmh))}
+          </span>
+          <span className="mt-0.5 text-[10px] font-extrabold uppercase tracking-wider text-neutral-300">
+            km/h
+          </span>
+        </div>
+      )}
+
+      {/* Subtle Map Mode Badge Top Left (hidden on small screens when covered, useful on Admin/desktop) */}
+      {!showSpeedometer && (
+        <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold text-neutral-700 shadow border border-neutral-200">
+          {layerMode === 'satellite' ? (
+            <>
+              <Satellite className="h-3 w-3 text-amber-600" />
+              <span>Satélite Rural</span>
+            </>
+          ) : (
+            <>
+              <MapIcon className="h-3 w-3 text-blue-600" />
+              <span>Modo Urbano</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

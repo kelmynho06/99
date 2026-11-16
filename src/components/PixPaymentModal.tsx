@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Check, Clock, Copy, QrCode, ShieldCheck, X } from 'lucide-react';
 import { buildPixEmvPayload, formatBRL } from '../lib/geo';
 import { declarePixPaid } from '../lib/mobilityApi';
+import { PixQrSvg } from '../lib/pixQr';
 import type { PlatformConfig, Ride } from '../types/mobility';
 
 interface PixPaymentModalProps {
@@ -9,41 +10,6 @@ interface PixPaymentModalProps {
   platformConfig: PlatformConfig;
   onDeclared: (updatedRide: Ride) => void;
   onClose: () => void;
-}
-
-function generateDeterministicMatrix(seedStr: string, size = 21): boolean[][] {
-  const grid: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
-  const drawFinder = (r0: number, c0: number) => {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        const isBorder = r === 0 || r === 6 || c === 0 || c === 6;
-        const isInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-        grid[r0 + r][c0 + c] = isBorder || isInner;
-      }
-    }
-  };
-  drawFinder(0, 0);
-  drawFinder(0, size - 7);
-  drawFinder(size - 7, 0);
-
-  let hash = 2166136261;
-  for (let i = 0; i < seedStr.length; i++) {
-    hash ^= seedStr.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      const inTopLeft = r < 8 && c < 8;
-      const inTopRight = r < 8 && c >= size - 8;
-      const inBottomLeft = r >= size - 8 && c < 8;
-      if (inTopLeft || inTopRight || inBottomLeft) continue;
-      hash ^= (r * 31 + c * 17) & 0xff;
-      hash = Math.imul(hash, 16777619);
-      grid[r][c] = (hash >>> 0) % 2 === 0;
-    }
-  }
-  return grid;
 }
 
 export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
@@ -69,8 +35,6 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
       ),
     [platformConfig, amount, ride.id]
   );
-
-  const qrMatrix = useMemo(() => generateDeterministicMatrix(pixPayload), [pixPayload]);
 
   const copyText = async (value: string, target: 'key' | 'code') => {
     try {
@@ -101,6 +65,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   };
 
   const isPaid = ride.payment_status === 'paid_pix' || ride.payment_status === 'admin_settled';
+  const isDeclared = !isPaid && Boolean(ride.pix_declared_at);
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
@@ -137,35 +102,30 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             }`}
           >
             {isPaid ? <Check className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-            {isPaid ? 'Pagamento Pix confirmado' : 'Aguardando confirmação do pagamento'}
+            {isPaid
+              ? 'Pagamento Pix confirmado pelo Admin'
+              : isDeclared
+              ? 'Aviso enviado · Aguardando confirmação do Admin'
+              : 'Aguardando pagamento Pix'}
           </span>
         </div>
 
         <div className="mt-3 text-center">
-          <p className="text-xs font-semibold text-neutral-500">Valor total da viagem</p>
+          <p className="text-xs font-semibold text-neutral-500">Valor total a transferir</p>
           <p className="mt-0.5 font-mono-num text-3xl font-extrabold text-neutral-950">
             {formatBRL(amount)}
           </p>
+          {Boolean(ride.pending_debt_included && ride.pending_debt_included > 0) && (
+            <p className="mt-1 text-[11px] font-bold text-amber-800">
+              Inclui débito pendente anterior: {formatBRL(ride.pending_debt_included || 0)}
+            </p>
+          )}
         </div>
 
         {/* Deterministic SVG QR Code */}
         <div className="mt-4 flex justify-center">
           <div className="rounded-2xl border-2 border-neutral-950 bg-white p-3.5 shadow-sm">
-            <svg
-              width="160"
-              height="160"
-              viewBox="0 0 21 21"
-              shapeRendering="crispEdges"
-              role="img"
-              aria-label="QR Code Pix da Plataforma"
-            >
-              <rect width="21" height="21" fill="#ffffff" />
-              {qrMatrix.map((row, r) =>
-                row.map((cell, c) =>
-                  cell ? <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill="#111827" /> : null
-                )
-              )}
-            </svg>
+            <PixQrSvg payload={pixPayload} size={160} />
           </div>
         </div>
 
@@ -216,7 +176,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-amber-700" />
           <span>
             Pagamento centralizado para {platformConfig.platform_pix_receiver}. Após pagar no app do
-            seu banco, toque em &ldquo;Já fiz o Pix&rdquo;.
+            seu banco, toque abaixo para avisar o Administrador e liberar o motorista.
           </span>
         </div>
 
@@ -234,7 +194,11 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
               onClick={confirmPixPaid}
               className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
             >
-              {submitting ? 'Confirmando...' : 'Já fiz o Pix · Confirmar'}
+              {submitting
+                ? 'Enviando aviso...'
+                : isDeclared
+                ? 'Reenviar aviso ao Admin · Já fiz o Pix'
+                : 'Já fiz o Pix · Avisar Admin'}
             </button>
           )}
           <button

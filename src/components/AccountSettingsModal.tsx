@@ -1,19 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Bell,
   Briefcase,
   Camera,
   Car,
   ChevronRight,
   CreditCard,
+  FileText,
   Home,
   Lock,
   Shield,
+  ShieldCheck,
   Star,
   Trash2,
   User,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
+import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import { searchAddresses } from '../lib/geo';
 import {
   anonymizeUserAccount,
@@ -21,19 +27,42 @@ import {
   compressImageFileToDataUrl,
   updateUserProfileSettings,
 } from '../lib/mobilityApi';
-import type { PaymentMethod, SavedAddress, UserProfile } from '../types/mobility';
+import { playSoundCue, speakPtBr } from '../lib/sound';
+import {
+  getUserPreferences,
+  saveUserPreferences,
+  subscribeUserPreferences,
+} from '../lib/userPrefs';
+import type {
+  PaymentMethod,
+  PlatformConfig,
+  SavedAddress,
+  UserPreferences,
+  UserProfile,
+} from '../types/mobility';
+import { LegalDocsModal } from './LegalDocsModal';
+import { PermissionsPromptModal } from './PermissionsPromptModal';
 
 interface AccountSettingsModalProps {
   currentUser: UserProfile;
+  platformConfig?: PlatformConfig;
   onUserUpdated: (user: UserProfile) => void;
   onAccountDeleted: () => void;
   onClose: () => void;
 }
 
-type SettingsSection = 'menu' | 'profile' | 'password' | 'addresses' | 'vehicle' | 'privacy';
+type SettingsSection =
+  | 'menu'
+  | 'profile'
+  | 'password'
+  | 'addresses'
+  | 'vehicle'
+  | 'prefs'
+  | 'privacy';
 
 export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   currentUser,
+  platformConfig,
   onUserUpdated,
   onAccountDeleted,
   onClose,
@@ -75,8 +104,29 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   // Password change
   const [newPassword, setNewPassword] = useState('');
 
-  // LGPD delete confirmation
+  // LGPD delete confirmation & Voice/Sounds/Permissions
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [userPrefs, setUserPrefs] = useState<UserPreferences>(() => getUserPreferences());
+  const [permsModalOpen, setPermsModalOpen] = useState(false);
+  const [legalDocsOpen, setLegalDocsOpen] = useState(false);
+
+  const localBiasCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const searchTimerRef = useRef<number | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const unsub = subscribeUserPreferences(setUserPrefs);
+    getCurrentGpsPosition().then((pos) => {
+      if (pos) {
+        localBiasCoordsRef.current = { lat: pos.lat, lng: pos.lng };
+      }
+    });
+    return () => {
+      unsub();
+      if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+      searchAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleAvatarSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -159,16 +209,28 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
   };
 
-  const searchSavedAddress = async (query: string, target: 'home' | 'work' | 'favorite') => {
+  const searchSavedAddress = (query: string, target: 'home' | 'work' | 'favorite') => {
     if (target === 'home') setHomeQuery(query);
     else if (target === 'work') setWorkQuery(query);
     else setFavQuery(query);
-    if (query.trim().length < 3) {
+
+    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+    searchAbortRef.current?.abort();
+
+    if (query.trim().length < 2) {
       setAddrSuggestions([]);
       return;
     }
-    const results = await searchAddresses(query);
-    setAddrSuggestions(results.map((r) => ({ ...r, target })));
+
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+    searchTimerRef.current = window.setTimeout(async () => {
+      const bias = localBiasCoordsRef.current;
+      const results = await searchAddresses(query, bias?.lat, bias?.lng, controller.signal);
+      if (!controller.signal.aborted) {
+        setAddrSuggestions(results.map((r) => ({ ...r, target })));
+      }
+    }, 300);
   };
 
   return (
@@ -195,6 +257,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               {section === 'password' && 'Alterar Senha'}
               {section === 'addresses' && 'Endereços e Pagamento'}
               {section === 'vehicle' && 'Veículo e Chave Pix'}
+              {section === 'prefs' && 'Voz, Sons e Permissões'}
               {section === 'privacy' && 'Privacidade e LGPD'}
             </h3>
           </div>
@@ -303,12 +366,24 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => setSection('prefs')}
+                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50"
+                >
+                  <span className="flex items-center gap-3 text-sm font-bold text-neutral-900">
+                    <Volume2 className="h-4 w-4 text-neutral-600" />
+                    Voz (PT-BR), Sons, Notificações & Permissões
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setSection('privacy')}
                   className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50"
                 >
                   <span className="flex items-center gap-3 text-sm font-bold text-neutral-900">
                     <Shield className="h-4 w-4 text-neutral-600" />
-                    Privacidade, Segurança PIN e Exclusão (LGPD)
+                    Privacidade, Termos, Segurança PIN e LGPD
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>
@@ -661,6 +736,147 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
             </form>
           )}
 
+          {section === 'prefs' && (
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    {userPrefs.voice_enabled ? (
+                      <Volume2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <VolumeX className="h-5 w-5 text-neutral-400 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className="text-sm font-extrabold text-neutral-950">
+                        Guia por Voz (Português BR)
+                      </p>
+                      <p className="text-xs text-neutral-600">
+                        Lê instruções de rota e avisos da corrida em voz alta.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = saveUserPreferences({
+                        voice_enabled: !userPrefs.voice_enabled,
+                      });
+                      setUserPrefs(next);
+                      if (next.voice_enabled) {
+                        speakPtBr('Guia por voz ativado em português.');
+                      }
+                    }}
+                    className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
+                      userPrefs.voice_enabled
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-neutral-200 text-neutral-700'
+                    }`}
+                  >
+                    {userPrefs.voice_enabled ? 'Ativada' : 'Silenciada'}
+                  </button>
+                </div>
+                {userPrefs.voice_enabled && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      speakPtBr('Vire à direita em duzentos metros rumo ao destino.')
+                    }
+                    className="rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-xs font-bold text-neutral-900"
+                  >
+                    Testar voz agora
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    {userPrefs.sounds_enabled ? (
+                      <Volume2 className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <VolumeX className="h-5 w-5 text-neutral-400 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className="text-sm font-extrabold text-neutral-950">
+                        Sons e Toques de Alerta
+                      </p>
+                      <p className="text-xs text-neutral-600">
+                        Toca campainha em novas chamadas, aceite e chegada no local.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = saveUserPreferences({
+                        sounds_enabled: !userPrefs.sounds_enabled,
+                      });
+                      setUserPrefs(next);
+                      if (next.sounds_enabled) {
+                        void playSoundCue('accepted');
+                      }
+                    }}
+                    className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
+                      userPrefs.sounds_enabled
+                        ? 'bg-neutral-950 text-[#FFD100]'
+                        : 'bg-neutral-200 text-neutral-700'
+                    }`}
+                  >
+                    {userPrefs.sounds_enabled ? 'Ativados' : 'Mudos'}
+                  </button>
+                </div>
+                {userPrefs.sounds_enabled && (
+                  <button
+                    type="button"
+                    onClick={() => void playSoundCue('offer')}
+                    className="rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-xs font-bold text-neutral-900"
+                  >
+                    Testar toque sonoro
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 flex items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <Bell className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-extrabold text-neutral-950">
+                      Notificações Pop-up no Sistema
+                    </p>
+                    <p className="text-xs text-neutral-600">
+                      Alertas visuais no Android/navegador durante corridas.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = saveUserPreferences({
+                      notifications_enabled: !userPrefs.notifications_enabled,
+                    });
+                    setUserPrefs(next);
+                  }}
+                  className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
+                    userPrefs.notifications_enabled
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-neutral-200 text-neutral-700'
+                  }`}
+                >
+                  {userPrefs.notifications_enabled ? 'Ativas' : 'Desativadas'}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPermsModalOpen(true)}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Gerenciar Permissões Android / Navegador (GPS, Câmera, Fotos)
+              </button>
+            </div>
+          )}
+
           {section === 'privacy' && (
             <div className="space-y-4">
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-700 space-y-2 leading-relaxed">
@@ -676,10 +892,19 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   durante uma corrida ou entrega ativa.
                 </p>
                 <p>
-                  • Todas as viagens e entregas exigem verificação presencial com Código PIN de 4
-                  dígitos para proteger embarque, coleta e entrega.
+                  • Passageiros validam embarque com PIN de 4 dígitos; em entregas o PIN é opcional
+                  e há foto comprobatória no destino.
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setLegalDocsOpen(true)}
+                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-300 bg-white text-xs font-extrabold text-neutral-950 hover:bg-neutral-50"
+              >
+                <FileText className="h-4 w-4" />
+                Ler Termos de Uso, Segurança, Privacidade e Cookies
+              </button>
 
               {!confirmDelete ? (
                 <button
@@ -722,6 +947,21 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           )}
         </div>
       </div>
+
+      {permsModalOpen && (
+        <PermissionsPromptModal
+          siteName={platformConfig?.site_name || 'Velo99'}
+          onClose={() => setPermsModalOpen(false)}
+        />
+      )}
+
+      {legalDocsOpen && (
+        <LegalDocsModal
+          initialTab="terms"
+          siteName={platformConfig?.site_name || 'Velo99'}
+          onClose={() => setLegalDocsOpen(false)}
+        />
+      )}
     </div>
   );
 };

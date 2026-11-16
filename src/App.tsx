@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
+import { CookieBanner } from './components/CookieBanner';
 import { DriverView } from './components/DriverView';
 import { PassengerView } from './components/PassengerView';
+import { PermissionsPromptModal } from './components/PermissionsPromptModal';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { useRealtimeMobility } from './hooks/useRealtimeMobility';
+import { resolveBrandLogo } from './lib/brandAssets';
 import { logoutUser, restoreSessionUser } from './lib/mobilityApi';
 import { supabase } from './lib/supabase';
+import { hasSeenPermissionsPrompt } from './lib/userPrefs';
 import type { UserProfile } from './types/mobility';
 
 const STORAGE_KEY = 'velo99_session_user';
@@ -21,6 +25,7 @@ export default function App() {
     }
   });
   const [booting, setBooting] = useState(true);
+  const [showPermsModal, setShowPermsModal] = useState<boolean>(() => !hasSeenPermissionsPrompt());
 
   const handleUserUpdated = useCallback((updated: UserProfile) => {
     setCurrentUser(updated);
@@ -76,14 +81,23 @@ export default function App() {
     emitDriverLocation,
   } = useRealtimeMobility(currentUser, handleUserUpdated);
 
+  useEffect(() => {
+    const brand = platformConfig.site_name || 'Velo99';
+    document.title = `${brand} Mobilidade — Corridas e Entregas`;
+  }, [platformConfig.site_name]);
+
   if (booting && !currentUser) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-[#FFD100]">
         <div className="text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-950 font-display text-3xl font-extrabold text-[#FFD100] shadow-lg">
-            99
-          </div>
-          <p className="mt-3 text-sm font-extrabold text-neutral-950">Conectando ao Velo99...</p>
+          <img
+            src={resolveBrandLogo(platformConfig)}
+            alt={platformConfig.site_name || 'Velo99'}
+            className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-neutral-950 shadow-lg"
+          />
+          <p className="mt-3 text-sm font-extrabold text-neutral-950">
+            Conectando ao {platformConfig.site_name || 'Velo99'}...
+          </p>
         </div>
       </div>
     );
@@ -93,9 +107,13 @@ export default function App() {
     <>
       <OfflineIndicator />
       {!currentUser ? (
-        <AuthScreen onAuthenticated={handleUserUpdated} />
+        <AuthScreen onAuthenticated={handleUserUpdated} platformConfig={platformConfig} />
       ) : currentUser.role === 'admin' ? (
-        <AdminDashboard currentUser={currentUser} onLogout={handleLogout} />
+        <AdminDashboard
+          currentUser={currentUser}
+          initialPlatformConfig={platformConfig}
+          onLogout={handleLogout}
+        />
       ) : currentUser.role === 'driver' ? (
         <DriverView
           currentUser={currentUser}
@@ -123,6 +141,15 @@ export default function App() {
           onAppendMessage={appendMessage}
           onRideUpsert={upsertRide}
           onLogout={handleLogout}
+        />
+      )}
+
+      <CookieBanner siteName={platformConfig.site_name} />
+
+      {showPermsModal && (
+        <PermissionsPromptModal
+          siteName={platformConfig.site_name}
+          onClose={() => setShowPermsModal(false)}
         />
       )}
     </>

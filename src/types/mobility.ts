@@ -38,6 +38,14 @@ export interface PlatformConfig {
   support_whatsapp: string;
   commission_percent: number;
   maintenance_mode: boolean;
+  app_logo_url?: string | null;
+  vehicle_img_moto?: string | null;
+  vehicle_img_pop?: string | null;
+  vehicle_img_delivery_moto?: string | null;
+  vehicle_img_delivery_car?: string | null;
+  sound_offer_url?: string | null;
+  sound_accepted_url?: string | null;
+  sound_arrived_url?: string | null;
 }
 
 export interface PlatformEvent {
@@ -103,6 +111,8 @@ export interface UserProfile {
   rating_avg: number;
   rating_count: number;
   wallet_balance: number;
+  pending_debt_amount?: number;
+  pending_debt_note?: string | null;
   is_anonymized?: boolean;
   created_at: string;
   driver?: DriverDetails | null;
@@ -137,6 +147,9 @@ export interface Ride {
   negotiated_fare?: number | null;
   final_fare: number | null;
   pin_code: string;
+  require_pin?: boolean;
+  delivery_photo_url?: string | null;
+  pending_debt_included?: number;
   delivery_notes?: string | null;
   dispute_reason?: string | null;
   pix_declared_at?: string | null;
@@ -174,4 +187,19 @@ export interface GeoPoint {
   lat: number;
   lng: number;
   address: string;
+}
+
+export interface UserPreferences {
+  voice_enabled: boolean;
+  sounds_enabled: boolean;
+  notifications_enabled: boolean;
+}
+
+export type PermissionGrantState = 'granted' | 'denied' | 'prompt' | 'unknown';
+
+export interface DevicePermissionsState {
+  notifications: PermissionGrantState;
+  location: PermissionGrantState;
+  camera: PermissionGrantState;
+  photos: PermissionGrantState;
 }

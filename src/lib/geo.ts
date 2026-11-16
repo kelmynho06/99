@@ -113,73 +113,233 @@ export function formatShortAddress(item: NominatimResult, typedQuery?: string): 
   return item.display_name.split(',').slice(0, 4).join(', ').trim();
 }
 
+interface PhotonFeature {
+  properties?: {
+    osm_key?: string;
+    osm_value?: string;
+    type?: string;
+    name?: string;
+    street?: string;
+    housenumber?: string;
+    district?: string;
+    locality?: string;
+    city?: string;
+    county?: string;
+    state?: string;
+    countrycode?: string;
+  };
+  geometry?: {
+    coordinates?: [number, number];
+  };
+}
+
+function classifyPhotonType(props: NonNullable<PhotonFeature['properties']>): string {
+  const key = (props.osm_key || '').toLowerCase();
+  const val = (props.osm_value || '').toLowerCase();
+  if (key === 'amenity' || val.includes('hospital') || val.includes('clinic')) {
+    return val.includes('hospital') || val.includes('clinic') ? 'Saúde' : 'Ponto comercial';
+  }
+  if (key === 'shop' || val.includes('mall') || val.includes('supermarket')) return 'Comércio';
+  if (key === 'leisure' || val.includes('park') || val.includes('square')) return 'Parque / Praça';
+  if (key === 'tourism' || key === 'historic') return 'Referência';
+  if (props.housenumber) return 'Endereço exato';
+  if (key === 'highway' || props.type === 'street') return 'Rua / Av.';
+  return 'Local';
+}
+
+function formatPhotonAddress(
+  props: NonNullable<PhotonFeature['properties']>,
+  typedQuery?: string
+): string {
+  const name = (props.name || '').trim();
+  const street = (props.street || '').trim();
+  const typedNum = typedQuery ? extractTypedHouseNumber(typedQuery) : null;
+  const houseNumber = props.housenumber || (street || name ? typedNum : null);
+  const district = (props.district || props.locality || '').trim();
+  const city = (props.city || props.county || '').trim();
+  const state = (props.state || '').trim();
+
+  const parts: string[] = [];
+  if (name && street && name.toLowerCase() !== street.toLowerCase()) {
+    parts.push(name);
+    parts.push(houseNumber ? `${street}, ${houseNumber}` : street);
+  } else if (street) {
+    parts.push(houseNumber ? `${street}, ${houseNumber}` : street);
+  } else if (name) {
+    parts.push(houseNumber && !name.includes(houseNumber) ? `${name}, ${houseNumber}` : name);
+  }
+  if (district && !parts.some((p) => p.toLowerCase() === district.toLowerCase())) {
+    parts.push(district);
+  }
+  if (city) {
+    parts.push(state ? `${city} - ${state}` : city);
+  }
+  return parts.join(' · ') || 'Local selecionado';
+}
+
 export async function searchAddresses(
   query: string,
   nearLat?: number,
-  nearLng?: number
+  nearLng?: number,
+  signal?: AbortSignal
 ): Promise<AddressSuggestion[]> {
   const clean = query.trim();
-  if (clean.length < 3) return [];
+  if (clean.length < 2) return [];
 
-  const params = new URLSearchParams({
-    q: clean,
-    format: 'jsonv2',
-    addressdetails: '1',
-    namedetails: '1',
-    extratags: '1',
-    limit: '8',
-    countrycodes: 'br',
-    'accept-language': 'pt-BR',
-  });
+  const hasLocalCoords =
+    typeof nearLat === 'number' &&
+    typeof nearLng === 'number' &&
+    Number.isFinite(nearLat) &&
+    Number.isFinite(nearLng);
 
-  if (typeof nearLat === 'number' && typeof nearLng === 'number') {
-    const viewbox = `${nearLng - 0.65},${nearLat + 0.65},${nearLng + 0.65},${nearLat - 0.65}`;
-    params.set('viewbox', viewbox);
-    params.set('bounded', '0');
-  }
+  const MAX_LOCAL_RADIUS_KM = 85;
+  const results: AddressSuggestion[] = [];
+  const seen = new Set<string>();
 
+  // 1. Ultra-fast Photon search constrained to local GPS bbox
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: {
-        Accept: 'application/json',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-      },
+    const params = new URLSearchParams({
+      q: clean,
+      limit: '12',
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as NominatimResult[];
-
-    const seen = new Set<string>();
-    const results: AddressSuggestion[] = [];
-    for (const item of data) {
-      const formatted = formatShortAddress(item, clean);
-      const lat = parseFloat(item.lat);
-      const lng = parseFloat(item.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-      const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-
-      const city =
-        item.address?.city ||
-        item.address?.town ||
-        item.address?.municipality ||
-        item.address?.village ||
-        '';
-      const hood = item.address?.neighbourhood || item.address?.suburb || '';
-      const subtitle = [hood, city, item.address?.state].filter(Boolean).join(' · ') || item.display_name;
-
-      results.push({
-        address: formatted,
-        subtitle,
-        categoryLabel: classifyNominatimType(item),
-        lat,
-        lng,
-      });
+    if (hasLocalCoords) {
+      params.set('lat', String(nearLat));
+      params.set('lon', String(nearLng));
+      params.set('location_bias_scale', '0.1');
+      // ~90km x 90km bounding box centered on user's current GPS
+      const delta = 0.45;
+      params.set(
+        'bbox',
+        `${nearLng - delta},${nearLat - delta},${nearLng + delta},${nearLat + delta}`
+      );
     }
-    return results;
-  } catch {
-    return [];
+
+    const res = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
+      signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as { features?: PhotonFeature[] };
+      for (const feat of json.features || []) {
+        const props = feat.properties;
+        const coords = feat.geometry?.coordinates;
+        if (!props || !coords || coords.length < 2) continue;
+        if (props.countrycode && props.countrycode.toUpperCase() !== 'BR') continue;
+
+        const lng = Number(coords[0]);
+        const lat = Number(coords[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+        const distKm = hasLocalCoords ? haversineKm(nearLat, nearLng, lat, lng) : 0;
+        if (hasLocalCoords && distKm > MAX_LOCAL_RADIUS_KM) continue;
+
+        const formatted = formatPhotonAddress(props, clean);
+        const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+
+        const city = (props.city || props.county || '').trim();
+        const district = (props.district || props.locality || '').trim();
+        const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
+        const subtitle = [district, city, props.state, distTag].filter(Boolean).join(' · ');
+
+        results.push({
+          address: formatted,
+          subtitle: subtitle || formatted,
+          categoryLabel: classifyPhotonType(props),
+          lat,
+          lng,
+        });
+      }
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return [];
   }
+
+  // 2. Bounded local Nominatim supplement only if Photon local bbox returned < 2 matches
+  if (results.length < 2 && clean.length >= 3) {
+    try {
+      const params = new URLSearchParams({
+        q: clean,
+        format: 'jsonv2',
+        addressdetails: '1',
+        namedetails: '1',
+        extratags: '1',
+        limit: '6',
+        countrycodes: 'br',
+        'accept-language': 'pt-BR',
+      });
+
+      if (hasLocalCoords) {
+        const delta = 0.45;
+        params.set(
+          'viewbox',
+          `${nearLng - delta},${nearLat + delta},${nearLng + delta},${nearLat - delta}`
+        );
+        params.set('bounded', '1');
+      }
+
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+        {
+          signal,
+          headers: {
+            Accept: 'application/json',
+            'Accept-Language': 'pt-BR,pt;q=0.9',
+          },
+        }
+      );
+
+      if (res.ok) {
+        const data = (await res.json()) as NominatimResult[];
+        for (const item of data) {
+          const lat = parseFloat(item.lat);
+          const lng = parseFloat(item.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          const distKm = hasLocalCoords ? haversineKm(nearLat, nearLng, lat, lng) : 0;
+          if (hasLocalCoords && distKm > MAX_LOCAL_RADIUS_KM) continue;
+
+          const formatted = formatShortAddress(item, clean);
+          const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+
+          const city =
+            item.address?.city ||
+            item.address?.town ||
+            item.address?.municipality ||
+            item.address?.village ||
+            '';
+          const hood = item.address?.neighbourhood || item.address?.suburb || '';
+          const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
+          const subtitle =
+            [hood, city, item.address?.state, distTag].filter(Boolean).join(' · ') ||
+            item.display_name;
+
+          results.push({
+            address: formatted,
+            subtitle,
+            categoryLabel: classifyNominatimType(item),
+            lat,
+            lng,
+          });
+        }
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return [];
+    }
+  }
+
+  if (hasLocalCoords) {
+    results.sort(
+      (a, b) =>
+        haversineKm(nearLat, nearLng, a.lat, a.lng) -
+        haversineKm(nearLat, nearLng, b.lat, b.lng)
+    );
+  }
+
+  return results.slice(0, 8);
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

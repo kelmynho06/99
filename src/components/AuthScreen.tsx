@@ -16,19 +16,27 @@ import {
   Upload,
   User,
 } from 'lucide-react';
+import { resolveBrandLogo } from '../lib/brandAssets';
 import {
   compressImageFileToDataUrl,
   loginUser,
   registerUser,
 } from '../lib/mobilityApi';
-import type { UserProfile } from '../types/mobility';
+import type { PlatformConfig, UserProfile } from '../types/mobility';
+import { LegalDocsModal, type LegalDocTab } from './LegalDocsModal';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface AuthScreenProps {
   onAuthenticated: (user: UserProfile) => void;
+  platformConfig?: PlatformConfig;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  onAuthenticated,
+  platformConfig,
+}) => {
+  const siteName = platformConfig?.site_name || 'Velo99';
+  const brandLogoUrl = resolveBrandLogo(platformConfig);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [accountGoal, setAccountGoal] = useState<'passenger' | 'driver'>('passenger');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,6 +60,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const [pixKey, setPixKey] = useState('');
   const [cnhPreview, setCnhPreview] = useState<string>('');
   const [crlvPreview, setCrlvPreview] = useState<string>('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<LegalDocTab | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +101,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
     e.preventDefault();
     setError(null);
     setInfoNotice(null);
+
+    if (!acceptedTerms) {
+      setError(
+        'Leia e aceite os Termos de Uso, Segurança e Política de Privacidade para criar sua conta.'
+      );
+      return;
+    }
 
     if (accountGoal === 'driver' && (!cnhPreview || !crlvPreview)) {
       setError('Envie as fotos da sua CNH e do documento do veículo (CRLV).');
@@ -145,11 +162,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
         <div>
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100] font-display text-2xl font-extrabold tracking-tight shadow-md">
-                99
-              </div>
+              <img
+                src={brandLogoUrl}
+                alt={siteName}
+                className="h-12 w-12 rounded-2xl object-cover shadow-md border border-neutral-950/15"
+              />
               <span className="font-display text-2xl font-extrabold tracking-tight text-neutral-950">
-                Velo99
+                {siteName}
               </span>
             </div>
             <PWAInstallButton />
@@ -185,7 +204,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
         </div>
 
         <div className="mt-6 hidden lg:block text-xs font-medium text-neutral-900/70">
-          Velo99 Mobilidade · Web App, PWA e Android Capacitor
+          {siteName} Mobilidade · Web App, PWA e Android Capacitor
         </div>
       </div>
 
@@ -566,6 +585,54 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                 </div>
               )}
 
+              {/* Terms, Security & Privacy Acceptance Box */}
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-neutral-300 accent-neutral-950"
+                  />
+                  <span className="text-xs text-neutral-700 leading-relaxed">
+                    <strong>Li e aceito</strong> os{' '}
+                    <button
+                      type="button"
+                      onClick={() => setLegalModalTab('terms')}
+                      className="font-extrabold text-neutral-950 underline"
+                    >
+                      Termos de Uso
+                    </button>
+                    ,{' '}
+                    <button
+                      type="button"
+                      onClick={() => setLegalModalTab('security')}
+                      className="font-extrabold text-neutral-950 underline"
+                    >
+                      Termo de Segurança e PIN
+                    </button>{' '}
+                    e a{' '}
+                    <button
+                      type="button"
+                      onClick={() => setLegalModalTab('privacy')}
+                      className="font-extrabold text-neutral-950 underline"
+                    >
+                      Política de Privacidade (LGPD)
+                    </button>
+                    .
+                  </span>
+                </label>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setLegalModalTab('terms')}
+                    className="text-[11px] font-extrabold text-neutral-950 underline"
+                  >
+                    Abrir documento completo e aceitar
+                  </button>
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
@@ -581,6 +648,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
           )}
         </div>
       </div>
+
+      {legalModalTab && (
+        <LegalDocsModal
+          initialTab={legalModalTab}
+          siteName={siteName}
+          requireAcceptanceButton={true}
+          onAcceptAll={() => setAcceptedTerms(true)}
+          onClose={() => setLegalModalTab(null)}
+        />
+      )}
     </div>
   );
 };

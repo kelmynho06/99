@@ -2,16 +2,21 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   Bike,
+  Camera,
   Car,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
   Database,
   DollarSign,
   Eye,
+  FileText,
+  Image as ImageIcon,
   LogOut,
   MapPin,
   MessageSquare,
+  Music,
   Package,
   Plus,
   Power,
@@ -25,11 +30,15 @@ import {
   Sparkles,
   Trash2,
   Users,
+  Volume2,
   Wallet,
   X,
 } from 'lucide-react';
+import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import {
+  adminAssignClientDebt,
+  adminConfirmPixRide,
   adminCreatePlatformEvent,
   adminDeletePlatformEvent,
   adminDeleteUserAccount,
@@ -46,7 +55,9 @@ import {
   fetchAdminOverview,
   fetchPlatformEvents,
   resolveDocumentDisplayUrl,
+  uploadPlatformAssetFile,
 } from '../lib/mobilityApi';
+import { playSoundCue, syncPlatformSounds } from '../lib/sound';
 import { supabase } from '../lib/supabase';
 import type {
   PlatformConfig,
@@ -57,11 +68,13 @@ import type {
   WalletTransaction,
 } from '../types/mobility';
 import { DirectChatModal } from './DirectChatModal';
+import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
 import migrationSqlRaw from '../../supabase/migration_update.sql?raw';
 
 interface AdminDashboardProps {
   currentUser: UserProfile;
+  initialPlatformConfig?: PlatformConfig;
   onLogout: () => void;
 }
 
@@ -76,13 +89,19 @@ type AdminTab =
   | 'pricing'
   | 'infra';
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onLogout }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  currentUser,
+  initialPlatformConfig,
+  onLogout,
+}) => {
   const [tab, setTab] = useState<AdminTab>('livemap');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(DEFAULT_PLATFORM_CONFIG);
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(
+    initialPlatformConfig ?? DEFAULT_PLATFORM_CONFIG
+  );
   const [platformEvents, setPlatformEvents] = useState<PlatformEvent[]>([]);
 
   const [migrationSql] = useState<string>(migrationSqlRaw);
@@ -100,6 +119,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
   const [payoutModalDriver, setPayoutModalDriver] = useState<UserProfile | null>(null);
   const [payoutAmount, setPayoutAmount] = useState<string>('');
   const [payoutNote, setPayoutNote] = useState<string>('');
+
+  const [confirmingPixRideId, setConfirmingPixRideId] = useState<string | null>(null);
+  const [debtModalClient, setDebtModalClient] = useState<UserProfile | null>(null);
+  const [debtAmountInput, setDebtAmountInput] = useState<string>('');
+  const [debtNoteInput, setDebtNoteInput] = useState<string>('Corrida não paga');
+  const [savingDebt, setSavingDebt] = useState(false);
+  const [inspectPhotoUrl, setInspectPhotoUrl] = useState<string | null>(null);
+  const [showLegalDocs, setShowLegalDocs] = useState(false);
+  const [uploadingAssetKind, setUploadingAssetKind] = useState<string | null>(null);
 
   const [chatTargetUser, setChatTargetUser] = useState<UserProfile | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
@@ -126,6 +154,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
     try {
       const [data, events] = await Promise.all([fetchAdminOverview(), fetchPlatformEvents()]);
       setPlatformConfig(data.platformConfig);
+      syncPlatformSounds(data.platformConfig);
       setUsers(data.users);
       setRides(data.rides);
       setPricing(data.pricing);
@@ -255,6 +284,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
     [deliverers, delivererFilter]
   );
 
+  const awaitingPixRides = useMemo(
+    () =>
+      rides.filter(
+        (r) =>
+          r.status === 'completed' &&
+          r.payment_status === 'pending' &&
+          (r.payment_method === 'pix' || Boolean(r.pix_declared_at))
+      ),
+    [rides]
+  );
+
   const filteredRides = useMemo(() => {
     if (rideFilter === 'active') {
       return rides.filter((r) =>
@@ -320,25 +360,129 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
     setSavingPlatform(true);
     try {
       await adminSavePlatformConfig(platformConfig);
-      showToast('Conta Pix Oficial e Cidade salvos!');
+      syncPlatformSounds(platformConfig);
+      showToast('Configurações, Marca, Pix Oficial e Sons salvos!');
     } catch (err) {
       showToast(
         err instanceof Error
           ? err.message
-          : 'Erro ao salvar Pix Oficial. Verifique se o SQL incremental foi aplicado.'
+          : 'Erro ao salvar configurações. Verifique se o SQL incremental foi aplicado.'
       );
     } finally {
       setSavingPlatform(false);
     }
   };
 
-  const handleSettleDispute = async (ride: Ride) => {
+  const handleConfirmPixRide = async (ride: Ride) => {
+    setConfirmingPixRideId(ride.id);
     try {
-      await adminSettleDispute(ride);
+      await adminConfirmPixRide(ride);
       await loadOverview();
-      showToast('Disputa assumida e valor creditado ao motorista!');
+      showToast(
+        `Pix da corrida #${ride.id.slice(-4)} confirmado! Motorista liberado e saldo creditado.`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao confirmar Pix recebido.');
+    } finally {
+      setConfirmingPixRideId(null);
+    }
+  };
+
+  const handleSettleDispute = async (ride: Ride, chargeClientAsUnpaid = false) => {
+    try {
+      await adminSettleDispute(ride, chargeClientAsUnpaid);
+      await loadOverview();
+      showToast(
+        chargeClientAsUnpaid
+          ? 'Motorista quitado e cobrança "Corrida não paga" atribuída ao cliente!'
+          : 'Disputa assumida e valor creditado ao motorista!'
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao quitar disputa.');
+    }
+  };
+
+  const handleSaveClientDebt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!debtModalClient) return;
+    setSavingDebt(true);
+    try {
+      const numeric = parseFloat(debtAmountInput.replace(',', '.')) || 0;
+      await adminAssignClientDebt(debtModalClient.id, numeric, debtNoteInput);
+      setDebtModalClient(null);
+      await loadOverview();
+      showToast(
+        numeric > 0
+          ? `Cobrança de ${formatBRL(numeric)} atribuída a ${debtModalClient.full_name}!`
+          : `Dívida de ${debtModalClient.full_name} zerada.`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao salvar cobrança do cliente.');
+    } finally {
+      setSavingDebt(false);
+    }
+  };
+
+  const handleUploadPlatformAsset = async (
+    file: File | undefined,
+    kind:
+      | 'logo'
+      | 'moto'
+      | 'pop'
+      | 'delivery_moto'
+      | 'delivery_car'
+      | 'sound_offer'
+      | 'sound_accepted'
+      | 'sound_arrived'
+  ) => {
+    if (!file) return;
+    setUploadingAssetKind(kind);
+    try {
+      const uploadedUrl = await uploadPlatformAssetFile(file, kind);
+      const fieldMap: Record<typeof kind, keyof PlatformConfig> = {
+        logo: 'app_logo_url',
+        moto: 'vehicle_img_moto',
+        pop: 'vehicle_img_pop',
+        delivery_moto: 'vehicle_img_delivery_moto',
+        delivery_car: 'vehicle_img_delivery_car',
+        sound_offer: 'sound_offer_url',
+        sound_accepted: 'sound_accepted_url',
+        sound_arrived: 'sound_arrived_url',
+      };
+      const updatedCfg: PlatformConfig = {
+        ...platformConfig,
+        [fieldMap[kind]]: uploadedUrl,
+      };
+      setPlatformConfig(updatedCfg);
+      syncPlatformSounds(updatedCfg);
+      await adminSavePlatformConfig(updatedCfg);
+      showToast('Mídia atualizada e salva com sucesso!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao enviar arquivo.');
+    } finally {
+      setUploadingAssetKind(null);
+    }
+  };
+
+  const handleResetPlatformAsset = async (
+    field:
+      | 'app_logo_url'
+      | 'vehicle_img_moto'
+      | 'vehicle_img_pop'
+      | 'vehicle_img_delivery_moto'
+      | 'vehicle_img_delivery_car'
+      | 'sound_offer_url'
+      | 'sound_accepted_url'
+      | 'sound_arrived_url'
+  ) => {
+    const updatedCfg: PlatformConfig = { ...platformConfig, [field]: null };
+    setPlatformConfig(updatedCfg);
+    syncPlatformSounds(updatedCfg);
+    try {
+      await adminSavePlatformConfig(updatedCfg);
+      showToast('Restaurado para o padrão original!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao restaurar padrão.');
     }
   };
 
@@ -648,12 +792,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
       <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white px-4 sm:px-8 py-3.5">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFD100] font-display text-lg font-extrabold text-neutral-950">
-              99
-            </div>
+            <img
+              src={resolveBrandLogo(platformConfig)}
+              alt={platformConfig.site_name || 'Velo99'}
+              className="h-10 w-10 rounded-xl object-cover border border-neutral-200 shadow-xs"
+            />
             <div>
               <h1 className="font-display text-base sm:text-lg font-extrabold text-neutral-950 leading-tight">
-                Painel Super Admin
+                {platformConfig.site_name || 'Velo99'} · Painel Super Admin
               </h1>
               <p className="text-xs text-neutral-500">
                 {platformConfig.platform_city} · {currentUser.email}
@@ -734,6 +880,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
           </div>
         </div>
 
+        {awaitingPixRides.length > 0 && (
+          <div className="mb-5 rounded-3xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
+                <Clock className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-extrabold text-amber-950">
+                  {awaitingPixRides.length}{' '}
+                  {awaitingPixRides.length === 1
+                    ? 'corrida aguardando sua confirmação de Pix'
+                    : 'corridas aguardando sua confirmação de Pix'}
+                </p>
+                <p className="text-[11px] text-amber-800">
+                  Enquanto você não confirmar o recebimento do Pix, o motorista permanece bloqueado
+                  na tela de finalização.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTab('payments')}
+              className="min-h-[42px] shrink-0 rounded-xl bg-neutral-950 px-4 text-xs font-extrabold text-[#FFD100]"
+            >
+              Conferir & Confirmar Pix
+            </button>
+          </div>
+        )}
+
         {/* Separated Admin Management Navigation */}
         <nav className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           {[
@@ -764,7 +939,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
             },
             {
               id: 'payments' as AdminTab,
-              label: 'Pagamentos & Pix Central',
+              label: `Pagamentos & Pix (${awaitingPixRides.length})`,
               icon: Wallet,
             },
             {
@@ -774,7 +949,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
             },
             {
               id: 'pricing' as AdminTab,
-              label: 'Tarifas & Site',
+              label: 'Tarifas, Marca & Sons',
               icon: Settings,
             },
             {
@@ -966,6 +1141,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                       <th className="px-4 py-3 font-bold">E-mail</th>
                       <th className="px-4 py-3 font-bold">Nota</th>
                       <th className="px-4 py-3 font-bold">Corridas</th>
+                      <th className="px-4 py-3 font-bold">Pendência</th>
                       <th className="px-4 py-3 font-bold">Status</th>
                       <th className="px-4 py-3 font-bold text-right">Ações</th>
                     </tr>
@@ -974,6 +1150,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                     {clients.map((c) => {
                       const clientRides = rides.filter((r) => r.passenger_id === c.id);
                       const isDeleting = confirmDeleteUserId === c.id;
+                      const debtVal = Number(c.pending_debt_amount || 0);
                       return (
                         <tr key={c.id} className="hover:bg-neutral-50">
                           <td className="px-4 py-3">
@@ -999,6 +1176,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                           <td className="px-4 py-3 font-mono-num">{c.rating_avg.toFixed(2)}</td>
                           <td className="px-4 py-3 font-mono-num font-bold">
                             {clientRides.length}
+                          </td>
+                          <td className="px-4 py-3">
+                            {debtVal > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1 font-mono-num text-[11px] font-extrabold text-red-700">
+                                {formatBRL(debtVal)}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-neutral-400">
+                                Em dia
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 font-bold">
                             <span
@@ -1029,6 +1217,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                               </div>
                             ) : (
                               <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDebtModalClient(c);
+                                    setDebtAmountInput(
+                                      debtVal > 0 ? debtVal.toFixed(2) : ''
+                                    );
+                                    setDebtNoteInput(
+                                      c.pending_debt_note || 'Corrida não paga'
+                                    );
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-100"
+                                  title="Atribuir ou quitar dívida do cliente"
+                                >
+                                  <DollarSign className="h-3.5 w-3.5" />
+                                  Cobrança
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => setChatTargetUser(c)}
@@ -1158,26 +1363,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                           {formatBRL(r.final_fare ?? r.estimated_fare)}
                         </td>
                         <td className="px-4 py-3 font-bold">{r.status}</td>
-                        <td className="px-4 py-3 text-right space-x-1.5">
-                          {r.payment_status === 'disputed' && (
-                            <button
-                              type="button"
-                              onClick={() => handleSettleDispute(r)}
-                              className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
-                            >
-                              <ShieldAlert className="h-3.5 w-3.5" />
-                              Quitar Motorista
-                            </button>
-                          )}
-                          {['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status) && (
-                            <button
-                              type="button"
-                              onClick={() => handleCancelRide(r.id)}
-                              className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-700 hover:bg-red-50"
-                            >
-                              Cancelar
-                            </button>
-                          )}
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                            {r.delivery_photo_url && (
+                              <button
+                                type="button"
+                                onClick={() => setInspectPhotoUrl(r.delivery_photo_url || null)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-neutral-800 hover:bg-neutral-100"
+                                title="Ver foto de comprovante da entrega"
+                              >
+                                <Camera className="h-3.5 w-3.5" />
+                                Foto Entrega
+                              </button>
+                            )}
+                            {r.status === 'completed' &&
+                              r.payment_status === 'pending' &&
+                              (r.payment_method === 'pix' || Boolean(r.pix_declared_at)) && (
+                                <button
+                                  type="button"
+                                  disabled={confirmingPixRideId === r.id}
+                                  onClick={() => handleConfirmPixRide(r)}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-extrabold text-white"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  {confirmingPixRideId === r.id ? 'Confirmando...' : 'Confirmar Pix'}
+                                </button>
+                              )}
+                            {r.payment_status === 'disputed' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSettleDispute(r, false)}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                                >
+                                  <ShieldAlert className="h-3.5 w-3.5" />
+                                  Quitar Motorista
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSettleDispute(r, true)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-extrabold text-red-700 hover:bg-red-100"
+                                >
+                                  <DollarSign className="h-3.5 w-3.5" />
+                                  Quitar & Cobrar Cliente
+                                </button>
+                              </>
+                            )}
+                            {['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status) && (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelRide(r.id)}
+                                className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-700 hover:bg-red-50"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1191,6 +1432,78 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
         {/* TAB 5: PAGAMENTOS, CONTA PIX DO DONO & REPASSES POR MOTORISTA/ENTREGADOR */}
         {tab === 'payments' && (
           <section className="mt-5 space-y-6">
+            {/* Fila de Confirmação Pix Recebido (Libera o Motorista em Tempo Real) */}
+            <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display text-lg font-extrabold text-neutral-950 flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-amber-600" />
+                    Confirmações de Pix Pendentes ({awaitingPixRides.length})
+                  </h2>
+                  <p className="text-xs text-neutral-600">
+                    Assim que o Pix cair na sua conta oficial, clique em{' '}
+                    <strong>Confirmar Pix Recebido</strong>. O painel do motorista destrava
+                    instantaneamente e o valor entra no saldo dele para repasse.
+                  </p>
+                </div>
+              </div>
+
+              {awaitingPixRides.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-6 text-center text-xs font-semibold text-neutral-500">
+                  Nenhum pagamento Pix aguardando sua confirmação neste momento.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {awaitingPixRides.map((r) => (
+                    <div
+                      key={r.id}
+                      className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex flex-col justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono-num text-xs font-extrabold text-neutral-950">
+                            #{r.id.slice(-5)} · {r.category}
+                          </span>
+                          <span className="font-mono-num text-base font-extrabold text-emerald-700">
+                            {formatBRL(r.final_fare ?? r.estimated_fare)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-800">
+                          <strong>Cliente:</strong> {r.passenger?.full_name || 'Passageiro'} ·{' '}
+                          <strong>Motorista:</strong> {r.driver?.full_name || '—'}
+                        </p>
+                        <p className="text-[11px] text-neutral-600 truncate">
+                          {r.destination_address}
+                        </p>
+                        <p className="text-[11px] font-bold text-amber-800">
+                          {r.pix_declared_at
+                            ? `Cliente/Motorista informou envio em ${new Date(
+                                r.pix_declared_at
+                              ).toLocaleTimeString('pt-BR', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}`
+                            : 'Aguardando conferência do Pix pelo Admin'}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={confirmingPixRideId === r.id}
+                        onClick={() => handleConfirmPixRide(r)}
+                        className="min-h-[44px] w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-extrabold text-white shadow-sm disabled:opacity-60"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {confirmingPixRideId === r.id
+                          ? 'Confirmando no Supabase...'
+                          : 'Confirmar Pix Recebido & Liberar Motorista'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Official Owner Pix Configuration */}
               <form
@@ -1755,6 +2068,220 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                   {savingPlatform ? 'Salvando...' : 'Salvar Configurações do Site'}
                 </button>
               </form>
+
+              {/* Identidade Visual, Logo & Imagens dos Veículos */}
+              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950">
+                  <ImageIcon className="h-5 w-5 text-amber-600" />
+                  <span>Logo & Imagens dos Veículos (White-Label)</span>
+                </div>
+                <p className="text-xs text-neutral-600">
+                  Personalize o logotipo da plataforma e os ícones de Moto, Pop e Entregas exibidos
+                  para passageiros e motoristas.
+                </p>
+
+                <div className="space-y-3">
+                  {/* Logo */}
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={resolveBrandLogo(platformConfig)}
+                        alt="Logo do Site"
+                        className="h-12 w-12 rounded-xl object-cover border border-neutral-200 bg-white shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-neutral-950">Logo Principal</p>
+                        <p className="text-[11px] text-neutral-500">
+                          {platformConfig.app_logo_url ? 'Personalizada' : 'Padrão Velo'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <label className="cursor-pointer rounded-xl bg-neutral-950 px-3 py-2 text-[11px] font-bold text-[#FFD100]">
+                        {uploadingAssetKind === 'logo' ? 'Enviando...' : 'Trocar'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) =>
+                            handleUploadPlatformAsset(e.target.files?.[0], 'logo')
+                          }
+                        />
+                      </label>
+                      {platformConfig.app_logo_url && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetPlatformAsset('app_logo_url')}
+                          className="rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-[11px] font-bold text-neutral-700"
+                        >
+                          Padrão
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {(
+                    [
+                      {
+                        kind: 'moto' as const,
+                        field: 'vehicle_img_moto' as const,
+                        category: 'moto' as const,
+                        label: 'Moto Urbana',
+                      },
+                      {
+                        kind: 'pop' as const,
+                        field: 'vehicle_img_pop' as const,
+                        category: 'pop' as const,
+                        label: 'Carro Pop / Negocia',
+                      },
+                      {
+                        kind: 'delivery_moto' as const,
+                        field: 'vehicle_img_delivery_moto' as const,
+                        category: 'delivery_moto' as const,
+                        label: 'Entrega Moto',
+                      },
+                      {
+                        kind: 'delivery_car' as const,
+                        field: 'vehicle_img_delivery_car' as const,
+                        category: 'delivery_car' as const,
+                        label: 'Entrega Carro',
+                      },
+                    ] as const
+                  ).map((item) => (
+                    <div
+                      key={item.kind}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={resolveCategoryVehicleImage(item.category, platformConfig)}
+                          alt={item.label}
+                          className="h-11 w-14 rounded-xl object-cover border border-neutral-200 bg-white shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-neutral-950">{item.label}</p>
+                          <p className="text-[11px] text-neutral-500">
+                            {platformConfig[item.field] ? 'Imagem customizada' : 'Imagem padrão'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="cursor-pointer rounded-xl bg-neutral-950 px-3 py-2 text-[11px] font-bold text-[#FFD100]">
+                          {uploadingAssetKind === item.kind ? 'Enviando...' : 'Trocar'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleUploadPlatformAsset(e.target.files?.[0], item.kind)
+                            }
+                          />
+                        </label>
+                        {platformConfig[item.field] && (
+                          <button
+                            type="button"
+                            onClick={() => handleResetPlatformAsset(item.field)}
+                            className="rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-[11px] font-bold text-neutral-700"
+                          >
+                            Padrão
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Áudios & Toques de Notificação Personalizados */}
+              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950">
+                  <Music className="h-5 w-5 text-amber-600" />
+                  <span>Sons & Toques de Notificação (MP3/WAV/OGG)</span>
+                </div>
+                <p className="text-xs text-neutral-600">
+                  Envie áudios personalizados para toques de chamada de corrida, aceite e chegada do
+                  motorista.
+                </p>
+
+                <div className="space-y-2.5">
+                  {(
+                    [
+                      {
+                        kind: 'sound_offer' as const,
+                        field: 'sound_offer_url' as const,
+                        cue: 'offer' as const,
+                        label: 'Toque Nova Corrida (Motorista)',
+                      },
+                      {
+                        kind: 'sound_accepted' as const,
+                        field: 'sound_accepted_url' as const,
+                        cue: 'accepted' as const,
+                        label: 'Som Corrida Aceita',
+                      },
+                      {
+                        kind: 'sound_arrived' as const,
+                        field: 'sound_arrived_url' as const,
+                        cue: 'arrived' as const,
+                        label: 'Som Motorista Chegou',
+                      },
+                    ] as const
+                  ).map((snd) => (
+                    <div
+                      key={snd.kind}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-neutral-950">{snd.label}</p>
+                        <p className="text-[11px] text-neutral-500">
+                          {platformConfig[snd.field] ? 'Áudio personalizado ativo' : 'Áudio padrão'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            syncPlatformSounds(platformConfig);
+                            void playSoundCue(snd.cue);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-[11px] font-bold text-neutral-800"
+                        >
+                          <Volume2 className="h-3.5 w-3.5" />
+                          Testar
+                        </button>
+                        <label className="cursor-pointer rounded-xl bg-neutral-950 px-3 py-2 text-[11px] font-bold text-[#FFD100]">
+                          {uploadingAssetKind === snd.kind ? 'Enviando...' : 'Enviar Áudio'}
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleUploadPlatformAsset(e.target.files?.[0], snd.kind)
+                            }
+                          />
+                        </label>
+                        {platformConfig[snd.field] && (
+                          <button
+                            type="button"
+                            onClick={() => handleResetPlatformAsset(snd.field)}
+                            className="rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-[11px] font-bold text-neutral-700"
+                          >
+                            Padrão
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowLegalDocs(true)}
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 text-xs font-extrabold text-neutral-900 hover:bg-neutral-100"
+                >
+                  <FileText className="h-4 w-4 text-amber-600" />
+                  Visualizar Termos, Privacidade, Segurança & Cookies
+                </button>
+              </div>
             </div>
           </section>
         )}
@@ -1974,6 +2501,131 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
           }}
           currentUser={currentUser}
           onClose={() => setChatTargetUser(null)}
+        />
+      )}
+
+      {/* Client Debt / Non-payment Assignment Modal */}
+      {debtModalClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
+          <form
+            onSubmit={handleSaveClientDebt}
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                  Cobrança / Corrida não paga
+                </h3>
+                <p className="text-xs text-neutral-500">{debtModalClient.full_name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDebtModalClient(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+              O valor definido aqui será exibido como pendência para o cliente e somado
+              automaticamente na próxima corrida que ele solicitar (ou digite <strong>0</strong>{' '}
+              para limpar a dívida).
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                Valor da Pendência (R$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={debtAmountInput}
+                onChange={(e) => setDebtAmountInput(e.target.value)}
+                placeholder="0.00"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-base font-extrabold outline-none focus:border-neutral-950"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                Motivo / Descrição exibida ao cliente
+              </label>
+              <input
+                type="text"
+                value={debtNoteInput}
+                onChange={(e) => setDebtNoteInput(e.target.value)}
+                placeholder="Ex: Corrida não paga"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-neutral-950"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={savingDebt}
+                onClick={async () => {
+                  setDebtAmountInput('0');
+                  setSavingDebt(true);
+                  try {
+                    await adminAssignClientDebt(debtModalClient.id, 0);
+                    setDebtModalClient(null);
+                    await loadOverview();
+                    showToast(`Dívida de ${debtModalClient.full_name} zerada.`);
+                  } catch (err) {
+                    showToast(err instanceof Error ? err.message : 'Erro ao zerar dívida.');
+                  } finally {
+                    setSavingDebt(false);
+                  }
+                }}
+                className="min-h-[48px] flex-1 rounded-2xl border border-neutral-200 bg-neutral-50 text-xs font-extrabold text-neutral-800"
+              >
+                Zerar Dívida
+              </button>
+              <button
+                type="submit"
+                disabled={savingDebt}
+                className="min-h-[48px] flex-1 rounded-2xl bg-red-600 text-xs font-extrabold text-white"
+              >
+                {savingDebt ? 'Salvando...' : 'Salvar Cobrança'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Delivery Photo Inspection Modal */}
+      {inspectPhotoUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
+              <h3 className="font-display text-base font-extrabold text-neutral-950">
+                Foto de Comprovante da Entrega
+              </h3>
+              <button
+                type="button"
+                onClick={() => setInspectPhotoUrl(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <img
+              src={inspectPhotoUrl}
+              alt="Foto da entrega realizada"
+              referrerPolicy="no-referrer"
+              className="max-h-[70vh] w-full rounded-2xl object-contain bg-neutral-100 border border-neutral-200"
+            />
+          </div>
+        </div>
+      )}
+
+      {showLegalDocs && (
+        <LegalDocsModal
+          siteName={platformConfig.site_name}
+          onClose={() => setShowLegalDocs(false)}
         />
       )}
     </div>
