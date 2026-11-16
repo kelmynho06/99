@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { initLocalNotifications, triggerLocalNotification } from '../lib/capacitorDevice';
 import {
   DEFAULT_PLATFORM_CONFIG,
   DEFAULT_PRICING_LIST,
   fetchEnrichedRides,
   fetchOnlineDriversPublic,
   fetchPlatformConfig,
+  fetchPlatformEvents,
   fetchPricingList,
   fetchRideByIdEnriched,
   fetchRideMessages,
@@ -14,6 +16,7 @@ import {
 import { supabase } from '../lib/supabase';
 import type {
   PlatformConfig,
+  PlatformEvent,
   PricingSetting,
   Ride,
   RideMessage,
@@ -25,6 +28,7 @@ export function useRealtimeMobility(
   onCurrentUserUpdated: (user: UserProfile) => void
 ) {
   const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(DEFAULT_PLATFORM_CONFIG);
+  const [platformEvents, setPlatformEvents] = useState<PlatformEvent[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [onlineDrivers, setOnlineDrivers] = useState<UserProfile[]>([]);
@@ -32,6 +36,9 @@ export function useRealtimeMobility(
 
   const userRef = useRef<UserProfile | null>(currentUser);
   userRef.current = currentUser;
+
+  const ridesRef = useRef<Ride[]>([]);
+  ridesRef.current = rides;
 
   const upsertRide = useCallback((ride: Ride) => {
     setRides((prev) => {
@@ -65,13 +72,15 @@ export function useRealtimeMobility(
 
   const refreshAll = useCallback(async () => {
     try {
-      const [cfg, pr, rd, drvs] = await Promise.all([
+      const [cfg, evs, pr, rd, drvs] = await Promise.all([
         fetchPlatformConfig(),
+        fetchPlatformEvents(),
         fetchPricingList(),
         userRef.current ? fetchEnrichedRides() : Promise.resolve([]),
         fetchOnlineDriversPublic(),
       ]);
       setPlatformConfig(cfg);
+      setPlatformEvents(evs);
       setPricing(pr);
       if (userRef.current) setRides(rd);
       setOnlineDrivers(drvs);
@@ -79,6 +88,12 @@ export function useRealtimeMobility(
       // Ignore transient network hiccup
     }
   }, []);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      initLocalNotifications().catch(() => {});
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     let active = true;
@@ -89,7 +104,7 @@ export function useRealtimeMobility(
     };
     loadInitial();
 
-    // Realtime subscriptions via Supabase
+    // Realtime subscriptions via Supabase + Capacitor LocalNotifications
     const channel = supabase
       .channel('velo99-realtime-sync')
       .on(
@@ -97,10 +112,67 @@ export function useRealtimeMobility(
         { event: '*', schema: 'public', table: 'rides' },
         async (payload) => {
           if (!active) return;
-          const row = payload.new as { id?: string } | undefined;
+          const row = payload.new as {
+            id?: string;
+            status?: string;
+            passenger_id?: string;
+            driver_id?: string | null;
+            origin_address?: string;
+            destination_address?: string;
+          } | undefined;
+          const oldRow = payload.old as { status?: string } | undefined;
+
           if (row?.id) {
+            const prevLocal = ridesRef.current.find((r) => r.id === row.id);
+            const prevStatus = oldRow?.status ?? prevLocal?.status;
             const enriched = await fetchRideByIdEnriched(row.id);
-            if (enriched && active) upsertRide(enriched);
+            if (enriched && active) {
+              upsertRide(enriched);
+              const u = userRef.current;
+              if (u) {
+                const isDelivery =
+                  enriched.category === 'delivery_moto' || enriched.category === 'delivery_car';
+
+                // Driver / Motoboy online receives immediate local notification for new ride/delivery
+                if (
+                  u.role === 'driver' &&
+                  u.status === 'active' &&
+                  u.driver?.is_online &&
+                  payload.eventType === 'INSERT' &&
+                  enriched.status === 'searching'
+                ) {
+                  triggerLocalNotification({
+                    title: isDelivery ? 'Nova Entrega Disponível!' : 'Nova Corrida Disponível!',
+                    body: `${enriched.origin_address} → ${enriched.destination_address}`,
+                  });
+                }
+
+                // Passenger receives immediate local notification on status changes
+                if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
+                  if (enriched.status === 'accepted') {
+                    triggerLocalNotification({
+                      title: isDelivery ? 'Entregador aceitou seu pedido!' : 'Motorista a caminho!',
+                      body: `${enriched.driver?.full_name || 'Parceiro'} está indo até você.`,
+                    });
+                  } else if (enriched.status === 'arrived') {
+                    triggerLocalNotification({
+                      title: isDelivery ? 'Entregador chegou para a coleta!' : 'Seu motorista chegou!',
+                      body: `Informe o código PIN ${enriched.pin_code} ao encontrar.`,
+                    });
+                  } else if (enriched.status === 'in_progress') {
+                    triggerLocalNotification({
+                      title: isDelivery ? 'Pacote em rota de entrega!' : 'Viagem iniciada!',
+                      body: `Destino: ${enriched.destination_address}`,
+                    });
+                  } else if (enriched.status === 'completed') {
+                    triggerLocalNotification({
+                      title: isDelivery ? 'Entrega concluída!' : 'Você chegou ao destino!',
+                      body: 'Avalie a experiência no aplicativo.',
+                    });
+                  }
+                }
+              }
+            }
           } else {
             const list = await fetchEnrichedRides();
             if (active) setRides(list);
@@ -174,6 +246,27 @@ export function useRealtimeMobility(
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'platform_events' },
+        async (payload) => {
+          if (!active) return;
+          const evs = await fetchPlatformEvents();
+          if (active) setPlatformEvents(evs);
+
+          const inserted = payload.new as { title?: string; description?: string; active?: boolean } | undefined;
+          if (
+            payload.eventType === 'INSERT' &&
+            inserted?.active &&
+            userRef.current?.role === 'driver'
+          ) {
+            triggerLocalNotification({
+              title: `Novo Evento: ${inserted.title || 'Campanha Ativa'}`,
+              body: inserted.description || 'Confira os bônus disponíveis no seu painel.',
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'pricing_settings' },
         async () => {
           if (!active) return;
@@ -188,13 +281,39 @@ export function useRealtimeMobility(
           if (!active) return;
           const m = payload.new as Record<string, unknown>;
           if (m?.id && m?.ride_id) {
-            appendMessage({
+            const msgObj: RideMessage = {
               id: String(m.id),
               ride_id: String(m.ride_id),
               sender_id: String(m.sender_id),
               sender_name: String(m.sender_name),
               content: String(m.content),
               created_at: String(m.created_at),
+            };
+            appendMessage(msgObj);
+            if (userRef.current && msgObj.sender_id !== userRef.current.id) {
+              triggerLocalNotification({
+                title: `Mensagem de ${msgObj.sender_name}`,
+                body: msgObj.content,
+              });
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'direct_messages' },
+        (payload) => {
+          if (!active) return;
+          const m = payload.new as Record<string, unknown>;
+          const u = userRef.current;
+          if (!u || !m?.sender_id || String(m.sender_id) === u.id) return;
+          if (u.role === 'admin' || String(m.user_id) === u.id) {
+            triggerLocalNotification({
+              title:
+                String(m.sender_role) === 'admin'
+                  ? 'Mensagem da Administração'
+                  : `Suporte: ${String(m.sender_name || 'Usuário')}`,
+              body: String(m.content || ''),
             });
           }
         }
@@ -225,6 +344,7 @@ export function useRealtimeMobility(
 
   return {
     platformConfig,
+    platformEvents,
     rides,
     pricing,
     onlineDrivers,

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
-  Banknote,
   Bike,
   Car,
   Check,
@@ -11,38 +10,54 @@ import {
   DollarSign,
   Eye,
   LogOut,
+  MapPin,
+  MessageSquare,
   Package,
+  Plus,
+  Power,
   QrCode,
+  Radio,
   RefreshCw,
+  Settings,
   ShieldAlert,
   ShieldCheck,
   Smartphone,
-  UserCheck,
+  Sparkles,
+  Trash2,
   Users,
   Wallet,
   X,
 } from 'lucide-react';
 import { formatBRL } from '../lib/geo';
 import {
+  adminCreatePlatformEvent,
+  adminDeletePlatformEvent,
+  adminDeleteUserAccount,
   adminPayDriverPix,
   adminReviewDriver,
   adminSavePlatformConfig,
   adminSavePricing,
   adminSettleDispute,
+  adminTogglePlatformEvent,
   adminUpdateUserStatus,
   cancelRide,
   DEFAULT_PLATFORM_CONFIG,
   DEFAULT_PRICING_LIST,
   fetchAdminOverview,
+  fetchPlatformEvents,
   resolveDocumentDisplayUrl,
 } from '../lib/mobilityApi';
+import { supabase } from '../lib/supabase';
 import type {
   PlatformConfig,
+  PlatformEvent,
   PricingSetting,
   Ride,
   UserProfile,
   WalletTransaction,
 } from '../types/mobility';
+import { DirectChatModal } from './DirectChatModal';
+import { LiveMap } from './LiveMap';
 import migrationSqlRaw from '../../supabase/migration_update.sql?raw';
 
 interface AdminDashboardProps {
@@ -51,23 +66,26 @@ interface AdminDashboardProps {
 }
 
 type AdminTab =
+  | 'livemap'
   | 'drivers'
   | 'deliverers'
   | 'clients'
   | 'rides'
   | 'payments'
+  | 'events'
   | 'pricing'
   | 'infra';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onLogout }) => {
-  const [tab, setTab] = useState<AdminTab>('drivers');
+  const [tab, setTab] = useState<AdminTab>('livemap');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(DEFAULT_PLATFORM_CONFIG);
+  const [platformEvents, setPlatformEvents] = useState<PlatformEvent[]>([]);
 
-  const [migrationSql, setMigrationSql] = useState<string>(migrationSqlRaw);
+  const [migrationSql] = useState<string>(migrationSqlRaw);
   const [copiedSql, setCopiedSql] = useState(false);
 
   const [driverFilter, setDriverFilter] = useState<'all' | 'pending' | 'active' | 'rejected' | 'suspended'>('all');
@@ -83,6 +101,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
   const [payoutAmount, setPayoutAmount] = useState<string>('');
   const [payoutNote, setPayoutNote] = useState<string>('');
 
+  const [chatTargetUser, setChatTargetUser] = useState<UserProfile | null>(null);
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-23.55052, -46.633308]);
+
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDesc, setEventDesc] = useState('');
+  const [eventBonus, setEventBonus] = useState('15.00');
+  const [eventTargetRole, setEventTargetRole] = useState<PlatformEvent['target_role']>('all');
+  const [savingEvent, setSavingEvent] = useState(false);
+
   const [savingPricing, setSavingPricing] = useState(false);
   const [savingPlatform, setSavingPlatform] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
@@ -96,12 +124,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
   const loadOverview = useCallback(async () => {
     setLoadingData(true);
     try {
-      const data = await fetchAdminOverview();
+      const [data, events] = await Promise.all([fetchAdminOverview(), fetchPlatformEvents()]);
       setPlatformConfig(data.platformConfig);
       setUsers(data.users);
       setRides(data.rides);
       setPricing(data.pricing);
       setTransactions(data.transactions);
+      setPlatformEvents(events);
+
+      const firstOnlineWithGps = data.users.find(
+        (u) => u.role === 'driver' && u.driver?.is_online && u.driver.current_lat && u.driver.current_lng
+      );
+      if (firstOnlineWithGps?.driver?.current_lat && firstOnlineWithGps?.driver?.current_lng) {
+        setMapCenter([firstOnlineWithGps.driver.current_lat, firstOnlineWithGps.driver.current_lng]);
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao carregar dados do Supabase.');
     } finally {
@@ -111,6 +147,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
 
   useEffect(() => {
     loadOverview();
+
+    const channel = supabase
+      .channel('admin-live-overview')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'driver_profiles' },
+        () => {
+          loadOverview();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rides' },
+        () => {
+          loadOverview();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [loadOverview]);
 
   useEffect(() => {
@@ -136,6 +194,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
   const allDriversAndDeliverers = useMemo(
     () => users.filter((u) => u.role === 'driver'),
     [users]
+  );
+
+  const onlineDrivers = useMemo(
+    () => allDriversAndDeliverers.filter((d) => Boolean(d.driver?.is_online)),
+    [allDriversAndDeliverers]
+  );
+
+  const onlineDriversWithGps = useMemo(
+    () => onlineDrivers.filter((d) => Boolean(d.driver?.current_lat && d.driver?.current_lng)),
+    [onlineDrivers]
   );
 
   const clients = useMemo(
@@ -167,8 +235,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
       ).length,
       pendingApprovalsCount: allDriversAndDeliverers.filter((d) => d.status === 'pending').length,
       disputedCount: rides.filter((r) => r.payment_status === 'disputed').length,
+      onlineCount: onlineDrivers.length,
     };
-  }, [rides, allDriversAndDeliverers]);
+  }, [rides, allDriversAndDeliverers, onlineDrivers.length]);
 
   const filteredDrivers = useMemo(
     () =>
@@ -301,6 +370,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      await adminDeleteUserAccount(userId);
+      setConfirmDeleteUserId(null);
+      await loadOverview();
+      showToast('Usuário excluído da plataforma.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao excluir usuário.');
+    }
+  };
+
+  const handleCreateEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eventTitle.trim() || !eventDesc.trim()) return;
+    setSavingEvent(true);
+    try {
+      await adminCreatePlatformEvent({
+        title: eventTitle,
+        description: eventDesc,
+        bonus_amount: parseFloat(eventBonus.replace(',', '.')) || 0,
+        target_role: eventTargetRole,
+      });
+      setEventTitle('');
+      setEventDesc('');
+      setEventBonus('15.00');
+      await loadOverview();
+      showToast('Evento / Campanha publicado para os parceiros!');
+    } catch (err) {
+      showToast(
+        err instanceof Error
+          ? err.message
+          : 'Erro ao criar evento. Aplique o SQL incremental primeiro.'
+      );
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
+  const handleToggleEvent = async (ev: PlatformEvent) => {
+    try {
+      await adminTogglePlatformEvent(ev.id, !ev.active);
+      await loadOverview();
+      showToast(ev.active ? 'Evento pausado.' : 'Evento reativado!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar evento.');
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      await adminDeletePlatformEvent(eventId);
+      await loadOverview();
+      showToast('Evento removido.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao remover evento.');
+    }
+  };
+
   const copySql = async () => {
     if (!migrationSql) return;
     await navigator.clipboard.writeText(migrationSql);
@@ -350,6 +477,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {list.map((d) => {
             const drvRides = rides.filter((r) => r.driver_id === d.id && r.status === 'completed');
+            const isDeleting = confirmDeleteUserId === d.id;
             return (
               <div
                 key={d.id}
@@ -357,31 +485,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="font-display text-base font-extrabold text-neutral-950">
-                        {d.full_name}
-                      </h3>
-                      <p className="text-xs text-neutral-500">
-                        {d.phone} · {d.email}
-                      </p>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {d.avatar_url ? (
+                        <img
+                          src={d.avatar_url}
+                          alt={d.full_name}
+                          className="h-10 w-10 rounded-full object-cover border border-neutral-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-extrabold text-[#FFD100]">
+                          {d.full_name.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <h3 className="font-display text-base font-extrabold text-neutral-950 truncate">
+                          {d.full_name}
+                        </h3>
+                        <p className="text-xs text-neutral-500 truncate">
+                          {d.phone} · {d.email}
+                        </p>
+                      </div>
                     </div>
-                    <span
-                      className={`text-xs font-extrabold ${
-                        d.status === 'active'
-                          ? 'text-emerald-700'
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span
+                        className={`text-xs font-extrabold ${
+                          d.status === 'active'
+                            ? 'text-emerald-700'
+                            : d.status === 'pending'
+                            ? 'text-amber-600'
+                            : 'text-red-600'
+                        }`}
+                      >
+                        {d.status === 'active'
+                          ? 'Aprovado'
                           : d.status === 'pending'
-                          ? 'text-amber-600'
-                          : 'text-red-600'
-                      }`}
-                    >
-                      {d.status === 'active'
-                        ? 'Aprovado'
-                        : d.status === 'pending'
-                        ? 'Pendente'
-                        : d.status === 'rejected'
-                        ? 'Reprovado'
-                        : 'Suspenso'}
-                    </span>
+                          ? 'Pendente'
+                          : d.status === 'rejected'
+                          ? 'Reprovado'
+                          : 'Suspenso'}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold ${
+                          d.driver?.is_online ? 'text-emerald-600' : 'text-neutral-400'
+                        }`}
+                      >
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            d.driver?.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-300'
+                          }`}
+                        />
+                        {d.driver?.is_online ? 'Online agora' : 'Offline'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-3 text-xs text-neutral-700 space-y-1 border-t border-neutral-100 pt-3">
@@ -409,35 +564,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setInspectDriver(d)}
-                    className="min-h-[42px] flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-neutral-300 bg-neutral-50 px-3 text-xs font-bold text-neutral-900 hover:bg-neutral-100"
-                  >
-                    <Eye className="h-4 w-4" />
-                    Documentos
-                  </button>
-                  {d.status !== 'active' ? (
+                {isDeleting ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-red-700">
+                      Excluir conta?
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteUserId(null)}
+                        className="rounded-lg bg-white border border-neutral-200 px-2.5 py-1 text-[11px] font-bold text-neutral-700"
+                      >
+                        Não
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(d.id)}
+                        className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white"
+                      >
+                        Sim, Excluir
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2">
                     <button
                       type="button"
-                      onClick={() => handleReviewDriver(d.id, 'active')}
-                      className="min-h-[42px] flex items-center justify-center gap-1 rounded-xl bg-[#FFD100] px-4 text-xs font-extrabold text-neutral-950"
+                      onClick={() => setInspectDriver(d)}
+                      className="min-h-[40px] flex-1 flex items-center justify-center gap-1 rounded-xl border border-neutral-300 bg-neutral-50 px-2.5 text-xs font-bold text-neutral-900 hover:bg-neutral-100"
                     >
-                      <Check className="h-4 w-4" />
-                      Aprovar
+                      <Eye className="h-3.5 w-3.5" />
+                      Docs
                     </button>
-                  ) : (
                     <button
                       type="button"
-                      onClick={() => handleReviewDriver(d.id, 'suspended', 'Suspenso pelo Admin')}
-                      className="min-h-[42px] flex items-center justify-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700"
+                      onClick={() => setChatTargetUser(d)}
+                      className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl border border-neutral-300 bg-white px-2.5 text-xs font-bold text-neutral-900 hover:bg-neutral-100"
+                      title="Conversar com este usuário"
                     >
-                      <Ban className="h-3.5 w-3.5" />
-                      Suspender
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Chat
                     </button>
-                  )}
-                </div>
+                    {d.status !== 'active' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleReviewDriver(d.id, 'active')}
+                        className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Aprovar
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleReviewDriver(d.id, 'suspended', 'Bloqueado pelo Admin')}
+                        className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-800"
+                      >
+                        <Ban className="h-3.5 w-3.5" />
+                        Bloquear
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteUserId(d.id)}
+                      className="flex h-[40px] w-[40px] items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                      title="Excluir usuário"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -542,6 +738,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
         <nav className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
           {[
             {
+              id: 'livemap' as AdminTab,
+              label: `Mapa ao Vivo (${metrics.onlineCount} online)`,
+              icon: Radio,
+            },
+            {
               id: 'drivers' as AdminTab,
               label: `Motoristas (${passengerDrivers.length})`,
               icon: Car,
@@ -567,13 +768,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
               icon: Wallet,
             },
             {
+              id: 'events' as AdminTab,
+              label: `Eventos Motoboys (${platformEvents.filter((e) => e.active).length})`,
+              icon: Sparkles,
+            },
+            {
               id: 'pricing' as AdminTab,
-              label: 'Tarifas & Cidade',
-              icon: DollarSign,
+              label: 'Tarifas & Site',
+              icon: Settings,
             },
             {
               id: 'infra' as AdminTab,
-              label: 'SQL Atualização & APK',
+              label: 'SQL & APK',
               icon: Database,
             },
           ].map((item) => {
@@ -596,6 +802,126 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
             );
           })}
         </nav>
+
+        {/* TAB 0: MAPA AO VIVO & ONLINE */}
+        {tab === 'livemap' && (
+          <section className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <div className="lg:col-span-8 rounded-3xl border border-neutral-200 bg-white overflow-hidden shadow-sm">
+              <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
+                <div>
+                  <h2 className="font-display text-base font-extrabold text-neutral-950 flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Monitoramento GPS ao Vivo ({onlineDrivers.length} online)
+                  </h2>
+                  <p className="text-xs text-neutral-500">
+                    Total de cadastros: {users.length} usuários · Alterne entre modo Urbano e Satélite no mapa
+                  </p>
+                </div>
+              </div>
+              <div className="h-[420px] lg:h-[520px] w-full">
+                <LiveMap
+                  center={mapCenter}
+                  nearbyDrivers={onlineDriversWithGps}
+                  controlsTopClassName="top-4"
+                />
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 space-y-4">
+              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display text-base font-extrabold text-neutral-950">
+                    Quem está Online Agora
+                  </h3>
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700">
+                    {onlineDrivers.length} ativos
+                  </span>
+                </div>
+
+                {onlineDrivers.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-neutral-500">
+                    Nenhum motorista ou entregador online neste momento.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                    {onlineDrivers.map((d) => (
+                      <div
+                        key={d.id}
+                        className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-neutral-950 truncate flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                            {d.full_name}
+                          </p>
+                          <p className="text-[11px] text-neutral-600 truncate">
+                            {d.driver?.vehicle_type === 'delivery'
+                              ? 'Motoboy / Entrega'
+                              : d.driver?.vehicle_type === 'moto'
+                              ? 'Moto'
+                              : 'Carro'}{' '}
+                            · {d.driver?.vehicle_plate}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {d.driver?.current_lat && d.driver?.current_lng && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMapCenter([
+                                  d.driver!.current_lat!,
+                                  d.driver!.current_lng!,
+                                ])
+                              }
+                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-neutral-200 text-blue-600 hover:bg-blue-50"
+                              title="Focar no mapa"
+                            >
+                              <MapPin className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setChatTargetUser(d)}
+                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-950 text-[#FFD100]"
+                            title="Conversar"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-2">
+                <h3 className="font-display text-sm font-extrabold text-neutral-950">
+                  Resumo da Base Cadastrada
+                </h3>
+                <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                  <div className="rounded-xl bg-neutral-50 p-2.5">
+                    <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                      {clients.length}
+                    </p>
+                    <p className="text-[10px] font-bold text-neutral-500">Clientes</p>
+                  </div>
+                  <div className="rounded-xl bg-neutral-50 p-2.5">
+                    <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                      {passengerDrivers.length}
+                    </p>
+                    <p className="text-[10px] font-bold text-neutral-500">Motoristas</p>
+                  </div>
+                  <div className="rounded-xl bg-neutral-50 p-2.5">
+                    <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                      {deliverers.length}
+                    </p>
+                    <p className="text-[10px] font-bold text-neutral-500">Entregadores</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* TAB 1: MOTORISTAS (CARRO / MOTO) */}
         {tab === 'drivers' &&
@@ -641,15 +967,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                       <th className="px-4 py-3 font-bold">Nota</th>
                       <th className="px-4 py-3 font-bold">Corridas</th>
                       <th className="px-4 py-3 font-bold">Status</th>
-                      <th className="px-4 py-3 font-bold text-right">Ação</th>
+                      <th className="px-4 py-3 font-bold text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {clients.map((c) => {
                       const clientRides = rides.filter((r) => r.passenger_id === c.id);
+                      const isDeleting = confirmDeleteUserId === c.id;
                       return (
                         <tr key={c.id} className="hover:bg-neutral-50">
-                          <td className="px-4 py-3 font-bold text-neutral-950">{c.full_name}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              {c.avatar_url ? (
+                                <img
+                                  src={c.avatar_url}
+                                  alt={c.full_name}
+                                  className="h-8 w-8 rounded-full object-cover border border-neutral-200 shrink-0"
+                                />
+                              ) : (
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[10px] font-extrabold text-neutral-800">
+                                  {c.full_name.slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                              <span className="font-bold text-neutral-950">{c.full_name}</span>
+                            </div>
+                          </td>
                           <td className="px-4 py-3 font-mono-num">
                             {c.phone} · {c.cpf}
                           </td>
@@ -664,21 +1006,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                                 c.status === 'active' ? 'text-emerald-700' : 'text-red-600'
                               }
                             >
-                              {c.status === 'active' ? 'Ativo' : 'Suspenso'}
+                              {c.status === 'active' ? 'Ativo' : 'Bloqueado'}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleClientStatus(c)}
-                              className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${
-                                c.status === 'active'
-                                  ? 'border border-red-200 bg-red-50 text-red-700'
-                                  : 'bg-[#FFD100] text-neutral-950'
-                              }`}
-                            >
-                              {c.status === 'active' ? 'Suspender' : 'Reativar'}
-                            </button>
+                            {isDeleting ? (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteUserId(null)}
+                                  className="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-700"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteUser(c.id)}
+                                  className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white"
+                                >
+                                  Confirmar
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setChatTargetUser(c)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-neutral-900 hover:bg-neutral-100"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                  Chat
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleClientStatus(c)}
+                                  className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${
+                                    c.status === 'active'
+                                      ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                                      : 'bg-[#FFD100] text-neutral-950'
+                                  }`}
+                                >
+                                  {c.status === 'active' ? 'Bloquear' : 'Desbloquear'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteUserId(c.id)}
+                                  className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 hover:bg-red-100"
+                                  title="Excluir cliente"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1011,10 +1390,161 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
           </section>
         )}
 
-        {/* TAB 6: TARIFAS & CIDADE */}
+        {/* TAB 5B: EVENTOS E CAMPANHAS PARA MOTOBOYS / MOTORISTAS */}
+        {tab === 'events' && (
+          <section className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <form
+              onSubmit={handleCreateEvent}
+              className="lg:col-span-5 rounded-3xl border border-neutral-200 bg-white p-5 space-y-4 h-fit"
+            >
+              <div className="flex items-center gap-2 text-neutral-950 font-extrabold text-sm">
+                <Sparkles className="h-5 w-5 text-amber-600" />
+                <span>Criar Evento / Bônus para Parceiros</span>
+              </div>
+              <p className="text-xs text-neutral-600">
+                Publique desafios, metas ou bônus em tempo real. Todos os motoboys e motoristas
+                receberão notificação instantânea com som e vibração.
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Título do Evento
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={eventTitle}
+                  onChange={(e) => setEventTitle(e.target.value)}
+                  placeholder="Ex: Bônus Chuva / Meta 10 Entregas Hoje"
+                  className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Regras / Descrição
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={eventDesc}
+                  onChange={(e) => setEventDesc(e.target.value)}
+                  placeholder="Ex: Complete 8 entregas até às 22h e ganhe bônus extra no repasse."
+                  className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Valor do Bônus (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.50"
+                    min="0"
+                    value={eventBonus}
+                    onChange={(e) => setEventBonus(e.target.value)}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Público-Alvo
+                  </label>
+                  <select
+                    value={eventTargetRole}
+                    onChange={(e) =>
+                      setEventTargetRole(e.target.value as PlatformEvent['target_role'])
+                    }
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
+                  >
+                    <option value="all">Todos (Motoristas e Motoboys)</option>
+                    <option value="delivery">Apenas Motoboys / Entregas</option>
+                    <option value="driver">Apenas Motoristas (Carro/Moto)</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingEvent}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                {savingEvent ? 'Publicando...' : 'Publicar Evento Agora'}
+              </button>
+            </form>
+
+            <div className="lg:col-span-7 space-y-3">
+              <h2 className="font-display text-xl font-extrabold text-neutral-950">
+                Eventos e Campanhas Publicadas ({platformEvents.length})
+              </h2>
+              {platformEvents.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
+                  Nenhum evento criado ainda. Crie sua primeira campanha ao lado!
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {platformEvents.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className={`rounded-2xl border p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        ev.active ? 'border-amber-300' : 'border-neutral-200 opacity-75'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-extrabold text-neutral-950">{ev.title}</h3>
+                          {ev.bonus_amount > 0 && (
+                            <span className="rounded-lg bg-[#FFD100] px-2 py-0.5 font-mono-num text-[11px] font-extrabold text-neutral-950">
+                              +{formatBRL(ev.bonus_amount)}
+                            </span>
+                          )}
+                          <span className="rounded-lg bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600">
+                            {ev.target_role === 'delivery'
+                              ? 'Motoboys'
+                              : ev.target_role === 'driver'
+                              ? 'Motoristas'
+                              : 'Todos'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-600">{ev.description}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEvent(ev)}
+                          className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-bold ${
+                            ev.active
+                              ? 'border border-neutral-200 bg-neutral-100 text-neutral-800'
+                              : 'bg-emerald-600 text-white'
+                          }`}
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                          {ev.active ? 'Pausar' : 'Ativar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEvent(ev.id)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700"
+                          title="Excluir evento"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* TAB 6: TARIFAS & CONFIGURAÇÕES DO SITE */}
         {tab === 'pricing' && (
           <section className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-8 space-y-4">
+            <div className="lg:col-span-7 space-y-4">
               <div>
                 <h2 className="font-display text-xl font-extrabold text-neutral-950">
                   Tarifas por Modalidade (5 categorias)
@@ -1122,18 +1652,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
               </form>
             </div>
 
-            <div className="lg:col-span-4 space-y-4">
+            <div className="lg:col-span-5 space-y-4">
               <form
                 onSubmit={handleSavePlatformConfig}
-                className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-4"
+                className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4"
               >
                 <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950">
-                  <UserCheck className="h-5 w-5 text-amber-600" />
-                  <span>Cidade da Operação Local</span>
+                  <Settings className="h-5 w-5 text-amber-600" />
+                  <span>Configurações Gerais do Site</span>
                 </div>
+
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 mb-1">
-                    Cidade exibida no aplicativo
+                    Nome do Aplicativo / Site
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={platformConfig.site_name}
+                    onChange={(e) =>
+                      setPlatformConfig((prev) => ({ ...prev, site_name: e.target.value }))
+                    }
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Cidade da Operação Local
                   </label>
                   <input
                     type="text"
@@ -1142,15 +1688,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
                     onChange={(e) =>
                       setPlatformConfig((prev) => ({ ...prev, platform_city: e.target.value }))
                     }
-                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    WhatsApp de Suporte
+                  </label>
+                  <input
+                    type="text"
+                    value={platformConfig.support_whatsapp}
+                    onChange={(e) =>
+                      setPlatformConfig((prev) => ({ ...prev, support_whatsapp: e.target.value }))
+                    }
+                    placeholder="(87) 99999-9999"
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Comissão da Plataforma (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    step="0.5"
+                    value={platformConfig.commission_percent}
+                    onChange={(e) =>
+                      setPlatformConfig((prev) => ({
+                        ...prev,
+                        commission_percent: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950"
+                  />
+                </div>
+
+                <label className="flex items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-3.5 py-3 cursor-pointer">
+                  <div>
+                    <p className="text-xs font-extrabold text-neutral-950">Modo Manutenção</p>
+                    <p className="text-[11px] text-neutral-500">
+                      Pausa novas solicitações temporariamente
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={platformConfig.maintenance_mode}
+                    onChange={(e) =>
+                      setPlatformConfig((prev) => ({
+                        ...prev,
+                        maintenance_mode: e.target.checked,
+                      }))
+                    }
+                    className="h-5 w-5 accent-neutral-950"
+                  />
+                </label>
+
                 <button
                   type="submit"
                   disabled={savingPlatform}
                   className="min-h-[46px] w-full rounded-2xl bg-neutral-950 text-sm font-extrabold text-[#FFD100]"
                 >
-                  {savingPlatform ? 'Salvando...' : 'Salvar Cidade'}
+                  {savingPlatform ? 'Salvando...' : 'Salvar Configurações do Site'}
                 </button>
               </form>
             </div>
@@ -1359,6 +1961,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onL
             </button>
           </form>
         </div>
+      )}
+
+      {chatTargetUser && (
+        <DirectChatModal
+          threadUser={{
+            id: chatTargetUser.id,
+            full_name: chatTargetUser.full_name,
+            role: chatTargetUser.role,
+            avatar_url: chatTargetUser.avatar_url,
+            phone: chatTargetUser.phone,
+          }}
+          currentUser={currentUser}
+          onClose={() => setChatTargetUser(null)}
+        />
       )}
     </div>
   );

@@ -65,6 +65,7 @@ export default function App() {
 
   const {
     platformConfig,
+    platformEvents,
     rides,
     pricing,
     onlineDrivers,
@@ -99,6 +100,7 @@ export default function App() {
         <DriverView
           currentUser={currentUser}
           platformConfig={platformConfig}
+          platformEvents={platformEvents}
           rides={rides}
           messagesByRide={messagesByRide}
           onUserUpdated={handleUserUpdated}

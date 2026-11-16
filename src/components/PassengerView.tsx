@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Crosshair,
   Flag,
+  Headphones,
   HelpCircle,
   History,
   Home,
@@ -25,6 +26,7 @@ import {
   ShieldCheck,
   Star,
   Tag,
+  Thermometer,
   UserCheck,
   Wallet,
   X,
@@ -33,7 +35,10 @@ import deliveryCarImg from '../assets/images/vehicle_delivery_car_99_17947772027
 import deliveryMotoImg from '../assets/images/vehicle_delivery_moto_99_1794777202546.jpg';
 import motoImg from '../assets/images/vehicle_moto_99_1794777201679.jpg';
 import popCarImg from '../assets/images/vehicle_pop_99_1794777203734.jpg';
+import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import {
+  type AddressSuggestion,
+  fetchLocalWeather,
   fetchRouteGeometry,
   formatBRL,
   haversineKm,
@@ -51,8 +56,10 @@ import type {
   RideMessage,
   SavedAddress,
   UserProfile,
+  WeatherInfo,
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
+import { DirectChatModal } from './DirectChatModal';
 import { LiveMap } from './LiveMap';
 import { PixPaymentModal } from './PixPaymentModal';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -131,10 +138,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [originQuery, setOriginQuery] = useState('Localização atual');
   const [destQuery, setDestQuery] = useState('');
 
-  const [originSuggestions, setOriginSuggestions] = useState<GeoPoint[]>([]);
-  const [destSuggestions, setDestSuggestions] = useState<GeoPoint[]>([]);
+  const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
+  const [destSuggestions, setDestSuggestions] = useState<AddressSuggestion[]>([]);
+  const [searchingAddress, setSearchingAddress] = useState(false);
   const [activeSearchField, setActiveSearchField] = useState<'origin' | 'destination'>('destination');
   const [pickOnMapMode, setPickOnMapMode] = useState<'origin' | 'destination' | null>(null);
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
 
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [distanceKm, setDistanceKm] = useState<number>(0);
@@ -151,6 +160,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [dismissedCompletedRideId, setDismissedCompletedRideId] = useState<string | null>(null);
 
   const myRides = useMemo(
@@ -189,18 +199,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     [myRides, dismissedCompletedRideId]
   );
 
-  const detectMyGps = useCallback(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        const addr = await reverseGeocode(latitude, longitude);
-        setOrigin({ lat: latitude, lng: longitude, address: addr });
-        setOriginQuery(addr);
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 6000 }
-    );
+  const detectMyGps = useCallback(async () => {
+    const pos = await getCurrentGpsPosition();
+    if (!pos) {
+      fetchLocalWeather(DEFAULT_ORIGIN.lat, DEFAULT_ORIGIN.lng).then((w) => w && setWeather(w));
+      return;
+    }
+    const [addr, w] = await Promise.all([
+      reverseGeocode(pos.lat, pos.lng),
+      fetchLocalWeather(pos.lat, pos.lng),
+    ]);
+    setOrigin({ lat: pos.lat, lng: pos.lng, address: addr });
+    setOriginQuery(addr);
+    if (w) setWeather(w);
   }, []);
 
   useEffect(() => {
@@ -222,10 +233,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         originQuery === origin.address
       ) {
         setOriginSuggestions([]);
+        setSearchingAddress(false);
         return;
       }
+      setSearchingAddress(true);
       const res = await searchAddresses(originQuery, origin.lat, origin.lng);
       setOriginSuggestions(res);
+      setSearchingAddress(false);
     }, 350);
     return () => clearTimeout(timer);
   }, [originQuery, addressScreenOpen, activeSearchField, origin.address, origin.lat, origin.lng]);
@@ -235,10 +249,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     const timer = setTimeout(async () => {
       if (destQuery.trim().length < 3 || (destination && destQuery === destination.address)) {
         setDestSuggestions([]);
+        setSearchingAddress(false);
         return;
       }
+      setSearchingAddress(true);
       const res = await searchAddresses(destQuery, origin.lat, origin.lng);
       setDestSuggestions(res);
+      setSearchingAddress(false);
     }, 350);
     return () => clearTimeout(timer);
   }, [destQuery, addressScreenOpen, activeSearchField, destination, origin.lat, origin.lng]);
@@ -455,16 +472,37 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <div className="space-y-3.5">
                 <div className="mx-auto h-1 w-10 rounded-full bg-neutral-200 sm:hidden" />
 
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-neutral-500">
-                    {platformConfig.platform_city}
-                  </span>
-                  <span className="text-xs font-bold text-neutral-700">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                    <span className="truncate">
+                      {weather?.city || platformConfig.platform_city}
+                    </span>
+                    {weather && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-extrabold text-neutral-950 font-mono-num shrink-0">
+                        <Thermometer className="h-3 w-3 text-amber-700" />
+                        {weather.temperatureC}°C
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs font-bold text-neutral-600 shrink-0">
                     {onlineDrivers.length > 0
-                      ? `${onlineDrivers.length} online agora`
-                      : 'Mapa em tempo real'}
+                      ? `${onlineDrivers.length} online`
+                      : 'Ao vivo'}
                   </span>
                 </div>
+
+                {currentUser.status === 'suspended' && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
+                    Sua conta está temporariamente bloqueada/suspensa. Fale com a administração no menu Suporte.
+                  </div>
+                )}
+
+                {platformConfig.maintenance_mode && (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900">
+                    Plataforma em manutenção programada. Algumas solicitações podem estar pausadas.
+                  </div>
+                )}
 
                 {/* Mode quick selector: Viagem vs 99 Entrega */}
                 <div className="grid grid-cols-2 gap-2">
@@ -913,9 +951,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               {/* Driver Info & Fare */}
               <div className="flex items-center justify-between rounded-2xl bg-neutral-50 p-3 border border-neutral-100">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-bold shrink-0">
-                    {activeRide.driver?.full_name.slice(0, 1) || 'M'}
-                  </div>
+                  {activeRide.driver?.avatar_url ? (
+                    <img
+                      src={activeRide.driver.avatar_url}
+                      alt={activeRide.driver.full_name}
+                      className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                    />
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-bold shrink-0">
+                      {activeRide.driver?.full_name.slice(0, 1) || 'M'}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="text-sm font-extrabold text-neutral-950 truncate">
                       {activeRide.driver?.full_name}
@@ -1110,6 +1156,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-neutral-100">
+            {searchingAddress && (
+              <div className="px-4 py-3 text-xs font-semibold text-neutral-500">
+                Buscando endereços, números e estabelecimentos no Brasil...
+              </div>
+            )}
             {activeSearchField === 'origin' && originSuggestions.length > 0 ? (
               originSuggestions.map((item, i) => {
                 const km = haversineKm(origin.lat, origin.lng, item.lat, item.lng);
@@ -1118,22 +1169,27 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     key={i}
                     type="button"
                     onClick={() => {
-                      setOrigin(item);
+                      setOrigin({ lat: item.lat, lng: item.lng, address: item.address });
                       setOriginQuery(item.address);
                       setOriginSuggestions([]);
                       setActiveSearchField('destination');
                     }}
-                    className="flex min-h-[60px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
+                    className="flex min-h-[64px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700">
                         <MapPin className="h-4 w-4" />
                       </span>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-neutral-950 truncate">
-                          {item.address.split('·')[0].trim()}
-                        </p>
-                        <p className="text-xs text-neutral-500 truncate">{item.address}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-bold text-neutral-950 truncate">
+                            {item.address.split('·')[0].trim()}
+                          </p>
+                          <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-neutral-900">
+                            {item.categoryLabel}
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-500 truncate">{item.subtitle || item.address}</p>
                       </div>
                     </div>
                     <span className="font-mono-num text-xs font-bold text-neutral-500 shrink-0">
@@ -1187,8 +1243,41 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   })
                 )}
               </div>
+            ) : destSuggestions.length > 0 ? (
+              destSuggestions.map((item, i) => {
+                const km = haversineKm(origin.lat, origin.lng, item.lat, item.lng);
+                const title = item.address.split('·')[0].trim();
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() =>
+                      selectDestinationPoint({ lat: item.lat, lng: item.lng, address: item.address })
+                    }
+                    className="flex min-h-[64px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700">
+                        <Navigation className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-bold text-neutral-950 truncate">{title}</p>
+                          <span className="shrink-0 rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                            {item.categoryLabel}
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-500 truncate">{item.subtitle || item.address}</p>
+                      </div>
+                    </div>
+                    <span className="font-mono-num text-xs font-bold text-neutral-500 shrink-0">
+                      {km.toFixed(1)}km
+                    </span>
+                  </button>
+                );
+              })
             ) : (
-              (destSuggestions.length > 0 ? destSuggestions : QUICK_DESTINATIONS).map((item, i) => {
+              QUICK_DESTINATIONS.map((item, i) => {
                 const km = haversineKm(origin.lat, origin.lng, item.lat, item.lng);
                 const title = item.address.split('·')[0].trim();
                 return (
@@ -1237,10 +1326,25 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         <div className="fixed inset-0 z-[1000] flex bg-black/55">
           <div className="flex h-full w-80 max-w-[86vw] flex-col bg-white p-5 shadow-2xl overflow-y-auto">
             <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-200 text-neutral-900 font-display text-xl font-extrabold">
-                  {currentUser.full_name.slice(0, 1).toUpperCase()}
-                </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSettingsOpen(true);
+                }}
+                className="flex items-center gap-3 text-left"
+              >
+                {currentUser.avatar_url ? (
+                  <img
+                    src={currentUser.avatar_url}
+                    alt={currentUser.full_name}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-200 text-neutral-900 font-display text-xl font-extrabold shrink-0">
+                    {currentUser.full_name.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
                 <div>
                   <h3 className="font-display text-xl font-extrabold text-neutral-950 leading-tight">
                     {currentUser.full_name.split(' ')[0]}
@@ -1250,10 +1354,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     <span className="font-mono-num font-bold text-neutral-900">
                       {currentUser.rating_avg.toFixed(2).replace('.', ',')}
                     </span>
-                    <span>· Verificado</span>
+                    <span>· Editar foto/perfil</span>
                   </p>
                 </div>
-              </div>
+              </button>
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}
@@ -1264,7 +1368,16 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             </div>
 
-            <div className="mt-6 grid grid-cols-3 gap-y-5 gap-x-2 text-center">
+            {weather && (
+              <div className="mt-4 flex items-center justify-between rounded-2xl bg-neutral-50 border border-neutral-200 px-3.5 py-2.5 text-xs">
+                <span className="font-bold text-neutral-800 truncate pr-2">{weather.city}</span>
+                <span className="font-mono-num font-extrabold text-neutral-950 shrink-0">
+                  {weather.temperatureC}°C · {weather.label}
+                </span>
+              </div>
+            )}
+
+            <div className="mt-5 grid grid-cols-3 gap-y-5 gap-x-2 text-center">
               {[
                 { label: 'Atividade', icon: History, action: () => setHistoryOpen(true) },
                 { label: 'Ajuda', icon: HelpCircle, action: () => setInfoModal('help') },
@@ -1297,6 +1410,21 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <h4 className="font-display text-sm font-extrabold text-neutral-950 mb-2">
                 Outros recursos
               </h4>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSupportChatOpen(true);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-2.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-100"
+              >
+                <span className="flex items-center gap-3">
+                  <Headphones className="h-5 w-5 text-blue-600" />
+                  Falar com o Admin / Suporte
+                </span>
+                <ChevronRight className="h-4 w-4 text-neutral-400" />
+              </button>
 
               <button
                 type="button"
@@ -1541,9 +1669,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           rideId={activeRide.id}
           currentUser={currentUser}
           peerName={activeRide.driver.full_name}
+          peerAvatarUrl={activeRide.driver.avatar_url}
+          isDelivery={isDeliveryActive}
           messages={currentChatMessages}
           onMessageSent={onAppendMessage}
           onClose={() => setChatOpen(false)}
+        />
+      )}
+
+      {supportChatOpen && (
+        <DirectChatModal
+          threadUser={{
+            id: currentUser.id,
+            full_name: currentUser.full_name,
+            role: currentUser.role,
+            avatar_url: currentUser.avatar_url,
+          }}
+          currentUser={currentUser}
+          onClose={() => setSupportChatOpen(false)}
         />
       )}
 

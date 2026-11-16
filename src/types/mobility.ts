@@ -21,6 +21,8 @@ export type RideStatus =
   | 'completed'
   | 'cancelled';
 
+export type MapLayerMode = 'urban' | 'satellite';
+
 export interface SavedAddress {
   label: string;
   address: string;
@@ -32,6 +34,37 @@ export interface PlatformConfig {
   platform_pix_key: string;
   platform_pix_receiver: string;
   platform_city: string;
+  site_name: string;
+  support_whatsapp: string;
+  commission_percent: number;
+  maintenance_mode: boolean;
+}
+
+export interface PlatformEvent {
+  id: string;
+  title: string;
+  description: string;
+  bonus_amount: number;
+  target_role: 'all' | 'driver' | 'delivery';
+  active: boolean;
+  created_at: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  user_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: UserRole;
+  content: string;
+  created_at: string;
+}
+
+export interface WeatherInfo {
+  temperatureC: number;
+  weatherCode: number;
+  label: string;
+  city: string;
 }
 
 export interface DriverDetails {
@@ -62,6 +95,7 @@ export interface UserProfile {
   email: string;
   cpf: string;
   avatar_url?: string | null;
+  bio?: string | null;
   home_address?: SavedAddress | null;
   work_address?: SavedAddress | null;
   favorites?: SavedAddress[];

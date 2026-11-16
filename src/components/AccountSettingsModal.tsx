@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   Briefcase,
+  Camera,
   Car,
   ChevronRight,
   CreditCard,
@@ -17,6 +18,7 @@ import { searchAddresses } from '../lib/geo';
 import {
   anonymizeUserAccount,
   changeUserPassword,
+  compressImageFileToDataUrl,
   updateUserProfileSettings,
 } from '../lib/mobilityApi';
 import type { PaymentMethod, SavedAddress, UserProfile } from '../types/mobility';
@@ -40,10 +42,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
 
-  // Basic profile
+  // Basic profile + photo personalization
   const [fullName, setFullName] = useState(currentUser.full_name);
   const [phone, setPhone] = useState(currentUser.phone);
   const [email, setEmail] = useState(currentUser.email);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(currentUser.avatar_url || null);
+  const [bio, setBio] = useState(currentUser.bio || '');
   const [preferredPayment, setPreferredPayment] = useState<PaymentMethod>(
     currentUser.preferred_payment === 'cash' ? 'cash' : 'pix'
   );
@@ -56,7 +60,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [favorites, setFavorites] = useState<SavedAddress[]>(currentUser.favorites || []);
   const [favQuery, setFavQuery] = useState('');
   const [addrSuggestions, setAddrSuggestions] = useState<
-    Array<{ target: 'home' | 'work' | 'favorite'; address: string; lat: number; lng: number }>
+    Array<{ target: 'home' | 'work' | 'favorite'; address: string; subtitle: string; lat: number; lng: number }>
   >([]);
 
   // Driver vehicle & Pix
@@ -74,6 +78,17 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   // LGPD delete confirmation
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const handleAvatarSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageFileToDataUrl(file, 500);
+      setAvatarUrl(compressed);
+    } catch {
+      setFeedback({ type: 'err', msg: 'Não foi possível processar esta foto.' });
+    }
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
@@ -83,6 +98,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         full_name: fullName,
         phone,
         email,
+        avatar_url: avatarUrl,
+        bio,
         preferred_payment: preferredPayment,
         home_address: homeAddr,
         work_address: workAddr,
@@ -98,7 +115,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           : {}),
       });
       onUserUpdated(updated);
-      setFeedback({ type: 'ok', msg: 'Configurações atualizadas com sucesso.' });
+      setFeedback({ type: 'ok', msg: 'Perfil atualizado com sucesso!' });
     } catch (err) {
       setFeedback({
         type: 'err',
@@ -156,7 +173,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
-      <div className="flex h-[88vh] sm:h-auto sm:max-h-[85vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
+      <div className="flex h-[88vh] sm:h-auto sm:max-h-[88vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
           <div className="flex items-center gap-2">
@@ -173,8 +190,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               </button>
             )}
             <h3 className="font-display text-lg font-extrabold text-neutral-950">
-              {section === 'menu' && 'Configurações'}
-              {section === 'profile' && 'Dados da Conta'}
+              {section === 'menu' && 'Meu Perfil e Configurações'}
+              {section === 'profile' && 'Foto e Personalização'}
               {section === 'password' && 'Alterar Senha'}
               {section === 'addresses' && 'Endereços e Pagamento'}
               {section === 'vehicle' && 'Veículo e Chave Pix'}
@@ -206,13 +223,29 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
           {section === 'menu' && (
             <div className="space-y-4">
-              <div className="rounded-2xl bg-neutral-50 p-4 border border-neutral-100">
-                <p className="font-display text-base font-extrabold text-neutral-950">
-                  {currentUser.full_name}
-                </p>
-                <p className="text-xs text-neutral-500 font-mono-num">
-                  {currentUser.phone} · {currentUser.email}
-                </p>
+              <div className="flex items-center gap-3.5 rounded-2xl bg-neutral-50 p-4 border border-neutral-100">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={currentUser.full_name}
+                    className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-xl font-extrabold">
+                    {currentUser.full_name.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="font-display text-base font-extrabold text-neutral-950 truncate">
+                    {currentUser.full_name}
+                  </p>
+                  <p className="text-xs text-neutral-500 font-mono-num truncate">
+                    {currentUser.phone} · {currentUser.email}
+                  </p>
+                  {currentUser.bio && (
+                    <p className="mt-1 text-xs text-neutral-700 truncate">{currentUser.bio}</p>
+                  )}
+                </div>
               </div>
 
               <div className="divide-y divide-neutral-100 rounded-2xl border border-neutral-200 bg-white overflow-hidden">
@@ -223,7 +256,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 >
                   <span className="flex items-center gap-3 text-sm font-bold text-neutral-900">
                     <User className="h-4 w-4 text-neutral-600" />
-                    Editar nome e telefone
+                    Foto de perfil, nome, telefone e recado
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>
@@ -284,7 +317,53 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           )}
 
           {section === 'profile' && (
-            <form onSubmit={handleSaveProfile} className="space-y-3">
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              {/* Photo Avatar Uploader */}
+              <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="relative">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt="Foto de perfil"
+                      className="h-24 w-24 rounded-full object-cover border-4 border-[#FFD100] shadow"
+                    />
+                  ) : (
+                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-3xl font-extrabold shadow">
+                      {fullName.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <label className="absolute -bottom-1 -right-1 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 border-2 border-white shadow">
+                    <Camera className="h-4 w-4" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarSelected}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer text-xs font-extrabold text-neutral-950 underline">
+                    Escolher foto da galeria / câmera
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarSelected}
+                      className="hidden"
+                    />
+                  </label>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setAvatarUrl(null)}
+                      className="text-xs font-bold text-red-600"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1">
                   Nome completo
@@ -319,12 +398,25 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm outline-none focus:border-neutral-950"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Recado / Observação pessoal (opcional)
+                </label>
+                <input
+                  type="text"
+                  maxLength={90}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Ex: Ponto próximo à portaria principal"
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-sm outline-none focus:border-neutral-950"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={saving}
                 className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
               >
-                {saving ? 'Salvando...' : 'Salvar Dados'}
+                {saving ? 'Salvando...' : 'Salvar Perfil Personalizado'}
               </button>
             </form>
           )}
@@ -339,7 +431,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   type="text"
                   value={homeQuery}
                   onChange={(e) => searchSavedAddress(e.target.value, 'home')}
-                  placeholder="Busque seu endereço residencial..."
+                  placeholder="Rua com número, bairro ou ponto de referência..."
                   className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
                 />
               </div>
@@ -352,7 +444,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   type="text"
                   value={workQuery}
                   onChange={(e) => searchSavedAddress(e.target.value, 'work')}
-                  placeholder="Busque seu endereço comercial..."
+                  placeholder="Ex: Galeria Rui Barbosa, Av. Santo Antônio..."
                   className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
                 />
               </div>
@@ -365,13 +457,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   type="text"
                   value={favQuery}
                   onChange={(e) => searchSavedAddress(e.target.value, 'favorite')}
-                  placeholder="Buscar local favorito (academia, shopping, faculdade)..."
+                  placeholder="Ex: Parque Euclides Dourado, hospital, mercado..."
                   className="min-h-[46px] w-full rounded-2xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
                 />
               </div>
 
               {addrSuggestions.length > 0 && (
-                <div className="rounded-2xl border border-neutral-200 divide-y divide-neutral-100 max-h-40 overflow-y-auto">
+                <div className="rounded-2xl border border-neutral-200 divide-y divide-neutral-100 max-h-44 overflow-y-auto">
                   {addrSuggestions.map((s, idx) => (
                     <button
                       key={idx}
@@ -404,7 +496,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       }}
                       className="block w-full px-3.5 py-2.5 text-left text-xs hover:bg-neutral-50"
                     >
-                      {s.address}
+                      <p className="font-bold text-neutral-900">{s.address}</p>
+                      <p className="text-[10px] text-neutral-500 truncate">{s.subtitle}</p>
                     </button>
                   ))}
                 </div>
@@ -441,7 +534,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: 'pix' as PaymentMethod, label: 'Pix (Plataforma)' },
+                    { id: 'pix' as PaymentMethod, label: 'Pix (Copia e Cola)' },
                     { id: 'cash' as PaymentMethod, label: 'Dinheiro' },
                   ].map((m) => (
                     <button

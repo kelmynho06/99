@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Check, Copy, QrCode, ShieldCheck, X } from 'lucide-react';
-import { formatBRL } from '../lib/geo';
+import { Check, Clock, Copy, QrCode, ShieldCheck, X } from 'lucide-react';
+import { buildPixEmvPayload, formatBRL } from '../lib/geo';
 import { declarePixPaid } from '../lib/mobilityApi';
 import type { PlatformConfig, Ride } from '../types/mobility';
 
@@ -9,27 +9,6 @@ interface PixPaymentModalProps {
   platformConfig: PlatformConfig;
   onDeclared: (updatedRide: Ride) => void;
   onClose: () => void;
-}
-
-function buildPixPayload(
-  pixKey: string,
-  receiverName: string,
-  city: string,
-  amount: number,
-  txId: string
-): string {
-  const cleanName = receiverName.slice(0, 25).toUpperCase();
-  const cleanCity = city.split(',')[0].slice(0, 15).toUpperCase();
-  const amt = amount.toFixed(2);
-  return `00020126360014BR.GOV.BCB.PIX01${String(pixKey.length).padStart(2, '0')}${pixKey}52040000530398654${String(
-    amt.length
-  ).padStart(2, '0')}${amt}5802BR59${String(cleanName.length).padStart(
-    2,
-    '0'
-  )}${cleanName}60${String(cleanCity.length).padStart(
-    2,
-    '0'
-  )}${cleanCity}62070503${txId.slice(-4).toUpperCase()}6304V99A`;
 }
 
 function generateDeterministicMatrix(seedStr: string, size = 21): boolean[][] {
@@ -81,7 +60,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   const amount = ride.final_fare ?? ride.estimated_fare;
   const pixPayload = useMemo(
     () =>
-      buildPixPayload(
+      buildPixEmvPayload(
         platformConfig.platform_pix_key,
         platformConfig.platform_pix_receiver,
         platformConfig.platform_city,
@@ -121,6 +100,8 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     }
   };
 
+  const isPaid = ride.payment_status === 'paid_pix' || ride.payment_status === 'admin_settled';
+
   return (
     <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
       <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
@@ -131,7 +112,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             </div>
             <div>
               <h3 className="font-display text-lg font-extrabold text-neutral-950">
-                Pagar via Pix Oficial
+                Pix Copia e Cola
               </h3>
               <p className="text-xs text-neutral-500">{platformConfig.platform_pix_receiver}</p>
             </div>
@@ -146,7 +127,21 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           </button>
         </div>
 
-        <div className="mt-4 text-center">
+        {/* Payment Confirmation Status Badge */}
+        <div className="mt-3 flex justify-center">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ${
+              isPaid
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-amber-50 text-amber-800 border border-amber-200'
+            }`}
+          >
+            {isPaid ? <Check className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+            {isPaid ? 'Pagamento Pix confirmado' : 'Aguardando confirmação do pagamento'}
+          </span>
+        </div>
+
+        <div className="mt-3 text-center">
           <p className="text-xs font-semibold text-neutral-500">Valor total da viagem</p>
           <p className="mt-0.5 font-mono-num text-3xl font-extrabold text-neutral-950">
             {formatBRL(amount)}
@@ -157,8 +152,8 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         <div className="mt-4 flex justify-center">
           <div className="rounded-2xl border-2 border-neutral-950 bg-white p-3.5 shadow-sm">
             <svg
-              width="168"
-              height="168"
+              width="160"
+              height="160"
               viewBox="0 0 21 21"
               shapeRendering="crispEdges"
               role="img"
@@ -174,37 +169,45 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           </div>
         </div>
 
-        {/* Official Platform Pix Key */}
-        <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
+        {/* EMV Pix Copia e Cola Field + Key */}
+        <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-3">
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <p className="text-[11px] font-bold text-neutral-600">
+                Código EMV Pix Copia e Cola
+              </p>
+              <button
+                type="button"
+                onClick={() => copyText(pixPayload, 'code')}
+                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-950 px-3 text-xs font-bold text-[#FFD100]"
+              >
+                {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedCode ? 'Código copiado!' : 'Copiar Código'}
+              </button>
+            </div>
+            <textarea
+              readOnly
+              rows={2}
+              value={pixPayload}
+              onClick={(e) => e.currentTarget.select()}
+              className="w-full rounded-xl border border-neutral-200 bg-white p-2 font-mono text-[11px] text-neutral-800 outline-none resize-none"
+            />
+          </div>
+
+          <div className="border-t border-neutral-200 pt-2.5 flex items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="text-[11px] font-bold text-neutral-500">Chave Pix da Plataforma</p>
-              <p className="font-mono-num text-sm font-extrabold text-neutral-950 truncate">
+              <p className="font-mono-num text-xs font-extrabold text-neutral-950 truncate">
                 {platformConfig.platform_pix_key}
               </p>
             </div>
             <button
               type="button"
               onClick={() => copyText(platformConfig.platform_pix_key, 'key')}
-              className="flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-950 px-3 text-xs font-bold text-[#FFD100]"
+              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3 text-xs font-bold text-neutral-900"
             >
-              {copiedKey ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedKey ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
               {copiedKey ? 'Copiada' : 'Copiar chave'}
-            </button>
-          </div>
-
-          <div className="border-t border-neutral-200 pt-2.5 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold text-neutral-500">Pix Copia e Cola</p>
-              <p className="font-mono text-[11px] text-neutral-700 truncate">{pixPayload}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => copyText(pixPayload, 'code')}
-              className="flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3 text-xs font-bold text-neutral-900"
-            >
-              {copiedCode ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-              {copiedCode ? 'Copiado' : 'Copiar código'}
             </button>
           </div>
         </div>
@@ -212,8 +215,8 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-900">
           <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-amber-700" />
           <span>
-            Pagamento centralizado na conta oficial de {platformConfig.platform_pix_receiver}. O
-            repasse ao motorista é feito pela administração após a corrida.
+            Pagamento centralizado para {platformConfig.platform_pix_receiver}. Após pagar no app do
+            seu banco, toque em &ldquo;Já fiz o Pix&rdquo;.
           </span>
         </div>
 
@@ -224,20 +227,22 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         )}
 
         <div className="mt-5 flex flex-col gap-2">
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={confirmPixPaid}
-            className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
-          >
-            {submitting ? 'Confirmando...' : 'Já fiz o Pix'}
-          </button>
+          {!isPaid && (
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={confirmPixPaid}
+              className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
+            >
+              {submitting ? 'Confirmando...' : 'Já fiz o Pix · Confirmar'}
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
             className="min-h-[44px] w-full text-xs font-bold text-neutral-500 hover:text-neutral-900"
           >
-            Pagar depois
+            {isPaid ? 'Fechar' : 'Pagar depois'}
           </button>
         </div>
       </div>

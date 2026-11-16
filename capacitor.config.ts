@@ -16,6 +16,10 @@ const config: CapacitorConfig = {
     Geolocation: {
       enableHighAccuracy: true,
     },
+    LocalNotifications: {
+      smallIcon: 'ic_launcher',
+      iconColor: '#FFD100',
+    },
   },
 };
 

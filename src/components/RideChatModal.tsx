@@ -7,22 +7,33 @@ interface RideChatModalProps {
   rideId: string;
   currentUser: UserProfile;
   peerName: string;
+  peerAvatarUrl?: string | null;
+  isDelivery?: boolean;
   messages: RideMessage[];
   onMessageSent?: (msg: RideMessage) => void;
   onClose: () => void;
 }
 
-const QUICK_REPLIES = [
+const RIDE_QUICK_REPLIES = [
   'Já estou no ponto de embarque',
   'Estou descendo agora!',
   'Qual a cor da sua blusa?',
   'Chego em 2 minutos',
 ];
 
+const DELIVERY_QUICK_REPLIES = [
+  'Já estou no local da coleta',
+  'O pacote já está pronto para retirada',
+  'Cheguei no endereço de entrega!',
+  'Qual o código PIN de 4 dígitos?',
+];
+
 export const RideChatModal: React.FC<RideChatModalProps> = ({
   rideId,
   currentUser,
   peerName,
+  peerAvatarUrl,
+  isDelivery = false,
   messages,
   onMessageSent,
   onClose,
@@ -30,6 +41,8 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const quickReplies = isDelivery ? DELIVERY_QUICK_REPLIES : RIDE_QUICK_REPLIES;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,14 +65,29 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
     <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
       <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-950 px-5 py-4 text-white">
-          <div>
-            <p className="text-xs font-medium text-neutral-400">Chat da corrida</p>
-            <h3 className="text-base font-bold">{peerName}</h3>
+          <div className="flex items-center gap-3 min-w-0">
+            {peerAvatarUrl ? (
+              <img
+                src={peerAvatarUrl}
+                alt={peerName}
+                className="h-10 w-10 rounded-full object-cover border border-[#FFD100] shrink-0"
+              />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold">
+                {peerName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[#FFD100]">
+                {isDelivery ? 'Chat da entrega (Motoboy ↔ Cliente)' : 'Chat da corrida'}
+              </p>
+              <h3 className="text-base font-bold truncate">{peerName}</h3>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
             aria-label="Fechar chat"
           >
             <X className="h-5 w-5" />
@@ -69,7 +97,9 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
         <div className="flex-1 overflow-y-auto bg-neutral-50 p-4 space-y-3">
           {messages.length === 0 ? (
             <div className="py-10 text-center text-sm text-neutral-500">
-              Envie uma mensagem para combinar o embarque com {peerName}.
+              {isDelivery
+                ? `Combine os detalhes da coleta ou entrega com ${peerName}.`
+                : `Envie uma mensagem para combinar o embarque com ${peerName}.`}
             </div>
           ) : (
             messages.map((m) => {
@@ -100,7 +130,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
 
         <div className="border-t border-neutral-100 bg-white px-3 pt-2.5 pb-safe">
           <div className="flex gap-2 overflow-x-auto pb-2.5 no-scrollbar">
-            {QUICK_REPLIES.map((qr) => (
+            {quickReplies.map((qr) => (
               <button
                 key={qr}
                 type="button"

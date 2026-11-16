@@ -310,3 +310,101 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_transactions;
   END IF;
 END $$;
+
+-- 10. Personalização completa de perfil (foto + bio)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS bio TEXT;
+
+-- 11. Configurações extras do site no Painel Admin
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS site_name TEXT NOT NULL DEFAULT 'Velo99',
+  ADD COLUMN IF NOT EXISTS support_whatsapp TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS commission_percent NUMERIC(5,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 12. Eventos & Campanhas de Bônus para Motoboys / Motoristas (criados pelo Admin)
+CREATE TABLE IF NOT EXISTS public.platform_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  bonus_amount NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+  target_role TEXT NOT NULL DEFAULT 'all' CHECK (target_role IN ('all', 'driver', 'delivery')),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.platform_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Todos leem eventos da plataforma" ON public.platform_events;
+DROP POLICY IF EXISTS "Somente Admin gerencia eventos" ON public.platform_events;
+CREATE POLICY "Todos leem eventos da plataforma"
+  ON public.platform_events FOR SELECT USING (TRUE);
+CREATE POLICY "Somente Admin gerencia eventos"
+  ON public.platform_events FOR ALL USING (public.is_admin());
+
+-- 13. Chat Direto Universal (Admin conversa com qualquer Cliente, Motorista ou Motoboy)
+CREATE TABLE IF NOT EXISTS public.direct_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  sender_name TEXT NOT NULL,
+  sender_role TEXT NOT NULL DEFAULT 'passenger',
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_direct_messages_user_id ON public.direct_messages(user_id, created_at);
+
+ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Usuario e Admin leem chat direto" ON public.direct_messages;
+DROP POLICY IF EXISTS "Usuario e Admin enviam chat direto" ON public.direct_messages;
+CREATE POLICY "Usuario e Admin leem chat direto"
+  ON public.direct_messages FOR SELECT
+  USING (user_id = auth.uid() OR public.is_admin());
+CREATE POLICY "Usuario e Admin enviam chat direto"
+  ON public.direct_messages FOR INSERT
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+-- 14. RPC segura para Admin excluir/bloquear usuário mantendo integridade de corridas
+CREATE OR REPLACE FUNCTION public.admin_delete_user(p_user_id UUID)
+RETURNS VOID AS $$
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso restrito ao Super Admin.';
+  END IF;
+
+  UPDATE public.driver_profiles
+  SET is_online = FALSE, updated_at = NOW()
+  WHERE user_id = p_user_id;
+
+  UPDATE public.profiles
+  SET
+    is_anonymized = TRUE,
+    status = 'suspended',
+    full_name = 'Conta Removida',
+    phone = '',
+    cpf = '',
+    avatar_url = NULL,
+    bio = NULL,
+    updated_at = NOW()
+  WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'platform_events'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_events;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'direct_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
+  END IF;
+END $$;
+

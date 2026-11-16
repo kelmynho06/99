@@ -1,10 +1,12 @@
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
 import type {
+  DirectMessage,
   DriverDetails,
   GeoPoint,
   PaymentMethod,
   PaymentStatus,
   PlatformConfig,
+  PlatformEvent,
   PricingSetting,
   Ride,
   RideCategory,
@@ -21,6 +23,10 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   platform_pix_key: 'pix@velo99.app',
   platform_pix_receiver: 'Velo99 Mobilidade Ltda',
   platform_city: 'São Paulo, SP',
+  site_name: 'Velo99',
+  support_whatsapp: '',
+  commission_percent: 0,
+  maintenance_mode: false,
 };
 
 export const DEFAULT_PRICING_LIST: PricingSetting[] = [
@@ -111,6 +117,7 @@ export function mapDbProfile(
     email,
     cpf: String(row.cpf || ''),
     avatar_url: row.avatar_url ? String(row.avatar_url) : null,
+    bio: row.bio ? String(row.bio) : null,
     home_address: (row.home_address as SavedAddress | null) ?? null,
     work_address: (row.work_address as SavedAddress | null) ?? null,
     favorites: Array.isArray(row.favorites) ? (row.favorites as SavedAddress[]) : [],
@@ -225,6 +232,24 @@ async function uploadDriverDocOrFallback(
     }
   } catch {
     // Fallback to inline compressed data URL if bucket isn't ready
+  }
+  return dataUrl;
+}
+
+export async function uploadUserAvatar(userId: string, dataUrl: string): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+  try {
+    const blob = await dataUrlToBlob(dataUrl);
+    const filePath = `${userId}/avatar_${Date.now()}.jpg`;
+    const { error } = await supabase.storage
+      .from('driver-documents')
+      .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+    if (!error) {
+      const { data: pub } = supabase.storage.from('driver-documents').getPublicUrl(filePath);
+      if (pub?.publicUrl) return pub.publicUrl;
+    }
+  } catch {
+    // Fallback to inline compressed JPEG dataUrl
   }
   return dataUrl;
 }
@@ -469,6 +494,10 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       data.platform_pix_receiver || DEFAULT_PLATFORM_CONFIG.platform_pix_receiver
     ),
     platform_city: String(data.platform_city || DEFAULT_PLATFORM_CONFIG.platform_city),
+    site_name: String(data.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
+    support_whatsapp: String(data.support_whatsapp || ''),
+    commission_percent: Number(data.commission_percent ?? 0),
+    maintenance_mode: Boolean(data.maintenance_mode ?? false),
   };
 }
 
@@ -933,6 +962,25 @@ export async function declarePixPaid(ride: Ride): Promise<Ride> {
   return enriched;
 }
 
+export async function confirmCashReceived(ride: Ride): Promise<Ride> {
+  const finalFare = Number((ride.final_fare ?? ride.estimated_fare).toFixed(2));
+  const { error } = await supabase
+    .from('rides')
+    .update({
+      payment_method: 'cash',
+      payment_status: 'paid_cash',
+      final_fare: finalFare,
+    })
+    .eq('id', ride.id);
+
+  if (error && error.code !== '42703') {
+    throw new Error(error.message);
+  }
+  const enriched = await fetchRideByIdEnriched(ride.id);
+  if (!enriched) throw new Error('Corrida não encontrada.');
+  return enriched;
+}
+
 export async function reportRideUnpaid(rideId: string, reason: string): Promise<Ride> {
   const cleanReason =
     reason.trim() || 'Motorista informou que o passageiro não efetuou o pagamento.';
@@ -1058,6 +1106,8 @@ export async function updateUserProfileSettings(
     full_name: string;
     phone: string;
     email: string;
+    avatar_url?: string | null;
+    bio?: string | null;
     preferred_payment: PaymentMethod;
     home_address: SavedAddress | null;
     work_address: SavedAddress | null;
@@ -1069,10 +1119,17 @@ export async function updateUserProfileSettings(
     pix_key?: string;
   }
 ): Promise<UserProfile> {
+  let storedAvatar = patch.avatar_url !== undefined ? patch.avatar_url : currentUser.avatar_url;
+  if (storedAvatar && storedAvatar.startsWith('data:')) {
+    storedAvatar = await uploadUserAvatar(currentUser.id, storedAvatar);
+  }
+
   const updateBody: Record<string, unknown> = {
     full_name: patch.full_name.trim(),
     phone: patch.phone.trim(),
     email: patch.email.trim().toLowerCase(),
+    avatar_url: storedAvatar ?? null,
+    bio: patch.bio !== undefined ? (patch.bio || '').trim() : currentUser.bio || null,
     preferred_payment: patch.preferred_payment,
     home_address: patch.home_address,
     work_address: patch.work_address,
@@ -1083,6 +1140,7 @@ export async function updateUserProfileSettings(
   let { error } = await supabase.from('profiles').update(updateBody).eq('id', currentUser.id);
   if (error && error.code === '42703') {
     delete updateBody.favorites;
+    delete updateBody.bio;
     const retry = await supabase.from('profiles').update(updateBody).eq('id', currentUser.id);
     error = retry.error;
   }
@@ -1219,14 +1277,171 @@ export async function adminSavePricing(pricingList: PricingSetting[]): Promise<v
 }
 
 export async function adminSavePlatformConfig(config: PlatformConfig): Promise<void> {
-  const { error } = await supabase.from('platform_settings').upsert({
+  const fullPayload = {
     id: 1,
     platform_pix_key: config.platform_pix_key.trim(),
     platform_pix_receiver: config.platform_pix_receiver.trim(),
     platform_city: config.platform_city.trim(),
+    site_name: config.site_name.trim() || 'Velo99',
+    support_whatsapp: config.support_whatsapp.trim(),
+    commission_percent: Number(config.commission_percent || 0),
+    maintenance_mode: Boolean(config.maintenance_mode),
     updated_at: new Date().toISOString(),
-  });
+  };
+
+  let { error } = await supabase.from('platform_settings').upsert(fullPayload);
+  if (error && error.code === '42703') {
+    const retry = await supabase.from('platform_settings').upsert({
+      id: 1,
+      platform_pix_key: config.platform_pix_key.trim(),
+      platform_pix_receiver: config.platform_pix_receiver.trim(),
+      platform_city: config.platform_city.trim(),
+      updated_at: new Date().toISOString(),
+    });
+    error = retry.error;
+  }
   if (error) throw new Error(error.message);
+}
+
+export async function adminDeleteUserAccount(userId: string): Promise<void> {
+  const { error: rpcErr } = await supabase.rpc('admin_delete_user', {
+    p_user_id: userId,
+  });
+  if (rpcErr) {
+    // Fallback direct update if RPC isn't created yet
+    await supabase
+      .from('driver_profiles')
+      .update({ is_online: false, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        is_anonymized: true,
+        status: 'suspended',
+        full_name: 'Conta Removida',
+        phone: '',
+        cpf: '',
+        avatar_url: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+    if (error) throw new Error(error.message);
+  }
+}
+
+// --- PLATFORM EVENTS (MOTOBOY / DRIVER CAMPAIGNS) ---
+
+export async function fetchPlatformEvents(): Promise<PlatformEvent[]> {
+  const { data, error } = await supabase
+    .from('platform_events')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data.map((ev) => ({
+    id: String(ev.id),
+    title: String(ev.title),
+    description: String(ev.description),
+    bonus_amount: Number(ev.bonus_amount ?? 0),
+    target_role: (ev.target_role as PlatformEvent['target_role']) || 'all',
+    active: Boolean(ev.active ?? true),
+    created_at: String(ev.created_at),
+  }));
+}
+
+export async function adminCreatePlatformEvent(input: {
+  title: string;
+  description: string;
+  bonus_amount: number;
+  target_role: PlatformEvent['target_role'];
+}): Promise<PlatformEvent> {
+  const { data, error } = await supabase
+    .from('platform_events')
+    .insert({
+      title: input.title.trim(),
+      description: input.description.trim(),
+      bonus_amount: Number(input.bonus_amount || 0),
+      target_role: input.target_role,
+      active: true,
+    })
+    .select('*')
+    .single();
+  if (error || !data) throw new Error(error?.message || 'Erro ao criar evento.');
+  return {
+    id: String(data.id),
+    title: String(data.title),
+    description: String(data.description),
+    bonus_amount: Number(data.bonus_amount ?? 0),
+    target_role: (data.target_role as PlatformEvent['target_role']) || 'all',
+    active: Boolean(data.active ?? true),
+    created_at: String(data.created_at),
+  };
+}
+
+export async function adminTogglePlatformEvent(eventId: string, active: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('platform_events')
+    .update({ active })
+    .eq('id', eventId);
+  if (error) throw new Error(error.message);
+}
+
+export async function adminDeletePlatformEvent(eventId: string): Promise<void> {
+  const { error } = await supabase.from('platform_events').delete().eq('id', eventId);
+  if (error) throw new Error(error.message);
+}
+
+// --- UNIVERSAL DIRECT CHAT (ADMIN <-> CLIENTE / MOTORISTA / MOTOBOY) ---
+
+export async function fetchDirectMessages(userId: string): Promise<DirectMessage[]> {
+  const { data, error } = await supabase
+    .from('direct_messages')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) return [];
+  return data.map((m) => ({
+    id: String(m.id),
+    user_id: String(m.user_id),
+    sender_id: String(m.sender_id),
+    sender_name: String(m.sender_name),
+    sender_role: (m.sender_role as DirectMessage['sender_role']) || 'passenger',
+    content: String(m.content),
+    created_at: String(m.created_at),
+  }));
+}
+
+export async function sendDirectMessage(input: {
+  userId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: DirectMessage['sender_role'];
+  content: string;
+}): Promise<DirectMessage> {
+  const { data, error } = await supabase
+    .from('direct_messages')
+    .insert({
+      user_id: input.userId,
+      sender_id: input.senderId,
+      sender_name: input.senderName,
+      sender_role: input.senderRole,
+      content: input.content.trim(),
+    })
+    .select('*')
+    .single();
+  if (error || !data) {
+    throw new Error(error?.message || 'Erro ao enviar mensagem direta.');
+  }
+  return {
+    id: String(data.id),
+    user_id: String(data.user_id),
+    sender_id: String(data.sender_id),
+    sender_name: String(data.sender_name),
+    sender_role: (data.sender_role as DirectMessage['sender_role']) || 'passenger',
+    content: String(data.content),
+    created_at: String(data.created_at),
+  };
 }
 
 export async function adminSettleDispute(ride: Ride): Promise<void> {
