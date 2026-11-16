@@ -5,6 +5,7 @@ import {
   Briefcase,
   Car,
   ChevronRight,
+  Clock,
   Crosshair,
   Flag,
   Headphones,
@@ -18,6 +19,7 @@ import {
   Minus,
   Navigation,
   Package,
+  Phone,
   Plus,
   QrCode,
   Search,
@@ -186,6 +188,32 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       ) || null,
     [myRides]
   );
+
+  const [waitNowMs, setWaitNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!activeRide || activeRide.status !== 'arrived' || !activeRide.arrived_at) return;
+    setWaitNowMs(Date.now());
+    const id = window.setInterval(() => setWaitNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [activeRide]);
+
+  const passengerWaitingStats = useMemo(() => {
+    if (!activeRide?.arrived_at) {
+      return { remainingFreeSec: 120, extraSec: 0, waitingFee: 0, isCharging: false };
+    }
+    const arrivedMs = new Date(activeRide.arrived_at).getTime();
+    const endMs = activeRide.started_at
+      ? new Date(activeRide.started_at).getTime()
+      : activeRide.status === 'arrived'
+      ? waitNowMs
+      : arrivedMs;
+    const elapsedSec = Math.max(0, Math.floor((endMs - arrivedMs) / 1000));
+    const remainingFreeSec = Math.max(0, 120 - elapsedSec);
+    const extraSec = Math.max(0, elapsedSec - 120);
+    const waitingFee = extraSec > 0 ? Number((Math.ceil(extraSec / 60) * 0.5).toFixed(2)) : 0;
+    return { remainingFreeSec, extraSec, waitingFee, isCharging: extraSec > 0 };
+  }, [activeRide, waitNowMs]);
 
   const pendingRatingRide = useMemo(
     () =>
@@ -989,6 +1017,47 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
               </div>
 
+              {/* 2-Minute Wait Timer synced with Driver */}
+              {activeRide.status === 'arrived' && (
+                <div
+                  className={`flex items-center justify-between rounded-2xl border px-3.5 py-2.5 text-xs ${
+                    passengerWaitingStats.isCharging
+                      ? 'border-red-300 bg-red-50 text-red-900'
+                      : 'border-amber-300 bg-amber-50 text-amber-950'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock
+                      className={`h-4 w-4 shrink-0 ${
+                        passengerWaitingStats.isCharging ? 'text-red-600' : 'text-amber-700'
+                      }`}
+                    />
+                    <div>
+                      <p className="font-extrabold">
+                        {passengerWaitingStats.isCharging
+                          ? 'Taxa de espera iniciada (+R$ 0,50/min)'
+                          : 'Motorista aguardando no embarque'}
+                      </p>
+                      <p className="text-[11px] opacity-80">
+                        {passengerWaitingStats.isCharging
+                          ? `Acréscimo atual: +${formatBRL(passengerWaitingStats.waitingFee)}`
+                          : 'Embarque dentro de 2 min sem custo adicional'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-mono-num text-base font-extrabold shrink-0">
+                    {passengerWaitingStats.isCharging
+                      ? `+${String(Math.floor(passengerWaitingStats.extraSec / 60)).padStart(2, '0')}:${String(
+                          passengerWaitingStats.extraSec % 60
+                        ).padStart(2, '0')}`
+                      : `${String(Math.floor(passengerWaitingStats.remainingFreeSec / 60)).padStart(
+                          2,
+                          '0'
+                        )}:${String(passengerWaitingStats.remainingFreeSec % 60).padStart(2, '0')}`}
+                  </span>
+                </div>
+              )}
+
               {/* Centralized Platform Pix Payment CTA */}
               {activeRide.payment_method === 'pix' && activeRide.payment_status === 'pending' && (
                 <button
@@ -997,7 +1066,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
                 >
                   <QrCode className="h-4 w-4" />
-                  Pagar com Pix da Plataforma ({formatBRL(activeRide.estimated_fare)})
+                  Pagar com Pix da Plataforma ({formatBRL(activeRide.estimated_fare + passengerWaitingStats.waitingFee)})
                 </button>
               )}
 
@@ -1008,7 +1077,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
               )}
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                {activeRide.driver?.phone && (
+                  <a
+                    href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
+                    className="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white active:scale-[0.98] transition"
+                    aria-label="Ligar para motorista"
+                    title="Ligar para motorista"
+                  >
+                    <Phone className="h-5 w-5" />
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setChatOpen(true)}

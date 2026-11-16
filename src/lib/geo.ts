@@ -255,14 +255,59 @@ export async function fetchLocalWeather(lat: number, lng: number): Promise<Weath
   }
 }
 
+export interface RouteStep {
+  instruction: string;
+  roadName: string;
+  distanceMeters: number;
+  maneuverType: string;
+  modifier: string;
+  location: [number, number];
+}
+
+function translateOsrmStep(
+  type: string,
+  modifier: string,
+  roadName: string
+): string {
+  const street = roadName ? ` na ${roadName}` : '';
+  if (type === 'depart') return roadName ? `Siga pela ${roadName}` : 'Inicie o trajeto';
+  if (type === 'arrive') return 'Você chegou ao destino';
+  if (type === 'roundabout' || type === 'rotary') {
+    return roadName ? `Na rotatória, siga pela ${roadName}` : 'Entre na rotatória';
+  }
+  switch (modifier) {
+    case 'left':
+      return `Vire à esquerda${street}`;
+    case 'slight left':
+      return `Mantenha-se à esquerda${street}`;
+    case 'sharp left':
+      return `Curva acentuada à esquerda${street}`;
+    case 'right':
+      return `Vire à direita${street}`;
+    case 'slight right':
+      return `Mantenha-se à direita${street}`;
+    case 'sharp right':
+      return `Curva acentuada à direita${street}`;
+    case 'uturn':
+      return `Faça o retorno${street}`;
+    default:
+      return roadName ? `Siga em frente pela ${roadName}` : 'Siga em frente';
+  }
+}
+
 export async function fetchRouteGeometry(
   originLat: number,
   originLng: number,
   destLat: number,
   destLng: number
-): Promise<{ coords: [number, number][]; distanceKm: number; durationMin: number }> {
+): Promise<{
+  coords: [number, number][];
+  distanceKm: number;
+  durationMin: number;
+  steps: RouteStep[];
+}> {
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson&steps=true`;
     const res = await fetch(url);
     if (res.ok) {
       const json = (await res.json()) as {
@@ -270,14 +315,42 @@ export async function fetchRouteGeometry(
           distance: number;
           duration: number;
           geometry: { coordinates: [number, number][] };
+          legs?: Array<{
+            steps?: Array<{
+              distance?: number;
+              name?: string;
+              maneuver?: {
+                type?: string;
+                modifier?: string;
+                location?: [number, number];
+              };
+            }>;
+          }>;
         }>;
       };
       const route = json.routes?.[0];
       if (route) {
+        const rawSteps = route.legs?.[0]?.steps || [];
+        const steps: RouteStep[] = rawSteps.map((st) => {
+          const maneuverType = st.maneuver?.type || 'continue';
+          const modifier = st.maneuver?.modifier || 'straight';
+          const roadName = (st.name || '').trim();
+          const loc = st.maneuver?.location;
+          return {
+            instruction: translateOsrmStep(maneuverType, modifier, roadName),
+            roadName,
+            distanceMeters: Math.round(st.distance ?? 0),
+            maneuverType,
+            modifier,
+            location: loc ? [loc[1], loc[0]] : [destLat, destLng],
+          };
+        });
+
         return {
           coords: route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
           distanceKm: Math.max(0.5, Number((route.distance / 1000).toFixed(2))),
           durationMin: Math.max(2, Math.round(route.duration / 60)),
+          steps,
         };
       }
     }
@@ -293,6 +366,16 @@ export async function fetchRouteGeometry(
     ],
     distanceKm: dist,
     durationMin: Math.max(3, Math.round(dist * 2.5)),
+    steps: [
+      {
+        instruction: 'Siga em direção ao ponto marcado no mapa',
+        roadName: '',
+        distanceMeters: Math.round(dist * 1000),
+        maneuverType: 'depart',
+        modifier: 'straight',
+        location: [destLat, destLng],
+      },
+    ],
   };
 }
 

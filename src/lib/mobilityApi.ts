@@ -878,14 +878,16 @@ async function creditDriverForPixRideIdempotent(
 export async function completeRide(
   ride: Ride,
   driverId: string,
-  pinInput?: string
+  pinInput?: string,
+  overrideFinalFare?: number
 ): Promise<Ride> {
   const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
   if (isDelivery && String(pinInput || '').trim() !== ride.pin_code) {
     throw new Error('PIN de entrega incorreto. Peça os 4 dígitos no destino.');
   }
 
-  const finalFare = Number((ride.final_fare ?? ride.estimated_fare).toFixed(2));
+  const baseFare = overrideFinalFare ?? ride.final_fare ?? ride.estimated_fare;
+  const finalFare = Number(baseFare.toFixed(2));
   const nextPaymentStatus: PaymentStatus =
     ride.payment_method === 'cash'
       ? 'paid_cash'
@@ -960,6 +962,10 @@ export async function declarePixPaid(ride: Ride): Promise<Ride> {
   const enriched = await fetchRideByIdEnriched(ride.id);
   if (!enriched) throw new Error('Corrida não encontrada.');
   return enriched;
+}
+
+export async function confirmPixValidatedByDriver(ride: Ride): Promise<Ride> {
+  return declarePixPaid(ride);
 }
 
 export async function confirmCashReceived(ride: Ride): Promise<Ride> {
