@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Cookie, ShieldCheck } from 'lucide-react';
+import { useTranslation } from '../lib/i18n';
 import { getCookieConsent, setCookieConsent } from '../lib/userPrefs';
 import { LegalDocsModal } from './LegalDocsModal';
 
@@ -8,6 +9,7 @@ interface CookieBannerProps {
 }
 
 export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobilidade' }) => {
+  const { t } = useTranslation();
   const [choice, setChoice] = useState<'all' | 'essential' | null>(() => getCookieConsent());
   const [showDocs, setShowDocs] = useState(false);
 
@@ -31,7 +33,7 @@ export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobil
             </div>
             <div className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
               <p className="font-extrabold text-neutral-950 dark:text-white flex items-center gap-1.5">
-                Cookies e Privacidade ({siteName})
+                {t.cookies_notice_title} ({siteName})
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
               </p>
               <p className="mt-0.5">
@@ -42,7 +44,7 @@ export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobil
                   onClick={() => setShowDocs(true)}
                   className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                 >
-                  Ler Política de Cookies e Segurança
+                  {t.privacy_security}
                 </button>
               </p>
             </div>
@@ -67,7 +69,7 @@ export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobil
               }}
               className="min-h-[40px] rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950 hover:bg-neutral-800 dark:hover:bg-[#f5c400]"
             >
-              Aceitar Tudo
+              {t.accept_cookies_btn}
             </button>
           </div>
         </div>

@@ -16,7 +16,10 @@ import type {
   UserProfile,
   WalletDeposit,
   WalletDepositStatus,
+  WalletRecipientMatch,
   WalletTransaction,
+  WalletWithdrawal,
+  WalletWithdrawalStatus,
 } from '../types/mobility';
 
 export const ADMIN_EMAIL = 'driver@admin.com';
@@ -27,6 +30,8 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   platform_pix_key: 'pix@66mobilidade.app',
   platform_pix_receiver: '66 Mobilidade Ltda',
   platform_city: 'São Paulo, SP',
+  company_address: '',
+  platform_pix_qr_url: null,
   site_name: '66 Mobilidade',
   support_whatsapp: '',
   commission_percent: 0,
@@ -45,8 +50,9 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   sound_completed_url: null,
   sound_chat_url: null,
   sound_cancel_url: null,
-  ota_latest_version: '1.2.1',
+  ota_latest_version: '1.2.2',
   ota_apk_url: null,
+  ota_web_url: null,
   ota_release_notes: null,
 };
 
@@ -367,6 +373,7 @@ export async function uploadPlatformAssetFile(
   file: File,
   kind:
     | 'logo'
+    | 'pix_qr'
     | 'moto'
     | 'pop'
     | 'delivery_moto'
@@ -381,7 +388,7 @@ export async function uploadPlatformAssetFile(
 ): Promise<string> {
   const isImage = file.type.startsWith('image/');
   const dataUrl = isImage
-    ? await compressImageFileToDataUrl(file, 720, 0.72)
+    ? await compressImageFileToDataUrl(file, 720, kind === 'pix_qr' ? 0.88 : 0.72)
     : await fileToDataUrl(file);
   const ext = isImage ? 'jpg' : file.name.split('.').pop()?.toLowerCase() || 'mp3';
   const contentType = isImage ? 'image/jpeg' : file.type || 'audio/mpeg';
@@ -696,6 +703,7 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
         (appCfg?.logo_url as string | null | undefined) ?? cached.app_logo_url ?? null,
       primary_color: String(appCfg?.primary_color || cached.primary_color || '#FFD100'),
       secondary_color: String(appCfg?.secondary_color || cached.secondary_color || '#111827'),
+      ota_web_url: cached.ota_web_url ?? null,
     };
   }
 
@@ -705,6 +713,12 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       data.platform_pix_receiver || DEFAULT_PLATFORM_CONFIG.platform_pix_receiver
     ),
     platform_city: String(data.platform_city || DEFAULT_PLATFORM_CONFIG.platform_city),
+    company_address:
+      (data.company_address as string | null | undefined) ?? cached.company_address ?? '',
+    platform_pix_qr_url:
+      (data.platform_pix_qr_url as string | null | undefined) ??
+      cached.platform_pix_qr_url ??
+      null,
     site_name: String(
       appCfg?.app_name || data.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name
     ),
@@ -749,9 +763,11 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     sound_cancel_url:
       (data.sound_cancel_url as string | null | undefined) ?? cached.sound_cancel_url ?? null,
     ota_latest_version:
-      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.0',
+      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.2',
     ota_apk_url:
       (data.ota_apk_url as string | null | undefined) ?? cached.ota_apk_url ?? null,
+    ota_web_url:
+      (data.ota_web_url as string | null | undefined) ?? cached.ota_web_url ?? null,
     ota_release_notes:
       (data.ota_release_notes as string | null | undefined) ?? cached.ota_release_notes ?? null,
   };
@@ -1717,16 +1733,19 @@ export async function fetchAdminOverview(): Promise<{
   pricing: PricingSetting[];
   transactions: WalletTransaction[];
   deposits: WalletDeposit[];
+  withdrawals: WalletWithdrawal[];
 }> {
-  const [platformConfig, pricing, profRes, drvRes, rideRes, txRes, depRes] = await Promise.all([
-    fetchPlatformConfig(),
-    fetchPricingList(),
-    supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-    supabase.from('driver_profiles').select('*'),
-    supabase.from('rides').select('*').order('created_at', { ascending: false }),
-    supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }),
-    supabase.from('wallet_deposits').select('*').order('created_at', { ascending: false }),
-  ]);
+  const [platformConfig, pricing, profRes, drvRes, rideRes, txRes, depRes, wdRes] =
+    await Promise.all([
+      fetchPlatformConfig(),
+      fetchPricingList(),
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('driver_profiles').select('*'),
+      supabase.from('rides').select('*').order('created_at', { ascending: false }),
+      supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }),
+      supabase.from('wallet_deposits').select('*').order('created_at', { ascending: false }),
+      supabase.from('wallet_withdrawals').select('*').order('created_at', { ascending: false }),
+    ]);
 
   const drvMap = new Map<string, Record<string, unknown>>();
   for (const d of drvRes.data || []) {
@@ -1766,7 +1785,19 @@ export async function fetchAdminOverview(): Promise<{
     user: profilesById.get(String(d.user_id)),
   }));
 
-  return { platformConfig, users, rides, pricing, transactions, deposits };
+  const withdrawals: WalletWithdrawal[] = (wdRes.data || []).map((w) => ({
+    id: String(w.id),
+    user_id: String(w.user_id),
+    amount: Number(w.amount),
+    pix_key: String(w.pix_key),
+    status: (w.status as WalletWithdrawalStatus) || 'pending',
+    note: w.note ? String(w.note) : null,
+    created_at: String(w.created_at),
+    reviewed_at: w.reviewed_at ? String(w.reviewed_at) : null,
+    user: profilesById.get(String(w.user_id)),
+  }));
+
+  return { platformConfig, users, rides, pricing, transactions, deposits, withdrawals };
 }
 
 export async function adminReviewDriver(
@@ -1829,6 +1860,8 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
       PLATFORM_BRAND_CACHE_KEY,
       JSON.stringify({
         site_name: cleanName,
+        company_address: config.company_address?.trim() || '',
+        platform_pix_qr_url: config.platform_pix_qr_url ?? null,
         support_whatsapp: config.support_whatsapp.trim(),
         commission_percent: Number(config.commission_percent || 0),
         app_logo_url: config.app_logo_url ?? null,
@@ -1845,8 +1878,9 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         sound_completed_url: config.sound_completed_url ?? null,
         sound_chat_url: config.sound_chat_url ?? null,
         sound_cancel_url: config.sound_cancel_url ?? null,
-        ota_latest_version: config.ota_latest_version ?? '1.2.0',
+        ota_latest_version: config.ota_latest_version ?? '1.2.2',
         ota_apk_url: config.ota_apk_url ?? null,
+        ota_web_url: config.ota_web_url ?? null,
         ota_release_notes: config.ota_release_notes ?? null,
       })
     );
@@ -1872,6 +1906,8 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     platform_pix_key: config.platform_pix_key.trim(),
     platform_pix_receiver: config.platform_pix_receiver.trim(),
     platform_city: config.platform_city.trim(),
+    company_address: config.company_address?.trim() || null,
+    platform_pix_qr_url: config.platform_pix_qr_url ?? null,
     site_name: cleanName,
     support_whatsapp: config.support_whatsapp.trim(),
     commission_percent: Number(config.commission_percent || 0),
@@ -1890,13 +1926,20 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     sound_completed_url: config.sound_completed_url ?? null,
     sound_chat_url: config.sound_chat_url ?? null,
     sound_cancel_url: config.sound_cancel_url ?? null,
-    ota_latest_version: config.ota_latest_version?.trim() || '1.2.0',
+    ota_latest_version: config.ota_latest_version?.trim() || '1.2.2',
     ota_apk_url: config.ota_apk_url?.trim() || null,
+    ota_web_url: config.ota_web_url?.trim() || null,
     ota_release_notes: config.ota_release_notes?.trim() || null,
     updated_at: new Date().toISOString(),
   };
 
   let { error } = await supabase.from('platform_settings').upsert(fullPayload);
+  if (error && error.code === '42703') {
+    const withoutOtaWeb = { ...fullPayload } as Record<string, unknown>;
+    delete withoutOtaWeb.ota_web_url;
+    const retryOta = await supabase.from('platform_settings').upsert(withoutOtaWeb);
+    error = retryOta.error;
+  }
   if (error && error.code === '42703') {
     const legacyV15Retry = await supabase.from('platform_settings').upsert({
       id: 1,
@@ -2375,6 +2418,131 @@ export async function adminUpdateUserWalletBalance(
         description: cleanDesc,
       });
     }
+  }
+}
+
+export async function lookupWalletRecipient(query: string): Promise<WalletRecipientMatch[]> {
+  const clean = query.trim();
+  if (clean.length < 3) return [];
+
+  const { data, error } = await supabase.rpc('lookup_wallet_recipient', {
+    p_query: clean,
+  });
+
+  if (!error && Array.isArray(data)) {
+    return data.map((r) => ({
+      id: String(r.id),
+      full_name: String(r.full_name || 'Usuário'),
+      email: String(r.email || ''),
+      phone: String(r.phone || ''),
+      role: (r.role as WalletRecipientMatch['role']) || 'passenger',
+      avatar_url: r.avatar_url ? String(r.avatar_url) : null,
+    }));
+  }
+
+  // Fallback direct query on profiles if RPC isn't deployed yet
+  const digits = clean.replace(/\D/g, '');
+  let q = supabase
+    .from('profiles')
+    .select('id,full_name,email,phone,role,avatar_url')
+    .neq('role', 'admin')
+    .eq('is_anonymized', false)
+    .limit(5);
+
+  if (clean.includes('@')) {
+    q = q.ilike('email', `%${clean.toLowerCase()}%`);
+  } else if (digits.length >= 4) {
+    q = q.or(`phone.ilike.%${digits}%,cpf.ilike.%${digits}%`);
+  } else {
+    q = q.ilike('full_name', `%${clean}%`);
+  }
+
+  const { data: fallback } = await q;
+  return (fallback || []).map((r) => ({
+    id: String(r.id),
+    full_name: String(r.full_name || 'Usuário'),
+    email: String(r.email || ''),
+    phone: String(r.phone || ''),
+    role: (r.role as WalletRecipientMatch['role']) || 'passenger',
+    avatar_url: r.avatar_url ? String(r.avatar_url) : null,
+  }));
+}
+
+export async function transferWalletBalance(
+  toUserId: string,
+  amount: number,
+  note?: string
+): Promise<void> {
+  const cleanAmount = Number(Math.max(0, amount).toFixed(2));
+  if (cleanAmount <= 0) {
+    throw new Error('Informe um valor maior que zero para transferir.');
+  }
+
+  const { error } = await supabase.rpc('transfer_wallet_balance', {
+    p_to_user_id: toUserId,
+    p_amount: cleanAmount,
+    p_note: note?.trim() || null,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao transferir saldo. Verifique o SQL incremental.');
+  }
+}
+
+export async function fetchMyWalletWithdrawals(userId: string): Promise<WalletWithdrawal[]> {
+  const { data, error } = await supabase
+    .from('wallet_withdrawals')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data.map((w) => ({
+    id: String(w.id),
+    user_id: String(w.user_id),
+    amount: Number(w.amount),
+    pix_key: String(w.pix_key),
+    status: (w.status as WalletWithdrawalStatus) || 'pending',
+    note: w.note ? String(w.note) : null,
+    created_at: String(w.created_at),
+    reviewed_at: w.reviewed_at ? String(w.reviewed_at) : null,
+  }));
+}
+
+export async function requestWalletWithdrawal(amount: number, pixKey: string): Promise<string> {
+  const cleanAmount = Number(Math.max(0, amount).toFixed(2));
+  const cleanPix = pixKey.trim();
+  if (cleanAmount < 5) {
+    throw new Error('O valor mínimo para solicitação de saque é R$ 5,00.');
+  }
+  if (!cleanPix) {
+    throw new Error('Informe uma chave Pix válida para receber o saque.');
+  }
+
+  const { data, error } = await supabase.rpc('request_wallet_withdrawal', {
+    p_amount: cleanAmount,
+    p_pix_key: cleanPix,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao solicitar saque. Verifique o SQL incremental.');
+  }
+  return String(data || '');
+}
+
+export async function adminProcessWalletWithdrawal(
+  withdrawalId: string,
+  action: 'paid' | 'rejected',
+  note?: string
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_process_wallet_withdrawal', {
+    p_withdrawal_id: withdrawalId,
+    p_action: action,
+    p_note: note?.trim() || null,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao processar saque no Supabase.');
   }
 }
 

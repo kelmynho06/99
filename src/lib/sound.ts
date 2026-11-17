@@ -47,15 +47,40 @@ function playUrlAudio(url: string): Promise<boolean> {
   });
 }
 
-function playSynthNotes(
-  notes: Array<{ freq: number; start: number; dur: number; type?: OscillatorType }>
+let sharedAudioCtx: AudioContext | null = null;
+
+function getSharedAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const AudioCtx =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return null;
+  if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+    sharedAudioCtx = new AudioCtx();
+  }
+  return sharedAudioCtx;
+}
+
+export async function unlockAudioContext(): Promise<void> {
+  try {
+    const ctx = getSharedAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+  } catch {
+    // Ignore audio context resume restrictions
+  }
+}
+
+async function playSynthNotes(
+  notes: Array<{ freq: number; start: number; dur: number; type?: OscillatorType; gainPeak?: number }>
 ) {
   try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
     const now = ctx.currentTime;
 
     notes.forEach((n) => {
@@ -64,15 +89,16 @@ function playSynthNotes(
       osc.type = n.type || 'triangle';
       osc.frequency.setValueAtTime(n.freq, now + n.start);
 
+      const peak = n.gainPeak ?? 0.24;
       gain.gain.setValueAtTime(0.001, now + n.start);
-      gain.gain.exponentialRampToValueAtTime(0.22, now + n.start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(peak, now + n.start + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, now + n.start + n.dur);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now + n.start);
-      osc.stop(now + n.start + n.dur + 0.02);
+      osc.stop(now + n.start + n.dur + 0.025);
     });
   } catch {
     // Ignore autoplay restriction before user interaction
@@ -91,12 +117,13 @@ export async function playSoundCue(cue: SoundCueType): Promise<void> {
 
   switch (cue) {
     case 'accepted':
-      playSynthNotes([
-        { freq: 523.25, start: 0, dur: 0.13, type: 'triangle' },
-        { freq: 659.25, start: 0.14, dur: 0.13, type: 'triangle' },
-        { freq: 783.99, start: 0.28, dur: 0.16, type: 'triangle' },
-        { freq: 1046.5, start: 0.46, dur: 0.18, type: 'sine' },
-        { freq: 1318.51, start: 0.63, dur: 0.34, type: 'sine' },
+      void playSynthNotes([
+        { freq: 523.25, start: 0, dur: 0.12, type: 'triangle', gainPeak: 0.34 },
+        { freq: 659.25, start: 0.13, dur: 0.12, type: 'triangle', gainPeak: 0.34 },
+        { freq: 783.99, start: 0.26, dur: 0.12, type: 'triangle', gainPeak: 0.34 },
+        { freq: 1046.5, start: 0.39, dur: 0.16, type: 'triangle', gainPeak: 0.36 },
+        { freq: 1318.51, start: 0.57, dur: 0.14, type: 'sine', gainPeak: 0.36 },
+        { freq: 1567.98, start: 0.72, dur: 0.38, type: 'sine', gainPeak: 0.38 },
       ]);
       break;
     case 'arrived':

@@ -41,10 +41,11 @@ import {
 } from 'lucide-react';
 import { logAuditEvent } from '../lib/audit';
 import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
-import { getCurrentGpsPosition } from '../lib/capacitorDevice';
+import { getCurrentGpsPosition, triggerLocalNotification } from '../lib/capacitorDevice';
 import {
   type AddressSuggestion,
   fetchLocalWeather,
+  fetchNearbyPopularPlaces,
   fetchRouteGeometry,
   formatBRL,
   haversineKm,
@@ -59,7 +60,7 @@ import {
   payCompletedRideWithWallet,
   switchCompletedRidePaymentMethod,
 } from '../lib/mobilityApi';
-import { playRideAcceptedChime } from '../lib/sound';
+import { playRideAcceptedChime, unlockAudioContext } from '../lib/sound';
 import type {
   GeoPoint,
   PaymentMethod,
@@ -74,7 +75,7 @@ import type {
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
 import { AvatarImage } from './AvatarImage';
-import { ClientWalletModal } from './ClientWalletModal';
+import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
@@ -98,16 +99,18 @@ interface PassengerViewProps {
 }
 
 const DEFAULT_ORIGIN: GeoPoint = {
-  lat: -23.55052,
-  lng: -46.633308,
-  address: 'Centro · Localização inicial',
+  lat: -15.793889,
+  lng: -47.882778,
+  address: '',
 };
 
-const QUICK_DESTINATIONS: GeoPoint[] = [
-  { lat: -23.561414, lng: -46.655881, address: 'Av. Paulista, 1578 · Centro Empresarial' },
-  { lat: -23.587416, lng: -46.657634, address: 'Parque Municipal · Portão Principal' },
-  { lat: -23.54198, lng: -46.62952, address: 'Terminal Rodoviário Central' },
-  { lat: -23.5673, lng: -46.6931, address: 'Shopping Plaza · Entrada Norte' },
+const LOCAL_SEARCH_CHIPS = [
+  'Supermercado',
+  'Farmácia',
+  'Posto',
+  'Praça',
+  'Hospital',
+  'Rodoviária',
 ];
 
 const CATEGORY_LABELS: Record<RideCategory, string> = {
@@ -139,19 +142,22 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
-  const [walletInitialTab, setWalletInitialTab] = useState<'deposit' | 'ledger'>('deposit');
+  const [walletInitialTab, setWalletInitialTab] = useState<WalletModalTab>('deposit');
   const [infoModal, setInfoModal] = useState<
     'help' | 'discounts' | 'security' | 'become_driver' | null
   >(null);
   const [pixModalRide, setPixModalRide] = useState<Ride | null>(null);
 
   const [origin, setOrigin] = useState<GeoPoint>(DEFAULT_ORIGIN);
+  const [gpsFixed, setGpsFixed] = useState(false);
   const [destination, setDestination] = useState<GeoPoint | null>(null);
-  const [originQuery, setOriginQuery] = useState('Localização atual');
+  const [originQuery, setOriginQuery] = useState('');
   const [destQuery, setDestQuery] = useState('');
 
   const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
   const [destSuggestions, setDestSuggestions] = useState<AddressSuggestion[]>([]);
+  const [nearbyPlaces, setNearbyPlaces] = useState<AddressSuggestion[]>([]);
+  const [loadingNearby, setLoadingNearby] = useState(false);
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [activeSearchField, setActiveSearchField] = useState<'origin' | 'destination'>('destination');
   const [pickOnMapMode, setPickOnMapMode] = useState<'origin' | 'destination' | null>(null);
@@ -296,7 +302,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     return { remainingFreeSec, extraSec, waitingFee, isCharging: extraSec > 0 };
   }, [activeRide, waitNowMs]);
 
-  // Play pleasant chime on ride acceptance and track freshly completed rides for RatingModal
+  // Play pleasant chime + strong vibration + local notification on ride acceptance
   useEffect(() => {
     const prevMap = prevRideStatusMapRef.current;
     const nextMap: Record<string, Ride['status']> = {};
@@ -305,6 +311,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       const prevStatus = prevMap[r.id];
       if (prevStatus === 'searching' && r.status === 'accepted') {
         void playRideAcceptedChime();
+        try {
+          if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            navigator.vibrate([180, 80, 180, 80, 280, 100, 420]);
+          }
+        } catch {
+          // Ignore vibration restriction
+        }
+        const isDel = r.category === 'delivery_moto' || r.category === 'delivery_car';
+        void triggerLocalNotification({
+          title: isDel ? 'Entregador a caminho!' : 'Motorista encontrado!',
+          body: `${r.driver?.full_name || 'Parceiro'} aceitou sua solicitação e está indo até você.`,
+          playSound: false,
+        });
       }
       if (
         prevStatus &&
@@ -333,12 +352,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     [myRides, dismissedRatingIds, pixModalRide?.id]
   );
 
+  const loadNearbyForCoords = useCallback(async (lat: number, lng: number) => {
+    setLoadingNearby(true);
+    try {
+      const places = await fetchNearbyPopularPlaces(lat, lng);
+      setNearbyPlaces(places);
+    } catch {
+      // Ignore nearby fetch issues
+    } finally {
+      setLoadingNearby(false);
+    }
+  }, []);
+
   const detectMyGps = useCallback(async () => {
     const pos = await getCurrentGpsPosition();
     if (!pos) {
-      fetchLocalWeather(DEFAULT_ORIGIN.lat, DEFAULT_ORIGIN.lng).then((w) => w && setWeather(w));
       return;
     }
+    setGpsFixed(true);
     const [addr, w] = await Promise.all([
       reverseGeocode(pos.lat, pos.lng),
       fetchLocalWeather(pos.lat, pos.lng),
@@ -346,11 +377,18 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     setOrigin({ lat: pos.lat, lng: pos.lng, address: addr });
     setOriginQuery(addr);
     if (w) setWeather(w);
-  }, []);
+    void loadNearbyForCoords(pos.lat, pos.lng);
+  }, [loadNearbyForCoords]);
 
   useEffect(() => {
     detectMyGps();
   }, [detectMyGps]);
+
+  useEffect(() => {
+    if (addressScreenOpen && gpsFixed && nearbyPlaces.length === 0 && !loadingNearby) {
+      void loadNearbyForCoords(origin.lat, origin.lng);
+    }
+  }, [addressScreenOpen, gpsFixed, nearbyPlaces.length, loadingNearby, loadNearbyForCoords, origin.lat, origin.lng]);
 
   useEffect(() => {
     if (activeRide && activeRide.driver_id) {
@@ -364,7 +402,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     const timer = setTimeout(async () => {
       if (
         originQuery.trim().length < 2 ||
-        originQuery === 'Localização atual' ||
+        originQuery === t.current_location ||
         originQuery === origin.address
       ) {
         setOriginSuggestions([]);
@@ -382,7 +420,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [originQuery, addressScreenOpen, activeSearchField, origin.address, origin.lat, origin.lng]);
+  }, [originQuery, addressScreenOpen, activeSearchField, origin.address, origin.lat, origin.lng, t.current_location]);
 
   useEffect(() => {
     if (!addressScreenOpen || activeSearchField !== 'destination') return;
@@ -543,13 +581,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const walletBalance = Number((currentUser.wallet_balance || 0).toFixed(2));
   const hasEnoughWalletBalance = walletBalance >= totalFareWithDebt;
 
-  const openWallet = (tab: 'deposit' | 'ledger' = 'deposit') => {
+  const openWallet = (tab: WalletModalTab = 'deposit') => {
     setWalletInitialTab(tab);
     setWalletOpen(true);
   };
 
   const handleRequestRide = async () => {
     if (!destination || submitting) return;
+    unlockAudioContext();
     if (paymentMethod === 'wallet' && !hasEnoughWalletBalance) {
       setErrorMsg(
         `Saldo insuficiente (${formatBRL(walletBalance)}). Deposite via Pix ou escolha Pix/Dinheiro.`
@@ -564,7 +603,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         passenger_id: currentUser.id,
         category,
         payment_method: paymentMethod,
-        origin,
+        origin: {
+          ...origin,
+          address: origin.address || t.current_location,
+        },
         destination,
         distance_km: Math.max(0.6, distanceKm),
         estimated_fare: totalFareWithDebt,
@@ -850,7 +892,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 min-w-0">
                 <MapPin className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span className="truncate">{weather?.city || platformConfig.platform_city}</span>
+                <span className="truncate">
+                  {gpsFixed
+                    ? weather?.city || origin.address || platformConfig.platform_city
+                    : t.detecting_gps}
+                </span>
                 {weather && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-[11px] font-extrabold text-neutral-950 dark:text-amber-200 font-mono-num shrink-0">
                     <Thermometer className="h-3 w-3 text-amber-700 dark:text-amber-400" />
@@ -862,7 +908,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 type="button"
                 onClick={() => openWallet('deposit')}
                 className="inline-flex items-center gap-1.5 rounded-full bg-neutral-950 dark:bg-neutral-800 px-3 py-1 text-[11px] font-extrabold text-[#FFD100] shrink-0 active:scale-95 transition border border-neutral-800 dark:border-neutral-700"
-                title="Abrir meu saldo e depósitos via Pix"
+                title={t.wallet_title}
               >
                 <Wallet className="h-3.5 w-3.5" />
                 <span className="font-mono-num">{t.wallet_balance}: {formatBRL(walletBalance)}</span>
@@ -977,10 +1023,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               >
                 <img
                   src={resolveCategoryVehicleImage('pop', platformConfig)}
-                  alt="Corrida"
+                  alt={t.rides_tab}
                   className="h-7 w-9 object-contain"
                 />
-                <span className="text-[10px] font-extrabold text-neutral-900 dark:text-neutral-100">Corrida</span>
+                <span className="text-[10px] font-extrabold text-neutral-900 dark:text-neutral-100 truncate w-full">{t.rides_tab}</span>
               </button>
 
               <button
@@ -996,10 +1042,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               >
                 <img
                   src={resolveCategoryVehicleImage('delivery_moto', platformConfig)}
-                  alt="Entrega"
+                  alt={t.deliveries_tab}
                   className="h-7 w-9 object-contain"
                 />
-                <span className="text-[10px] font-extrabold text-neutral-900 dark:text-neutral-100">Entrega</span>
+                <span className="text-[10px] font-extrabold text-neutral-900 dark:text-neutral-100 truncate w-full">{t.deliveries_tab}</span>
               </button>
 
               <button
@@ -1014,7 +1060,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
               >
                 <Home className="h-4 w-4 text-neutral-800 dark:text-neutral-200" />
-                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200">Casa</span>
+                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200 truncate w-full">{t.home_label}</span>
               </button>
 
               <button
@@ -1029,7 +1075,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
               >
                 <Briefcase className="h-4 w-4 text-neutral-800 dark:text-neutral-200" />
-                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200">Trabalho</span>
+                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200 truncate w-full">{t.work_label}</span>
               </button>
 
               <button
@@ -1041,7 +1087,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
               >
                 <Star className="h-4 w-4 text-neutral-800 dark:text-neutral-200" />
-                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200">Favoritos</span>
+                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200 truncate w-full">{t.favorites_label}</span>
               </button>
             </div>
           </div>
@@ -1173,7 +1219,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         {destination.address}
                       </p>
                       <p className="text-[11px] text-neutral-500 dark:text-neutral-400 font-mono-num truncate">
-                        De: {origin.address} · {distanceKm} km · {durationMin} min
+                        {origin.address || t.current_location} · {distanceKm} km · {durationMin} min
                       </p>
                     </div>
                   </button>
@@ -1206,7 +1252,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         : 'text-neutral-600 dark:text-neutral-300'
                     }`}
                   >
-                    Viagens (Carro / Moto)
+                    {t.rides_tab}
                   </button>
                   <button
                     type="button"
@@ -1222,7 +1268,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         : 'text-neutral-600 dark:text-neutral-300'
                     }`}
                   >
-                    Entregas (Pacotes)
+                    {t.deliveries_tab}
                   </button>
                 </div>
 
@@ -1372,20 +1418,20 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   {[
                     {
                       id: 'wallet' as PaymentMethod,
-                      label: 'Saldo App',
+                      label: t.pay_with_wallet,
                       sub: formatBRL(walletBalance),
                       icon: Wallet,
                     },
                     {
                       id: 'pix' as PaymentMethod,
-                      label: 'Pix',
-                      sub: 'Plataforma',
+                      label: t.pay_with_pix,
+                      sub: 'QR / Chave',
                       icon: QrCode,
                     },
                     {
                       id: 'cash' as PaymentMethod,
-                      label: 'Dinheiro',
-                      sub: 'Ao motorista',
+                      label: t.pay_with_cash,
+                      sub: t.driver_role_badge,
                       icon: Banknote,
                     },
                   ].map((pm) => {
@@ -1428,11 +1474,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         Saldo insuficiente ({formatBRL(walletBalance)})
                       </p>
                       <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                        Deposite pelo menos{' '}
+                        {t.deposit}{' '}
                         <strong className="font-mono-num">
                           {formatBRL(totalFareWithDebt - walletBalance)}
                         </strong>{' '}
-                        via Pix ou selecione Pix/Dinheiro.
+                        via Pix
                       </p>
                     </div>
                     <button
@@ -1440,7 +1486,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       onClick={() => openWallet('deposit')}
                       className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-[11px] font-extrabold text-[#FFD100]"
                     >
-                      Depositar Pix
+                      {t.deposit} Pix
                     </button>
                   </div>
                 )}
@@ -1452,8 +1498,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition disabled:opacity-50"
                 >
                   {submitting
-                    ? 'Solicitando...'
-                    : `${formatBRL(totalFareWithDebt)} · Solicitar ${CATEGORY_LABELS[category]}`}
+                    ? t.requesting_btn
+                    : `${formatBRL(totalFareWithDebt)} · ${t.request_ride_btn} ${CATEGORY_LABELS[category]}`}
                 </button>
               </div>
             ) : unpaidCompletedRide && !dismissedCompletedPayIds.includes(unpaidCompletedRide.id) ? (
@@ -1613,12 +1659,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                    {isDeliveryActive ? 'Seu pedido foi solicitado' : 'Sua corrida foi solicitada'}
+                    {t.ride_requested_title}
                   </h3>
                   <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                    {isDeliveryActive
-                      ? 'Encontraremos o entregador mais próximo de você'
-                      : 'Encontraremos o motorista mais indicado na sua região'}
+                    {t.finding_driver_sub}
                   </p>
                 </div>
                 <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800">
@@ -1657,7 +1701,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 onClick={handleCancelRide}
                 className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-sm font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition"
               >
-                Cancelar solicitação
+                {t.cancel_request}
               </button>
             </div>
           ) : (
@@ -1668,22 +1712,20 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   {activeRide.status === 'accepted' && (
                     <>
-                      {isDeliveryActive ? 'Coleta em ' : 'Embarque em '}
+                      {isDeliveryActive ? `${t.pickup_in} ` : `${t.boarding_in} `}
                       <span className="text-blue-600 dark:text-blue-400 font-mono-num">
-                        {durationMin > 0 ? `${durationMin} min` : 'instantes'}
+                        {durationMin > 0 ? `${durationMin} min` : '2 min'}
                       </span>
                     </>
                   )}
                   {activeRide.status === 'arrived' && (
                     <span className="text-emerald-700 dark:text-emerald-400">
-                      {isDeliveryActive
-                        ? 'Entregador chegou para a coleta!'
-                        : 'Motorista no ponto de embarque!'}
+                      {isDeliveryActive ? t.deliverer_arrived : t.driver_arrived}
                     </span>
                   )}
                   {activeRide.status === 'in_progress' && (
                     <>
-                      {isDeliveryActive ? 'Entrega em rota · ' : 'Chegada em '}
+                      {isDeliveryActive ? 'Entrega · ' : `${t.arrival_in} `}
                       <span className="text-blue-600 dark:text-blue-400 font-mono-num">
                         {durationMin > 0 ? `${durationMin} min` : 'em breve'}
                       </span>
@@ -1755,26 +1797,39 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
               </div>
 
-              {/* 4-Digit Security PIN Box (Required on boarding for rides; Optional on deliveries) */}
+              {/* 4-Digit Security PIN Card (Modern Elevated 4-Tile Layout) */}
               {(!isDeliveryActive || activeRide.require_pin !== false) ? (
-                <div className="flex items-center justify-between rounded-2xl bg-[#FFD100]/20 border border-[#FFD100] px-4 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <ShieldCheck className="h-5 w-5 text-neutral-950 dark:text-[#FFD100] shrink-0" />
-                    <div>
-                      <p className="text-xs font-extrabold text-neutral-950 dark:text-white">
-                        {isDeliveryActive ? 'PIN de Coleta e Entrega' : 'PIN de segurança (Embarque)'}
-                      </p>
-                      <p className="text-[11px] text-neutral-700 dark:text-neutral-300">
-                        {isDeliveryActive
-                          ? 'Informe ao entregador na coleta e entrega'
-                          : activeRide.status === 'in_progress'
-                          ? 'Embarque validado · Chegada sem PIN'
-                          : 'Informe ao motorista ao embarcar'}
-                      </p>
+                <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700/80 bg-gradient-to-br from-neutral-50 to-amber-50/70 dark:from-neutral-800/90 dark:to-neutral-900 p-3.5 shadow-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950 shadow-xs">
+                        <ShieldCheck className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate">
+                          {isDeliveryActive ? t.delivery_pin_title : t.security_pin_title}
+                        </p>
+                        <p className="text-[11px] text-neutral-600 dark:text-neutral-300 leading-tight">
+                          {activeRide.status === 'in_progress' && !isDeliveryActive
+                            ? 'Embarque validado · Chegada sem PIN'
+                            : t.pin_share_hint}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="rounded-xl bg-neutral-950 px-3.5 py-1 font-mono-num text-xl font-extrabold tracking-widest text-[#FFD100]">
-                    {activeRide.pin_code}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {String(activeRide.pin_code || '0000')
+                        .padStart(4, '0')
+                        .slice(0, 4)
+                        .split('')
+                        .map((digit, idx) => (
+                          <span
+                            key={idx}
+                            className="flex h-10 w-8 items-center justify-center rounded-xl bg-white dark:bg-neutral-950 border-2 border-neutral-950/15 dark:border-[#FFD100]/60 font-mono-num text-lg font-extrabold text-neutral-950 dark:text-[#FFD100] shadow-xs"
+                          >
+                            {digit}
+                          </span>
+                        ))}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1862,7 +1917,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   <span>
                     {currentChatMessages.length > 0
                       ? `Chat (${currentChatMessages.length})`
-                      : 'Alguma observação?'}
+                      : t.any_note_chat}
                   </span>
                 </button>
                 {activeRide.driver?.phone && (
@@ -1881,7 +1936,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     onClick={handleCancelRide}
                     className="min-h-[48px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700"
                   >
-                    Cancelar
+                    {t.cancel}
                   </button>
                 )}
               </div>
@@ -1906,7 +1961,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <ArrowLeft className="h-6 w-6" />
               </button>
               <h2 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                Selecionar endereço
+                {t.select_address}
               </h2>
             </div>
 
@@ -1918,7 +1973,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   value={originQuery}
                   onFocus={() => setActiveSearchField('origin')}
                   onChange={(e) => setOriginQuery(e.target.value)}
-                  placeholder="Localização atual"
+                  placeholder={gpsFixed ? t.current_location : t.detecting_gps}
                   className="min-h-[40px] flex-1 bg-transparent text-sm font-semibold text-emerald-700 dark:text-emerald-400 outline-none placeholder:text-neutral-400"
                 />
                 <button
@@ -1965,7 +2020,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     setAddressScreenOpen(false);
                     setPickOnMapMode('destination');
                   }}
-                  title="Marcar destino no mapa"
+                  title={t.mark_on_map}
                   className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-950 dark:text-[#FFD100] hover:bg-neutral-200 dark:hover:bg-neutral-700"
                 >
                   <MapPin className="h-5 w-5" />
@@ -1986,7 +2041,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 className="flex min-h-[44px] items-center justify-center gap-1.5 text-xs font-bold text-neutral-800 dark:text-neutral-200"
               >
                 <Home className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-                <span>Casa</span>
+                <span>{t.home_label}</span>
               </button>
               <button
                 type="button"
@@ -2000,7 +2055,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 className="flex min-h-[44px] items-center justify-center gap-1.5 text-xs font-bold text-neutral-800 dark:text-neutral-200"
               >
                 <Briefcase className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-                <span>Trabalho</span>
+                <span>{t.work_label}</span>
               </button>
               <button
                 type="button"
@@ -2010,7 +2065,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 }`}
               >
                 <Star className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-                <span>Favoritos</span>
+                <span>{t.favorites_label}</span>
               </button>
             </div>
           </div>
@@ -2018,7 +2073,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           <div className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
             {searchingAddress && (
               <div className="px-4 py-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
-                Buscando endereços, números e estabelecimentos próximos...
+                {t.searching_addresses}
               </div>
             )}
             {activeSearchField === 'origin' && originSuggestions.length > 0 ? (
@@ -2137,31 +2192,79 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 );
               })
             ) : (
-              QUICK_DESTINATIONS.map((item, i) => {
-                const km = haversineKm(origin.lat, origin.lng, item.lat, item.lng);
-                const title = item.address.split('·')[0].trim();
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => selectDestinationPoint(item)}
-                    className="flex min-h-[62px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-900"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
-                        <Navigation className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-neutral-950 dark:text-white truncate">{title}</p>
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{item.address}</p>
-                      </div>
-                    </div>
-                    <span className="font-mono-num text-xs font-bold text-neutral-500 dark:text-neutral-400 shrink-0">
-                      {km.toFixed(1)}km
+              <div>
+                <div className="flex items-center gap-1.5 overflow-x-auto px-4 py-3 no-scrollbar border-b border-neutral-100 dark:border-neutral-800">
+                  {LOCAL_SEARCH_CHIPS.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => {
+                        setActiveSearchField('destination');
+                        setDestQuery(chip);
+                      }}
+                      className="shrink-0 rounded-full border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3 py-1.5 text-xs font-bold text-neutral-800 dark:text-neutral-200 hover:border-neutral-950 dark:hover:border-[#FFD100] active:scale-95 transition"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                    {t.nearby_places_label}
+                  </span>
+                  {loadingNearby && (
+                    <span className="text-[11px] font-semibold text-amber-600 dark:text-[#FFD100]">
+                      Carregando...
                     </span>
-                  </button>
-                );
-              })
+                  )}
+                </div>
+
+                {nearbyPlaces.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-neutral-500 dark:text-neutral-400 space-y-2">
+                    <p>
+                      {gpsFixed
+                        ? 'Digite o nome da rua, número, bairro ou estabelecimento (ex: mercado, farmácia, praça).'
+                        : t.detecting_gps}
+                    </p>
+                  </div>
+                ) : (
+                  nearbyPlaces.map((item, i) => {
+                    const km = haversineKm(origin.lat, origin.lng, item.lat, item.lng);
+                    const title = item.address.split('·')[0].trim();
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() =>
+                          selectDestinationPoint({ lat: item.lat, lng: item.lng, address: item.address })
+                        }
+                        className="flex min-h-[62px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                            <Navigation className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-bold text-neutral-950 dark:text-white truncate">{title}</p>
+                              <span className="shrink-0 rounded-md bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold text-neutral-900 dark:text-amber-200">
+                                {item.categoryLabel}
+                              </span>
+                            </div>
+                            <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                              {item.subtitle || item.address}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-mono-num text-xs font-bold text-neutral-500 dark:text-neutral-400 shrink-0">
+                          {km.toFixed(1)}km
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             )}
           </div>
 
@@ -2175,7 +2278,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm font-bold text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
             >
               <MapPin className="h-4 w-4" />
-              Marque o local no mapa
+              {t.mark_on_map}
             </button>
           </div>
         </div>
@@ -2241,24 +2344,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               className="mt-4 flex w-full items-center justify-between rounded-2xl bg-neutral-950 dark:bg-neutral-950 px-4 py-3 text-left text-white shadow-sm border border-neutral-800"
             >
               <div>
-                <p className="text-[11px] font-bold text-neutral-400">Meu Saldo no App</p>
+                <p className="text-[11px] font-bold text-neutral-400">{t.wallet_title}</p>
                 <p className="font-mono-num text-lg font-extrabold text-[#FFD100]">
                   {formatBRL(walletBalance)}
                 </p>
               </div>
               <span className="rounded-xl bg-[#FFD100] px-3 py-1.5 text-xs font-extrabold text-neutral-950">
-                {t.deposit} Pix
+                {t.deposit} / {t.transfer}
               </span>
             </button>
 
             <div className="mt-5 grid grid-cols-3 gap-y-5 gap-x-2 text-center">
               {[
                 { label: t.ride_history.split(' ')[0], icon: History, action: () => setHistoryOpen(true) },
-                { label: 'Ajuda', icon: HelpCircle, action: () => setInfoModal('help') },
-                { label: 'Descontos', icon: Tag, action: () => setInfoModal('discounts') },
+                { label: t.help_label, icon: HelpCircle, action: () => setInfoModal('help') },
+                { label: t.discounts_label, icon: Tag, action: () => setInfoModal('discounts') },
                 { label: t.wallet_balance, icon: Wallet, action: () => openWallet('deposit') },
-                { label: 'Configurar', icon: Settings, action: () => setSettingsOpen(true) },
-                { label: 'Segurança', icon: Shield, action: () => setInfoModal('security') },
+                { label: t.configure_label, icon: Settings, action: () => setSettingsOpen(true) },
+                { label: t.security_label, icon: Shield, action: () => setInfoModal('security') },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -2282,7 +2385,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
             <div className="flex-1 space-y-1">
               <h4 className="font-display text-sm font-extrabold text-neutral-950 dark:text-white mb-2">
-                Outros recursos
+                {t.other_features}
               </h4>
 
               <button
@@ -2310,7 +2413,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               >
                 <span className="flex items-center gap-3">
                   <UserCheck className="h-5 w-5 text-neutral-700 dark:text-neutral-300" />
-                  Seja Motorista / Entregador
+                  {t.become_partner}
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-400" />
               </button>

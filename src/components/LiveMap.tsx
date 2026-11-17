@@ -12,14 +12,11 @@ import {
 import {
   Compass,
   Crosshair,
-  Layers,
   Map as MapIcon,
   Minus,
-  Moon,
-  Mountain,
-  Satellite,
   Plus,
 } from 'lucide-react';
+import { useTranslation } from '../lib/i18n';
 import { getUserPreferences, saveUserPreferences, subscribeUserPreferences } from '../lib/userPrefs';
 import type { GeoPoint, MapLayerMode, UserProfile } from '../types/mobility';
 
@@ -46,18 +43,6 @@ interface LiveMapProps {
   speedKmh?: number;
   showSpeedometer?: boolean;
 }
-
-const LAYER_OPTIONS: Array<{
-  id: MapLayerMode;
-  label: string;
-  shortLabel: string;
-  desc: string;
-}> = [
-  { id: 'urban', label: 'Urbano Padrão', shortLabel: 'Urbano', desc: 'Ruas e bairros' },
-  { id: 'satellite', label: 'Satélite HD', shortLabel: 'Satélite', desc: 'Esri Crisp + Ruas' },
-  { id: 'dark', label: 'Mapa Noturno', shortLabel: 'Noturno', desc: 'CartoDB Dark' },
-  { id: 'terrain_traffic', label: 'Relevo & Tráfego', shortLabel: 'Tráfego', desc: 'Topografia + Vias' },
-];
 
 function findClosestRouteIndex(
   routeCoords: [number, number][],
@@ -176,20 +161,15 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   pickOnMapMode,
   onMapPick,
   onRecenter,
-  layerMode: controlledLayerMode,
-  onLayerModeChange,
   controlsTopClassName = 'top-24',
   followVehicle = false,
   speedKmh = 0,
   showSpeedometer = false,
 }) => {
-  const [internalLayerMode, setInternalLayerMode] = useState<MapLayerMode>(
-    () => getUserPreferences().map_layer || 'urban'
-  );
+  const { t } = useTranslation();
   const [hudCompassEnabled, setHudCompassEnabled] = useState<boolean>(
     () => getUserPreferences().hud_compass_enabled ?? true
   );
-  const [layerMenuOpen, setLayerMenuOpen] = useState(false);
   const [userPanned, setUserPanned] = useState(false);
   const [recenterNonce, setRecenterNonce] = useState(0);
   const zoomApiRef = useRef<{ zoomIn: () => void; zoomOut: () => void }>({
@@ -197,30 +177,17 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     zoomOut: () => {},
   });
 
-  const layerMode = controlledLayerMode ?? internalLayerMode;
-
   useEffect(() => {
-    const unsub = subscribeUserPreferences((prefs) => {
-      if (!controlledLayerMode) {
-        setInternalLayerMode(prefs.map_layer);
-      }
+    return subscribeUserPreferences((prefs) => {
       setHudCompassEnabled(prefs.hud_compass_enabled);
     });
-    return unsub;
-  }, [controlledLayerMode]);
+  }, []);
 
   useEffect(() => {
     if (!followVehicle) {
       setUserPanned(false);
     }
   }, [followVehicle]);
-
-  const handleSelectLayer = (mode: MapLayerMode) => {
-    setInternalLayerMode(mode);
-    saveUserPreferences({ map_layer: mode });
-    onLayerModeChange?.(mode);
-    setLayerMenuOpen(false);
-  };
 
   const handleToggleHudCompass = () => {
     const next = !hudCompassEnabled;
@@ -245,55 +212,18 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   const hudRotationDeg = isHudRotating ? -activeHeading : 0;
 
   // Split OSRM route into traveled (Gray) and remaining ahead (Blue)
-  const { traveledCoords, remainingCoords, trafficZones } = useMemo(() => {
+  const { traveledCoords, remainingCoords } = useMemo(() => {
     if (!routeCoords || routeCoords.length < 2) {
-      // Decorative simulated local traffic corridors around current center for terrain_traffic layer
-      const [cLat, cLng] = center;
-      const simulatedZones: Array<{ coords: [number, number][]; color: string }> = [
-        {
-          coords: [
-            [cLat - 0.004, cLng - 0.006],
-            [cLat - 0.001, cLng - 0.001],
-            [cLat + 0.003, cLng + 0.004],
-          ],
-          color: '#10B981',
-        },
-        {
-          coords: [
-            [cLat + 0.002, cLng - 0.005],
-            [cLat, cLng],
-            [cLat - 0.002, cLng + 0.005],
-          ],
-          color: '#F59E0B',
-        },
-      ];
       return {
         traveledCoords: [] as [number, number][],
         remainingCoords: [] as [number, number][],
-        trafficZones: simulatedZones,
       };
-    }
-
-    const total = routeCoords.length;
-    const midStart = Math.floor(total * 0.42);
-    const midEnd = Math.min(total - 1, Math.floor(total * 0.58));
-    const heavyStart = Math.floor(total * 0.72);
-    const heavyEnd = Math.min(total - 1, Math.floor(total * 0.84));
-    const routeZones: Array<{ coords: [number, number][]; color: string }> = [
-      { coords: routeCoords.slice(0, Math.max(2, midStart + 1)), color: '#10B981' },
-    ];
-    if (midEnd > midStart) {
-      routeZones.push({ coords: routeCoords.slice(midStart, midEnd + 1), color: '#F59E0B' });
-    }
-    if (heavyEnd > heavyStart) {
-      routeZones.push({ coords: routeCoords.slice(heavyStart, heavyEnd + 1), color: '#EF4444' });
     }
 
     if (!driverPosition || !followVehicle) {
       return {
         traveledCoords: [] as [number, number][],
         remainingCoords: routeCoords,
-        trafficZones: routeZones,
       };
     }
     const closestIdx = findClosestRouteIndex(routeCoords, driverPosition.lat, driverPosition.lng);
@@ -310,9 +240,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     return {
       traveledCoords: traveled,
       remainingCoords: remaining,
-      trafficZones: routeZones,
     };
-  }, [routeCoords, driverPosition, followVehicle, center]);
+  }, [routeCoords, driverPosition, followVehicle]);
 
   const originIcon = useMemo(
     () =>
@@ -367,14 +296,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       iconAnchor: [22, 22],
     });
 
-  const activeLayerMeta = LAYER_OPTIONS.find((l) => l.id === layerMode) || LAYER_OPTIONS[0];
-
   return (
-    <div
-      className={`relative h-full w-full overflow-hidden ${
-        layerMode === 'satellite' ? 'leaflet-satellite-crisp bg-neutral-900' : 'bg-neutral-100 dark:bg-neutral-900'
-      }`}
-    >
+    <div className="relative h-full w-full overflow-hidden bg-neutral-100 dark:bg-neutral-900">
       {/* Rotatable inner map viewport for 1st-Person Compass HUD */}
       <div
         className={
@@ -399,53 +322,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           zoomControl={false}
           className="h-full w-full"
         >
-          {layerMode === 'urban' && (
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              maxNativeZoom={19}
-              maxZoom={21}
-              detectRetina={true}
-            />
-          )}
-
-          {layerMode === 'satellite' && (
-            <>
-              <TileLayer
-                attribution="Tiles &copy; Esri"
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                maxNativeZoom={18}
-                maxZoom={21}
-                detectRetina={true}
-              />
-              <TileLayer
-                attribution="Labels &copy; Esri"
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-                maxNativeZoom={18}
-                maxZoom={21}
-              />
-            </>
-          )}
-
-          {layerMode === 'dark' && (
-            <TileLayer
-              attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              maxNativeZoom={19}
-              maxZoom={21}
-              detectRetina={true}
-            />
-          )}
-
-          {layerMode === 'terrain_traffic' && (
-            <TileLayer
-              attribution="Topografia &copy; Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
-              maxNativeZoom={18}
-              maxZoom={21}
-              detectRetina={true}
-            />
-          )}
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxNativeZoom={19}
+            maxZoom={21}
+            detectRetina={true}
+          />
 
           <MapController
             center={center}
@@ -467,7 +350,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             <Marker position={[origin.lat, origin.lng]} icon={originIcon}>
               <Popup>
                 <div className="text-xs font-semibold text-neutral-900">
-                  Origem / Embarque: {origin.address}
+                  {origin.address}
                 </div>
               </Popup>
             </Marker>
@@ -477,25 +360,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             <Marker position={[destination.lat, destination.lng]} icon={destinationIcon}>
               <Popup>
                 <div className="text-xs font-semibold text-neutral-900">
-                  Destino: {destination.address}
+                  {destination.address}
                 </div>
               </Popup>
             </Marker>
           )}
-
-          {/* Traffic Corridor Indicators when Relevo & Tráfego layer is selected */}
-          {layerMode === 'terrain_traffic' &&
-            trafficZones.map((zone, idx) => (
-              <Polyline
-                key={`traffic-${idx}`}
-                positions={zone.coords}
-                pathOptions={{
-                  color: zone.color,
-                  weight: 10,
-                  opacity: 0.45,
-                }}
-              />
-            ))}
 
           {/* Traveled Route Portion (Gray) */}
           {traveledCoords.length >= 2 && (
@@ -537,7 +406,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             if (driverPosition && drv.driver.current_lat === driverPosition.lat) return null;
             const statusLabel =
               drv.driver.vehicle_type === 'delivery'
-                ? 'Entregador / Motoboy'
+                ? t.deliverer_role_badge
                 : drv.driver.vehicle_type === 'moto'
                 ? 'Moto'
                 : 'Carro';
@@ -563,61 +432,6 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
       {/* Upright Floating Controls (Never rotated with map) */}
       <div className={`pointer-events-auto absolute right-3 ${controlsTopClassName} z-[500] flex flex-col items-end gap-2`}>
-        {/* Multi-Layer Picker Trigger */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setLayerMenuOpen((o) => !o)}
-            className={`flex h-11 px-3 items-center justify-center gap-1.5 rounded-2xl shadow-lg border text-[11px] font-extrabold active:scale-95 transition ${
-              layerMode === 'satellite' || layerMode === 'dark'
-                ? 'bg-neutral-950 text-[#FFD100] border-neutral-800'
-                : 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white border-neutral-200 dark:border-neutral-700'
-            }`}
-            aria-label="Selecionar camada do mapa"
-            title="Camadas de Geoprocessamento"
-          >
-            {layerMode === 'satellite' ? (
-              <Satellite className="h-4 w-4 text-[#FFD100]" />
-            ) : layerMode === 'dark' ? (
-              <Moon className="h-4 w-4 text-[#FFD100]" />
-            ) : layerMode === 'terrain_traffic' ? (
-              <Mountain className="h-4 w-4 text-emerald-600" />
-            ) : (
-              <Layers className="h-4 w-4 text-blue-600" />
-            )}
-            <span>{activeLayerMeta.shortLabel}</span>
-          </button>
-
-          {layerMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-2xl p-2 space-y-1 z-[520]">
-              <p className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">
-                Camadas do Mapa
-              </p>
-              {LAYER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => handleSelectLayer(opt.id)}
-                  className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition ${
-                    layerMode === opt.id
-                      ? 'bg-neutral-950 text-[#FFD100] font-extrabold'
-                      : 'text-neutral-800 dark:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 font-bold'
-                  }`}
-                >
-                  <span>{opt.label}</span>
-                  <span
-                    className={`text-[10px] ${
-                      layerMode === opt.id ? 'text-neutral-300' : 'text-neutral-400'
-                    }`}
-                  >
-                    {opt.desc}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* 1st-Person Compass HUD Toggle */}
         {followVehicle && (
           <button
@@ -685,30 +499,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         </div>
       )}
 
-      {/* Subtle Map Mode Badge Top Left */}
+      {/* Subtle Urban Mode Badge Top Left */}
       {!showSpeedometer && (
-        <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-bold text-neutral-700 dark:text-neutral-200 shadow border border-neutral-200 dark:border-neutral-700">
-          {layerMode === 'satellite' ? (
-            <>
-              <Satellite className="h-3 w-3 text-amber-600" />
-              <span>Satélite HD</span>
-            </>
-          ) : layerMode === 'dark' ? (
-            <>
-              <Moon className="h-3 w-3 text-indigo-400" />
-              <span>Mapa Noturno</span>
-            </>
-          ) : layerMode === 'terrain_traffic' ? (
-            <>
-              <Mountain className="h-3 w-3 text-emerald-600" />
-              <span>Relevo & Tráfego</span>
-            </>
-          ) : (
-            <>
-              <MapIcon className="h-3 w-3 text-blue-600" />
-              <span>Modo Urbano</span>
-            </>
-          )}
+        <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 dark:bg-neutral-900/95 px-2.5 py-1 text-[10px] font-bold text-neutral-700 dark:text-neutral-200 shadow border border-neutral-200 dark:border-neutral-700">
+          <MapIcon className="h-3 w-3 text-blue-600" />
+          <span>{t.urban_mode}</span>
         </div>
       )}
     </div>

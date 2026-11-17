@@ -64,12 +64,13 @@ import {
 import { logAuditEvent } from '../lib/audit';
 import { useTranslation } from '../lib/i18n';
 import { isDateInPeriod } from '../lib/periodFilter';
-import { PixQrSvg } from '../lib/pixQr';
+import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import {
   playRideAcceptedChime,
   speakPtBr,
   startContinuousRideAlarm,
   stopSpeech,
+  unlockAudioContext,
 } from '../lib/sound';
 import {
   getUserPreferences,
@@ -89,6 +90,7 @@ import type {
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
 import { AvatarImage } from './AvatarImage';
+import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
 import { LiveMap } from './LiveMap';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -152,6 +154,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [eventsOpen, setEventsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [walletInitialTab, setWalletInitialTab] = useState<WalletModalTab>('withdraw');
+
+  const openDriverWallet = (tab: WalletModalTab = 'withdraw') => {
+    setWalletInitialTab(tab);
+    setWalletOpen(true);
+  };
 
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [togglingOnline, setTogglingOnline] = useState(false);
@@ -162,6 +171,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
     currentUser.driver?.current_lat ?? -23.55052,
     currentUser.driver?.current_lng ?? -46.633308,
   ]);
+  const [driverGpsFixed, setDriverGpsFixed] = useState<boolean>(
+    Boolean(currentUser.driver?.current_lat && currentUser.driver?.current_lng)
+  );
   const [driverHeading, setDriverHeading] = useState<number>(currentUser.driver?.heading ?? 0);
   const [driverSpeedKmh, setDriverSpeedKmh] = useState<number>(0);
   const [sheetMinimized, setSheetMinimized] = useState<boolean>(false);
@@ -171,6 +183,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const speedDecayRef = useRef<number | null>(null);
   const fetchedRouteStageRef = useRef<string | null>(null);
   const lastSpokenStepRef = useRef<string>('');
+  const pinHiddenInputRef = useRef<HTMLInputElement | null>(null);
 
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [routeSteps, setRouteSteps] = useState<RouteStep[]>([]);
@@ -458,6 +471,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
     getCurrentGpsPosition().then((pos) => {
       if (pos) {
         setDriverCoords([pos.lat, pos.lng]);
+        setDriverGpsFixed(true);
         setDriverHeading(pos.heading ?? 0);
         setDriverSpeedKmh(pos.speedKmh ?? 0);
         fetchLocalWeather(pos.lat, pos.lng).then((w) => w && setWeather(w));
@@ -472,6 +486,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
     if (!isOnline) return;
     const stopWatch = watchGpsPosition((pos) => {
       setDriverCoords([pos.lat, pos.lng]);
+      setDriverGpsFixed(true);
       if (pos.heading !== undefined) setDriverHeading(pos.heading);
       setDriverSpeedKmh(pos.speedKmh ?? 0);
       onEmitLocation(currentUser.id, pos.lat, pos.lng, pos.heading);
@@ -549,6 +564,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   }, [currentUser.id]);
 
   const toggleOnline = async () => {
+    unlockAudioContext();
     setStatusError(null);
     setTogglingOnline(true);
     try {
@@ -835,6 +851,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return <ArrowUp className="h-7 w-7 text-[#FFD100]" />;
   };
 
+  const { formattedTimer: checkoutPixTimer, cycle: checkoutPixCycle } = usePixSecurityRotation(90);
+
   // Always compute EMV Pix QR payload for destination checkout (even if ride started as cash)
   const checkoutEmvPayload = useMemo(() => {
     if (!checkoutRide) return '';
@@ -844,9 +862,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
       platformConfig.platform_pix_receiver,
       platformConfig.platform_city,
       amount,
-      checkoutRide.id
+      `${checkoutRide.id}D${checkoutPixCycle}`
     );
-  }, [checkoutRide, platformConfig]);
+  }, [checkoutRide, platformConfig, checkoutPixCycle]);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-900">
@@ -893,6 +911,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             .then((pos) => {
               if (!pos) return;
               setDriverCoords([pos.lat, pos.lng]);
+              setDriverGpsFixed(true);
               setDriverHeading(pos.heading ?? 0);
               setDriverSpeedKmh(pos.speedKmh ?? 0);
               onEmitLocation(currentUser.id, pos.lat, pos.lng, pos.heading ?? 0);
@@ -1186,30 +1205,30 @@ export const DriverView: React.FC<DriverViewProps> = ({
           ) : activeRide ? (
             <div className="space-y-3.5">
               {/* Passenger / Client Card with Photo, Rating, Chat & Native Tel Call */}
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2.5 rounded-2xl bg-white/[0.04] border border-white/10 p-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <AvatarImage
                     src={activeRide.passenger?.avatar_url}
                     name={activeRide.passenger?.full_name || 'Cliente'}
-                    className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                    fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg"
+                    className="h-12 w-12 rounded-2xl object-cover border-2 border-[#FFD100]/80 shrink-0 shadow-sm"
+                    fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 font-extrabold text-lg"
                   />
                   <div className="min-w-0">
-                    <span className="block text-[11px] font-bold text-[#FFD100]">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#FFD100]/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#FFD100]">
                       {activeRide.status === 'accepted' &&
                         (activeIsDelivery
                           ? 'Etapa A · Indo para coleta'
-                          : 'Etapa A · Indo buscar o cliente')}
+                          : 'Etapa A · Indo buscar cliente')}
                       {activeRide.status === 'arrived' &&
                         (activeIsDelivery
                           ? 'Etapa A · No local de coleta'
-                          : 'Etapa A · Aguardando cliente')}
+                          : 'Etapa A · No local de embarque')}
                       {activeRide.status === 'in_progress' &&
                         (activeIsDelivery
                           ? 'Etapa B · Entrega em rota'
-                          : 'Etapa B · Em viagem ao destino')}
+                          : 'Etapa B · Em viagem')}
                     </span>
-                    <h3 className="font-display text-base font-extrabold text-white truncate">
+                    <h3 className="mt-0.5 font-display text-base font-extrabold text-white truncate">
                       {activeRide.passenger?.full_name || 'Cliente'}
                     </h3>
                     <p className="text-[11px] text-neutral-400 flex items-center gap-1.5">
@@ -1226,7 +1245,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   {activeRide.passenger?.phone && (
                     <a
                       href={`tel:${activeRide.passenger.phone.replace(/\D/g, '')}`}
-                      className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-white active:scale-95 transition"
+                      className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-white active:scale-95 transition shadow-sm"
                       aria-label="Ligar para o cliente"
                       title="Ligar para o cliente"
                     >
@@ -1236,8 +1255,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setChatOpen(true)}
-                    className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-[#FFD100] active:scale-95 transition"
+                    className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-[#FFD100] active:scale-95 transition border border-white/10"
                     aria-label="Abrir chat com cliente"
+                    title={t.any_note_chat}
                   >
                     <MessageSquare className="h-5 w-5" />
                     {currentChatMessages.length > 0 && (
@@ -1302,14 +1322,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
               )}
 
               {/* Current Target Address & Value */}
-              <div className="rounded-2xl bg-[#1D212B] p-3 text-xs space-y-1.5 border border-white/5">
-                <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                  <span className="font-bold text-neutral-400">
+              <div className="rounded-2xl bg-[#1A1F29] p-3.5 text-xs space-y-2 border border-white/10">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-neutral-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
                     {activeRide.payment_method === 'wallet'
-                      ? 'Pago pelo App (Saldo)'
+                      ? t.pay_with_wallet
                       : activeRide.payment_method === 'pix'
-                      ? 'Pagamento via Pix'
-                      : 'Pagamento em Dinheiro'}
+                      ? t.pay_with_pix
+                      : t.pay_with_cash}
                   </span>
                   <span className="font-mono-num text-base font-extrabold text-[#FFD100]">
                     {formatBRL(activeRide.estimated_fare + waitingStats.waitingFee)}
@@ -1344,9 +1365,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   onClick={handleMarkArrived}
                   className="min-h-[54px] w-full rounded-2xl bg-[#FFD100] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
                 >
-                  {activeIsDelivery
-                    ? 'Cheguei no local de coleta'
-                    : 'Cheguei no local de embarque'}
+                  {activeIsDelivery ? t.arrived_collection : t.arrived_pickup}
                 </button>
               )}
 
@@ -1406,10 +1425,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-400">
                 <span className="flex items-center gap-1 truncate">
                   <MapPin className="h-3.5 w-3.5 text-[#FFD100] shrink-0" />
-                  {weather?.city || platformConfig.platform_city}
+                  {driverGpsFixed
+                    ? weather?.city || platformConfig.platform_city
+                    : t.detecting_gps}
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
-                  {weather && (
+                  {weather && driverGpsFixed && (
                     <span className="flex items-center gap-1 font-mono-num font-bold text-[#FFD100]">
                       <Thermometer className="h-3.5 w-3.5" />
                       {weather.temperatureC}°C · {weather.label}
@@ -1422,7 +1443,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     title="Ocultar painel e ver mapa 100% livre"
                   >
                     <EyeOff className="h-3 w-3" />
-                    Mapa limpo
+                    {t.clean_map}
                   </button>
                 </div>
               </div>
@@ -1430,12 +1451,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="font-display text-base font-extrabold text-white">
-                    {isOnline ? 'Você está online!' : 'Você está offline'}
+                    {isOnline ? `${t.online}!` : t.offline}
                   </h3>
                   <p className="mt-0.5 text-xs text-neutral-400">
-                    {isOnline
-                      ? 'Aguardando corridas e entregas na sua região...'
-                      : 'Toque em "Conectar" para receber solicitações.'}
+                    {isOnline ? t.waiting_rides_region : t.tap_connect_hint}
                   </p>
                   <p className="mt-1.5 text-xs font-bold text-neutral-300 font-mono-num">
                     {currentUser.driver?.vehicle_model} · {currentUser.driver?.vehicle_plate}
@@ -1451,7 +1470,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       : 'bg-[#FFD100] text-neutral-950'
                   }`}
                 >
-                  {isOnline ? 'Pausar' : 'Conectar'}
+                  {isOnline ? t.pause : t.connect}
                 </button>
               </div>
 
@@ -1483,16 +1502,35 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   <Wallet className="h-4 w-4 text-[#FFD100] shrink-0" />
                   <div>
                     <p className="text-xs font-extrabold text-white">
-                      Central de Pagamentos & Ganhos
+                      {t.earnings_center}
                     </p>
                     <p className="text-[11px] text-neutral-400 font-mono-num">
-                      A receber (Pix / App): {formatBRL(financeSummary.pendingToReceive)} · Dinheiro:{' '}
+                      {t.wallet_balance}: {formatBRL(financeSummary.pendingToReceive)} · {t.pay_with_cash}:{' '}
                       {formatBRL(financeSummary.totalCashCollected)}
                     </p>
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-neutral-400" />
               </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => openDriverWallet('withdraw')}
+                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3 text-xs font-extrabold text-emerald-300 hover:bg-emerald-500/25 active:scale-[0.98] transition"
+                >
+                  <Wallet className="h-3.5 w-3.5" />
+                  <span>{t.withdraw}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openDriverWallet('transfer')}
+                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-white/10 border border-white/10 px-3 text-xs font-extrabold text-white hover:bg-white/15 active:scale-[0.98] transition"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 text-[#FFD100]" />
+                  <span>{t.transfer}</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1578,7 +1616,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               onClick={() => handleDeclineRide(incomingRide.id)}
               className="min-h-[60px] rounded-2xl border border-white/25 bg-white/5 text-sm font-extrabold text-neutral-200 hover:bg-white/10 active:scale-95 transition"
             >
-              Recusar
+              {t.decline_ride}
             </button>
             <button
               type="button"
@@ -1586,7 +1624,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               onClick={() => handleAcceptRide(incomingRide.id)}
               className="col-span-2 min-h-[60px] rounded-2xl bg-[#FFD100] text-lg font-extrabold text-neutral-950 shadow-xl active:scale-95 transition"
             >
-              {actionLoading ? 'Aceitando...' : 'Aceitar Corrida'}
+              {actionLoading ? '...' : t.accept_ride}
             </button>
           </div>
         </div>
@@ -1596,7 +1634,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
       {checkoutRide && (() => {
         if (pixConfirmedSuccess) {
           return (
-            <div className="fixed inset-0 z-[1180] flex items-center justify-center bg-black/75 p-4">
+            <div className="fixed inset-0 z-[1180] flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
               <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 text-center shadow-2xl space-y-4 border border-emerald-200 dark:border-emerald-800">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-10 w-10" />
@@ -1604,7 +1642,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <div>
                   <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                     {walletCheckoutSuccess
-                      ? 'Pago pelo App (Saldo)'
+                      ? t.pay_with_wallet
                       : 'Pix Confirmado pelo Admin'}
                   </p>
                   <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
@@ -1632,7 +1670,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   }}
                   className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
                 >
-                  Continuar
+                  {t.continue_btn}
                 </button>
               </div>
             </div>
@@ -1644,14 +1682,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
           checkoutRide.payment_status === 'pending';
 
         return (
-          <div className="fixed inset-0 z-[1180] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4">
-            <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-[#14171D] p-5 text-white shadow-2xl border border-white/15 space-y-3.5 max-h-[92vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="fixed inset-0 z-[1180] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#14171D] p-5 text-neutral-950 dark:text-white shadow-2xl border border-neutral-200 dark:border-white/15 space-y-3.5 max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-neutral-100 dark:border-white/10 pb-3">
                 <div>
-                  <p className="text-xs font-extrabold text-[#FFD100]">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                     Etapa C · Chegada ao Destino
                   </p>
-                  <h3 className="font-display text-lg font-extrabold text-white">
+                  <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                     {waitingAdminPix
                       ? 'Aguardando Confirmação Pix (Admin)'
                       : 'Conferência de Pagamento'}
@@ -1669,36 +1707,36 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 )}
               </div>
 
-              <div className="rounded-2xl bg-[#1D212B] p-3.5 text-center border border-white/10">
-                <p className="text-xs font-semibold text-neutral-400">
+              <div className="rounded-2xl bg-neutral-50 dark:bg-[#1D212B] p-4 text-center border border-neutral-200 dark:border-white/10">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
                   Valor total ({checkoutRide.passenger?.full_name || 'Cliente'})
                 </p>
-                <p className="mt-1 font-display text-4xl font-extrabold text-[#FFD100] font-mono-num">
+                <p className="mt-1 font-display text-4xl font-extrabold text-neutral-950 dark:text-[#FFD100] font-mono-num">
                   {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
                 </p>
                 {(checkoutRide.final_fare ?? checkoutRide.estimated_fare) >
                   checkoutRide.estimated_fare && (
-                  <p className="mt-1 text-[11px] font-bold text-amber-300">
+                  <p className="mt-1 text-[11px] font-bold text-amber-600 dark:text-amber-300">
                     Inclui taxa de espera após 2 minutos gratuitos
                   </p>
                 )}
                 {Boolean(
                   checkoutRide.pending_debt_included && checkoutRide.pending_debt_included > 0
                 ) && (
-                  <p className="mt-1 text-[11px] font-bold text-emerald-300">
+                  <p className="mt-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                     Inclui débito anterior quitado: {formatBRL(checkoutRide.pending_debt_included || 0)}
                   </p>
                 )}
               </div>
 
               {waitingAdminPix && (
-                <div className="rounded-2xl border border-amber-500/50 bg-amber-950/60 px-3.5 py-3 text-xs font-bold text-amber-200 flex items-start gap-2.5">
-                  <Clock className="h-5 w-5 shrink-0 text-[#FFD100] animate-pulse mt-0.5" />
+                <div className="rounded-2xl border border-amber-300 dark:border-amber-500/50 bg-amber-50 dark:bg-amber-950/60 px-3.5 py-3 text-xs font-bold text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+                  <Clock className="h-5 w-5 shrink-0 text-amber-600 dark:text-[#FFD100] animate-pulse mt-0.5" />
                   <div>
-                    <p className="text-white font-extrabold">
+                    <p className="text-neutral-950 dark:text-white font-extrabold">
                       Aguardando confirmação do Pix pelo Administrador
                     </p>
-                    <p className="mt-0.5 font-normal text-amber-100/80">
+                    <p className="mt-0.5 font-normal text-amber-800 dark:text-amber-100/80">
                       Assim que o Admin confirmar o recebimento do Pix, seu painel é desbloqueado
                       automaticamente e o saldo entra na sua carteira.
                     </p>
@@ -1707,11 +1745,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
               )}
 
               {/* ALWAYS SHOW QR CODE PIX (FOR PIX RIDES OR UNFORESEEN SWITCH FROM CASH) */}
-              <div className="rounded-2xl bg-[#1D212B] p-3.5 border border-white/10 space-y-2.5">
+              <div className="rounded-2xl bg-neutral-50 dark:bg-[#1D212B] p-3.5 border border-neutral-200 dark:border-white/10 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-extrabold text-[#FFD100]">
+                  <span className="text-[11px] font-extrabold text-neutral-900 dark:text-[#FFD100]">
                     {checkoutRide.payment_method === 'cash'
-                      ? 'QR Code Pix Oficial (caso o cliente prefira pagar por Pix)'
+                      ? 'QR Code Pix Oficial (opção se cliente pagar por Pix)'
                       : `QR Code Pix · ${platformConfig.platform_pix_receiver}`}
                   </span>
                   <button
@@ -1721,7 +1759,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       setCopiedCheckoutPix(true);
                       setTimeout(() => setCopiedCheckoutPix(false), 2000);
                     }}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
                   >
                     {copiedCheckoutPix ? (
                       <Check className="h-3.5 w-3.5" />
@@ -1733,14 +1771,25 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-white p-2 shrink-0">
-                    <PixQrSvg payload={checkoutEmvPayload} size={112} />
+                  <div key={checkoutPixCycle} className="rounded-xl bg-white p-2 border border-neutral-200 dark:border-transparent shrink-0">
+                    {platformConfig.platform_pix_qr_url ? (
+                      <img
+                        src={platformConfig.platform_pix_qr_url}
+                        alt="QR Code Pix Oficial"
+                        className="h-28 w-28 object-contain rounded"
+                      />
+                    ) : (
+                      <PixQrSvg payload={checkoutEmvPayload} size={112} />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="text-[10px] font-bold text-neutral-400">
-                      Chave: <span className="text-white font-mono-num">{platformConfig.platform_pix_key}</span>
+                    <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                      Atualiza em <span className="font-mono-num">{checkoutPixTimer}</span> · Mesma conta
                     </p>
-                    <p className="font-mono-num text-[10px] text-neutral-300 break-all line-clamp-3 select-all">
+                    <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
+                      Chave: <span className="text-neutral-950 dark:text-white font-mono-num">{platformConfig.platform_pix_key}</span>
+                    </p>
+                    <p className="font-mono-num text-[10px] text-neutral-600 dark:text-neutral-300 break-all line-clamp-3 select-all">
                       {checkoutEmvPayload}
                     </p>
                   </div>
@@ -1829,31 +1878,35 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* 4-Digit PIN Modal (Pickup Boarding or Delivery Completion) */}
+      {/* Modern 4-Digit Interactive PIN Modal (Pickup Boarding or Delivery Completion) */}
       {pinModalMode && activeRide && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/75 p-4">
+        <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs">
           <form
             onSubmit={submitPinAction}
-            className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-2xl text-center"
+            className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#14171D] border border-neutral-200 dark:border-white/15 p-6 shadow-2xl text-center space-y-4"
           >
             <div className="relative flex items-center justify-center min-h-[40px]">
-              <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white px-9">
-                {pinModalMode === 'delivery'
-                  ? 'Confirmar PIN de Entrega'
-                  : activeIsDelivery
-                  ? 'PIN de Retirada / Coleta'
-                  : 'Confirmar Código PIN'}
-              </h3>
+              <div className="flex flex-col items-center">
+                <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white px-7">
+                  {pinModalMode === 'delivery'
+                    ? t.enter_pin_delivery_title
+                    : t.enter_pin_title}
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setPinModalMode(null)}
-                className="absolute right-0 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
-                aria-label="Fechar"
+                className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-white/10 text-neutral-700 dark:text-white"
+                aria-label={t.close}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+
+            <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
               {pinModalMode === 'delivery'
                 ? 'Peça o código PIN de 4 dígitos ao destinatário para concluir a entrega com segurança.'
                 : `Peça os 4 dígitos exibidos no celular de ${
@@ -1862,33 +1915,56 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </p>
 
             {pinError && (
-              <div className="mt-3 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300">
+              <div className="rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300">
                 {pinError}
               </div>
             )}
 
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              required
-              autoFocus
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              placeholder="0000"
-              className="mt-4 min-h-[58px] w-full rounded-2xl border-2 border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-center font-mono-num text-3xl font-extrabold tracking-[0.4em] text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-800"
-            />
+            {/* Interactive 4-slot OTP PIN Boxes */}
+            <div
+              onClick={() => pinHiddenInputRef.current?.focus()}
+              className="relative mx-auto flex max-w-[260px] cursor-text items-center justify-center gap-3 py-1"
+            >
+              <input
+                ref={pinHiddenInputRef}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="one-time-code"
+                maxLength={4}
+                required
+                autoFocus
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                className="absolute inset-0 h-full w-full opacity-0 cursor-text"
+                aria-label="Código PIN de 4 dígitos"
+              />
+              {[0, 1, 2, 3].map((slotIdx) => {
+                const digit = pinInput[slotIdx] || '';
+                const isActiveSlot = pinInput.length === slotIdx || (pinInput.length === 4 && slotIdx === 3);
+                return (
+                  <div
+                    key={slotIdx}
+                    className={`flex h-16 w-14 items-center justify-center rounded-2xl border-2 font-mono-num text-2xl font-extrabold transition ${
+                      digit
+                        ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-50 dark:bg-[#1D212B] text-neutral-950 dark:text-[#FFD100] shadow-xs'
+                        : isActiveSlot
+                        ? 'border-[#FFD100] bg-[#FFD100]/10 text-neutral-400 ring-2 ring-[#FFD100]/30'
+                        : 'border-neutral-200 dark:border-white/15 bg-neutral-100/70 dark:bg-white/5 text-neutral-400'
+                    }`}
+                  >
+                    {digit || '•'}
+                  </div>
+                );
+              })}
+            </div>
 
             <button
               type="submit"
               disabled={pinInput.length !== 4 || actionLoading}
-              className="mt-4 flex min-h-[50px] w-full items-center justify-center rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 disabled:opacity-40 active:scale-[0.98] transition"
+              className="flex min-h-[52px] w-full items-center justify-center rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm disabled:opacity-40 active:scale-[0.98] transition"
             >
-              {actionLoading
-                ? 'Validando PIN...'
-                : pinModalMode === 'delivery'
-                ? 'Concluir Entrega'
-                : 'Liberar Partida'}
+              {actionLoading ? '...' : t.validate_pin_btn}
             </button>
           </form>
         </div>
@@ -2000,6 +2076,23 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
 
             <div className="mt-5 space-y-1 flex-1">
+              <button
+                type="button"
+                onClick={() => {
+                  openDriverWallet('withdraw');
+                  setMenuOpen(false);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-3 text-sm font-extrabold text-emerald-300 hover:bg-emerald-500/20"
+              >
+                <span className="flex items-center gap-3">
+                  <Wallet className="h-5 w-5 text-emerald-400" />
+                  <span>{t.wallet_title} · {t.withdraw} / {t.transfer}</span>
+                </span>
+                <span className="font-mono-num text-xs font-extrabold text-white">
+                  {formatBRL(currentUser.wallet_balance || 0)}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -2239,21 +2332,42 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </div>
             </div>
 
-            <div className="mt-3 flex items-center justify-between rounded-2xl bg-[#1A1D24] px-4 py-2.5 text-xs border border-white/5">
-              <span className="text-neutral-400">
-                Sua Chave Pix para repasse:{' '}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#1A1D24] px-4 py-2.5 text-xs border border-white/5">
+              <span className="text-neutral-400 truncate">
+                {t.pix_key_label}:{' '}
                 <strong className="font-mono-num text-white">
                   {currentUser.driver?.pix_key || 'Não cadastrada'}
                 </strong>
               </span>
-              <button
-                type="button"
-                onClick={loadFinancePanel}
-                className="flex items-center gap-1 text-[#FFD100] font-bold"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Atualizar
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFinanceOpen(false);
+                    openDriverWallet('withdraw');
+                  }}
+                  className="rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                >
+                  {t.withdraw}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFinanceOpen(false);
+                    openDriverWallet('transfer');
+                  }}
+                  className="rounded-lg bg-white/10 px-2.5 py-1.5 text-[11px] font-bold text-white"
+                >
+                  {t.transfer}
+                </button>
+                <button
+                  type="button"
+                  onClick={loadFinancePanel}
+                  className="flex items-center gap-1 text-[#FFD100] font-bold px-1"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
             {/* Sub-tabs: Corridas vs Extrato */}
@@ -2540,11 +2654,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
           platformConfig={platformConfig}
           onUserUpdated={onUserUpdated}
           onAccountDeleted={onLogout}
+          onOpenWallet={() => openDriverWallet('withdraw')}
           onOpenSupport={() => {
             setSettingsOpen(false);
             setSupportChatOpen(true);
           }}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {walletOpen && (
+        <ClientWalletModal
+          currentUser={currentUser}
+          platformConfig={platformConfig}
+          initialTab={walletInitialTab}
+          onUserUpdated={onUserUpdated}
+          onClose={() => setWalletOpen(false)}
         />
       )}
 

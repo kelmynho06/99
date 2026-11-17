@@ -30,12 +30,7 @@ export function getUserPreferences(): UserPreferences {
         parsed.theme_mode === 'dark' || parsed.theme_mode === 'light' || parsed.theme_mode === 'auto'
           ? parsed.theme_mode
           : 'auto',
-      map_layer:
-        parsed.map_layer === 'satellite' ||
-        parsed.map_layer === 'dark' ||
-        parsed.map_layer === 'terrain_traffic'
-          ? parsed.map_layer
-          : 'urban',
+      map_layer: 'urban' as MapLayerMode,
       hud_compass_enabled: parsed.hud_compass_enabled ?? true,
       floating_bubble_enabled: parsed.floating_bubble_enabled ?? true,
     };

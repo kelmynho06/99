@@ -27,6 +27,11 @@ import {
   X,
 } from 'lucide-react';
 import { getCurrentGpsPosition } from '../lib/capacitorDevice';
+import {
+  getInstalledNativeVersion,
+  isNativeAndroidApp,
+  syncNativeFloatingBubbleEnabled,
+} from '../lib/floatingBubble';
 import { formatBRL, searchAddresses } from '../lib/geo';
 import { SUPPORTED_LANGUAGES, useTranslation } from '../lib/i18n';
 import {
@@ -36,7 +41,12 @@ import {
   updateUserLanguagePref,
   updateUserProfileSettings,
 } from '../lib/mobilityApi';
-import { CURRENT_APP_VERSION, checkForOtaUpdate, type OtaUpdateInfo } from '../lib/otaUpdate';
+import {
+  CURRENT_APP_VERSION,
+  checkAndApplyWebAutoUpdate,
+  checkForOtaUpdate,
+  type OtaUpdateInfo,
+} from '../lib/otaUpdate';
 import { playSoundCue, speakPtBr } from '../lib/sound';
 import {
   getUserPreferences,
@@ -134,6 +144,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [legalDocsOpen, setLegalDocsOpen] = useState(false);
   const [checkingOta, setCheckingOta] = useState(false);
   const [otaUpdateInfo, setOtaUpdateInfo] = useState<OtaUpdateInfo | null>(null);
+  const [installedVersion, setInstalledVersion] = useState(CURRENT_APP_VERSION);
 
   const localBiasCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const searchTimerRef = useRef<number | null>(null);
@@ -141,6 +152,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
   useEffect(() => {
     const unsub = subscribeUserPreferences(setUserPrefs);
+    getInstalledNativeVersion(CURRENT_APP_VERSION).then(setInstalledVersion).catch(() => {});
     getCurrentGpsPosition().then((pos) => {
       if (pos) {
         localBiasCoordsRef.current = { lat: pos.lat, lng: pos.lng };
@@ -178,13 +190,23 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setCheckingOta(true);
     setFeedback(null);
     try {
+      if (!isNativeAndroidApp()) {
+        const reloaded = await checkAndApplyWebAutoUpdate();
+        if (!reloaded) {
+          setFeedback({
+            type: 'ok',
+            msg: `Site atualizado automaticamente (v${installedVersion}).`,
+          });
+        }
+        return;
+      }
       const info = await checkForOtaUpdate(platformConfig);
       if (info.hasUpdate) {
         setOtaUpdateInfo(info);
       } else {
         setFeedback({
           type: 'ok',
-          msg: `Você já está na versão mais recente (v${info.currentVersion}).`,
+          msg: `Você já está na versão mais recente do APK (v${info.currentVersion}).`,
         });
       }
     } catch {
@@ -451,42 +473,40 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>
 
-                {currentUser.role === 'passenger' && (
-                  <>
-                    {onOpenWallet && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onOpenWallet();
-                        }}
-                        className="flex min-h-[58px] w-full items-center justify-between px-4 text-left bg-amber-50/70 dark:bg-amber-950/30 hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
-                      >
-                        <span className="flex items-center gap-3 text-sm font-extrabold text-neutral-950 dark:text-white">
-                          <Wallet className="h-4 w-4 text-amber-700 dark:text-[#FFD100]" />
-                          <span>
-                            Meu Saldo e Depósitos (Pix)
-                            <span className="block text-[11px] font-mono-num font-bold text-emerald-700 dark:text-emerald-400">
-                              Disponível: {formatBRL(currentUser.wallet_balance || 0)}
-                            </span>
-                          </span>
+                {onOpenWallet && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenWallet();
+                    }}
+                    className="flex min-h-[58px] w-full items-center justify-between px-4 text-left bg-amber-50/70 dark:bg-amber-950/30 hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
+                  >
+                    <span className="flex items-center gap-3 text-sm font-extrabold text-neutral-950 dark:text-white">
+                      <Wallet className="h-4 w-4 text-amber-700 dark:text-[#FFD100]" />
+                      <span>
+                        {t.wallet_title} ({currentUser.role === 'driver' ? `${t.withdraw} / ${t.transfer}` : `${t.deposit} / ${t.transfer}`})
+                        <span className="block text-[11px] font-mono-num font-bold text-emerald-700 dark:text-emerald-400">
+                          {t.wallet_balance}: {formatBRL(currentUser.wallet_balance || 0)}
                         </span>
-                        <ChevronRight className="h-4 w-4 text-neutral-500" />
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => setSection('addresses')}
-                      className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                    >
-                      <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                        <Home className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-                        Endereços (Casa, Trabalho) e Pagamento
                       </span>
-                      <ChevronRight className="h-4 w-4 text-neutral-400" />
-                    </button>
-                  </>
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-neutral-500" />
+                  </button>
+                )}
+
+                {currentUser.role === 'passenger' && (
+                  <button
+                    type="button"
+                    onClick={() => setSection('addresses')}
+                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  >
+                    <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      <Home className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                      Endereços (Casa, Trabalho) e Pagamento
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  </button>
                 )}
 
                 {currentUser.role === 'driver' && (
@@ -564,7 +584,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     {t.app_version_label}
                   </p>
                   <p className="font-mono-num text-sm font-extrabold text-neutral-950 dark:text-white">
-                    v{CURRENT_APP_VERSION} · {platformConfig?.site_name || '66 Mobilidade'}
+                    v{installedVersion} · {platformConfig?.site_name || '66 Mobilidade'}
                   </p>
                 </div>
                 <button
@@ -1099,26 +1119,28 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </button>
               </div>
 
-              {/* Floating Bubble Toggle */}
+              {/* Background-Only Floating Bubble Toggle */}
               <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 flex items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <ShieldCheck className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                      Balão Flutuante Móvel
+                      Balão Flutuante em Segundo Plano (APK)
                     </p>
                     <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                      Botão redondo móvel na tela para acesso rápido (arraste até o X para fechar).
+                      Aparece apenas fora do app sobre outros apps quando você minimiza, para voltar rápido ao chamado.
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
+                    const enabled = !(userPrefs.floating_bubble_enabled ?? true);
                     const next = saveUserPreferences({
-                      floating_bubble_enabled: !(userPrefs.floating_bubble_enabled ?? true),
+                      floating_bubble_enabled: enabled,
                     });
                     setUserPrefs(next);
+                    void syncNativeFloatingBubbleEnabled(enabled);
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
                     (userPrefs.floating_bubble_enabled ?? true)

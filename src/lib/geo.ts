@@ -71,8 +71,66 @@ function classifyNominatimType(item: NominatimResult): string {
 }
 
 function extractTypedHouseNumber(rawQuery: string): string | null {
-  const match = rawQuery.match(/(?:,\s*|\s+n[º°]?\s*|\s+)(\d{1,5}[A-Za-z]?)\s*$/i);
-  return match ? match[1] : null;
+  const clean = rawQuery.trim();
+  const streetPattern = clean.match(
+    /(?:^|\s)(?:rua|r\.?|av\.?|avenida|travessa|tv\.?|alameda|estrada|rodovia|largo|pra[çc]a)\s+[^\d,]+?(?:,\s*|\s+n[º°o]?\s*|\s+)(\d{1,5}[A-Za-z]?)\b/i
+  );
+  if (streetPattern) return streetPattern[1];
+
+  const middleOrEnd = clean.match(
+    /(?:,\s*|\s+n[º°o]?\s*|\s+)(\d{1,5}[A-Za-z]?)(?=\s*$|\s*(?:,|-|bairro\b|centro\b))/i
+  );
+  if (middleOrEnd) return middleOrEnd[1];
+
+  const fallback = clean.match(/\b(\d{1,5}[A-Za-z]?)\b/);
+  return fallback ? fallback[1] : null;
+}
+
+function normalizeSearchQuery(rawQuery: string): {
+  cleaned: string;
+  compact: string;
+  houseNumber: string | null;
+} {
+  let cleaned = rawQuery
+    .trim()
+    .replace(/\bR\.\s*/gi, 'Rua ')
+    .replace(/\bAv\.\s*/gi, 'Avenida ')
+    .replace(/\bTv\.\s*/gi, 'Travessa ')
+    .replace(/\bP[çc]\.\s*/gi, 'Praça ')
+    .replace(/\bn[º°]\s*/gi, ' ')
+    .replace(/\s+/g, ' ');
+
+  const houseNumber = extractTypedHouseNumber(cleaned);
+  // Strip explicit "bairro" filler word while keeping the neighborhood name
+  const compact = cleaned
+    .replace(/\bbairro\s+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  return { cleaned, compact, houseNumber };
+}
+
+function normalizeTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 2);
+}
+
+const localCityCache = new Map<string, string>();
+
+async function resolveCachedLocalCity(lat: number, lng: number): Promise<string> {
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  const cached = localCityCache.get(key);
+  if (cached !== undefined) return cached;
+  const full = await reverseGeocodeCity(lat, lng);
+  const cityOnly = full.split(' - ')[0]?.trim() || '';
+  localCityCache.set(key, cityOnly);
+  return cityOnly;
 }
 
 export function formatShortAddress(item: NominatimResult, typedQuery?: string): string {
@@ -177,8 +235,103 @@ function formatPhotonAddress(
   return parts.join(' · ') || 'Local selecionado';
 }
 
-const DEFAULT_FALLBACK_LAT = -23.55052;
-const DEFAULT_FALLBACK_LNG = -46.633308;
+interface OverpassElement {
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: {
+    name?: string;
+    shop?: string;
+    amenity?: string;
+    leisure?: string;
+    tourism?: string;
+    building?: string;
+    'addr:street'?: string;
+    'addr:housenumber'?: string;
+    'addr:suburb'?: string;
+    'addr:city'?: string;
+  };
+}
+
+function classifyOverpassType(tags: NonNullable<OverpassElement['tags']>): string {
+  if (tags.amenity) {
+    if (['hospital', 'clinic', 'pharmacy'].includes(tags.amenity)) return 'Saúde';
+    return 'Ponto comercial';
+  }
+  if (tags.shop || tags.building === 'commercial' || tags.building === 'retail') {
+    return 'Comércio';
+  }
+  if (tags.leisure) return 'Parque / Praça';
+  if (tags.tourism) return 'Referência';
+  return 'Local';
+}
+
+const nearbyPlacesCache = new Map<string, AddressSuggestion[]>();
+
+export async function fetchNearbyPopularPlaces(
+  lat: number,
+  lng: number
+): Promise<AddressSuggestion[]> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+  const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  const cached = nearbyPlacesCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const localCity = await resolveCachedLocalCity(lat, lng);
+    const overpassQuery = `[out:json][timeout:6];(node(around:4500,${lat},${lng})[name]["amenity"~"hospital|clinic|pharmacy|school|university|marketplace|bank|bus_station|fuel"];node(around:4500,${lat},${lng})[name]["shop"~"supermarket|mall|bakery|convenience|department_store"];node(around:4500,${lat},${lng})[name]["leisure"~"park|square|garden"];way(around:4500,${lat},${lng})[name]["shop"~"supermarket|mall|department_store"];way(around:4500,${lat},${lng})[name]["leisure"~"park|square"];);out center 18;`;
+
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { elements?: OverpassElement[] };
+
+    const seen = new Set<string>();
+    const items: Array<{ s: AddressSuggestion; dist: number }> = [];
+
+    for (const el of data.elements || []) {
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      const name = el.tags?.name?.trim();
+      if (!name || typeof elLat !== 'number' || typeof elLng !== 'number') continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const dist = haversineKm(lat, lng, elLat, elLng);
+      const street = el.tags?.['addr:street']
+        ? `${el.tags['addr:street']}${el.tags['addr:housenumber'] ? `, ${el.tags['addr:housenumber']}` : ''}`
+        : '';
+      const hood = el.tags?.['addr:suburb'] || '';
+      const cityLabel = el.tags?.['addr:city'] || localCity;
+      const fullAddress = [name, street, hood, cityLabel].filter(Boolean).join(' · ');
+
+      items.push({
+        dist,
+        s: {
+          address: fullAddress,
+          subtitle: [hood, cityLabel, `${dist.toFixed(1)} km`].filter(Boolean).join(' · '),
+          categoryLabel: classifyOverpassType(el.tags || {}),
+          lat: elLat,
+          lng: elLng,
+        },
+      });
+    }
+
+    items.sort((a, b) => a.dist - b.dist);
+    const result = items.slice(0, 8).map((i) => i.s);
+    if (result.length > 0) {
+      nearbyPlacesCache.set(cacheKey, result);
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
 
 export async function searchAddresses(
   query: string,
@@ -186,36 +339,107 @@ export async function searchAddresses(
   nearLng?: number,
   signal?: AbortSignal
 ): Promise<AddressSuggestion[]> {
-  const clean = query.trim();
-  if (clean.length < 2) return [];
+  const raw = query.trim();
+  if (raw.length < 2) return [];
+
+  const { compact, houseNumber } = normalizeSearchQuery(raw);
+  const effectiveQuery = compact.length >= 2 ? compact : raw;
 
   const hasLocalCoords =
     typeof nearLat === 'number' &&
     typeof nearLng === 'number' &&
     Number.isFinite(nearLat) &&
-    Number.isFinite(nearLng);
+    Number.isFinite(nearLng) &&
+    !(Math.abs(nearLat) < 0.01 && Math.abs(nearLng) < 0.01);
 
-  const biasLat = hasLocalCoords ? nearLat : DEFAULT_FALLBACK_LAT;
-  const biasLng = hasLocalCoords ? nearLng : DEFAULT_FALLBACK_LNG;
-  const MAX_LOCAL_RADIUS_KM = 110;
-  const results: AddressSuggestion[] = [];
-  const wideFallbackResults: AddressSuggestion[] = [];
+  const biasLat = hasLocalCoords ? nearLat : 0;
+  const biasLng = hasLocalCoords ? nearLng : 0;
+  const MAX_LOCAL_RADIUS_KM = 95;
+
+  const localCity = hasLocalCoords ? await resolveCachedLocalCity(biasLat, biasLng) : '';
+  const queryNorm = effectiveQuery
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const queryTokens = normalizeTokens(effectiveQuery).filter(
+    (t) => t !== 'rua' && t !== 'avenida' && t !== 'bairro'
+  );
+
+  interface RankedSuggestion {
+    entry: AddressSuggestion;
+    distKm: number;
+    score: number;
+  }
+
+  const localPool: RankedSuggestion[] = [];
+  const widePool: RankedSuggestion[] = [];
   const seen = new Set<string>();
 
-  const queryPhoton = async (useStrictBbox: boolean) => {
+  const pushCandidate = (
+    entry: AddressSuggestion,
+    lat: number,
+    lng: number,
+    isCommercialPoi: boolean,
+    hasExactNumber: boolean
+  ) => {
+    const dedupeKey = `${entry.address.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+
+    const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
+    const haystack = `${entry.address} ${entry.subtitle}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    let score = 0;
+    if (haystack.includes(queryNorm)) score += 48;
+    let matchedTokens = 0;
+    for (const tok of queryTokens) {
+      if (haystack.includes(tok)) {
+        matchedTokens += 1;
+        score += 18;
+      }
+    }
+    if (queryTokens.length > 0 && matchedTokens === queryTokens.length) {
+      score += 28;
+    }
+    if (isCommercialPoi) score += 22;
+    if (houseNumber && (hasExactNumber || haystack.includes(houseNumber))) score += 22;
+    if (
+      localCity &&
+      haystack.includes(localCity.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    ) {
+      score += 36;
+    }
+    if (hasLocalCoords) {
+      score -= Math.min(45, distKm * 0.95);
+    }
+
+    const ranked: RankedSuggestion = { entry, distKm, score };
+    if (!hasLocalCoords || distKm <= MAX_LOCAL_RADIUS_KM) {
+      localPool.push(ranked);
+    } else {
+      widePool.push(ranked);
+    }
+  };
+
+  const runPhoton = async (qText: string, useStrictBbox: boolean) => {
     const params = new URLSearchParams({
-      q: clean,
+      q: qText,
       limit: '15',
-      lat: String(biasLat),
-      lon: String(biasLng),
-      location_bias_scale: '0.15',
     });
-    if (useStrictBbox && hasLocalCoords) {
-      const delta = 0.55;
-      params.set(
-        'bbox',
-        `${biasLng - delta},${biasLat - delta},${biasLng + delta},${biasLat + delta}`
-      );
+    if (hasLocalCoords) {
+      params.set('lat', String(biasLat));
+      params.set('lon', String(biasLng));
+      params.set('location_bias_scale', useStrictBbox ? '0.12' : '0.25');
+      if (useStrictBbox) {
+        const delta = 0.6;
+        params.set(
+          'bbox',
+          `${biasLng - delta},${biasLat - delta},${biasLng + delta},${biasLat + delta}`
+        );
+      }
     }
 
     const res = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
@@ -235,127 +459,189 @@ export async function searchAddresses(
       const lat = Number(coords[1]);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
 
-      const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
-      const formatted = formatPhotonAddress(props, clean);
-      const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-
+      const formatted = formatPhotonAddress(props, effectiveQuery);
       const city = (props.city || props.county || '').trim();
       const district = (props.district || props.locality || '').trim();
+      const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
       const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
       const subtitle = [district, city, props.state, distTag].filter(Boolean).join(' · ');
+      const catLabel = classifyPhotonType(props);
+      const isPoi = ['Comércio', 'Ponto comercial', 'Saúde', 'Parque / Praça', 'Referência'].includes(
+        catLabel
+      );
 
-      const entry: AddressSuggestion = {
-        address: formatted,
-        subtitle: subtitle || formatted,
-        categoryLabel: classifyPhotonType(props),
+      pushCandidate(
+        {
+          address: formatted,
+          subtitle: subtitle || formatted,
+          categoryLabel: catLabel,
+          lat,
+          lng,
+        },
         lat,
         lng,
-      };
-
-      if (!hasLocalCoords || distKm <= MAX_LOCAL_RADIUS_KM) {
-        results.push(entry);
-      } else {
-        wideFallbackResults.push(entry);
-      }
+        isPoi,
+        Boolean(props.housenumber)
+      );
     }
   };
 
-  // 1. Ultra-fast Photon proximity search (local bbox first, then proximity-biased wider query if < 3 hits)
-  try {
-    await queryPhoton(true);
-    if (results.length < 3) {
-      await queryPhoton(false);
+  const runNominatim = async (qText: string, bounded: boolean) => {
+    const params = new URLSearchParams({
+      q: qText,
+      format: 'jsonv2',
+      addressdetails: '1',
+      namedetails: '1',
+      extratags: '1',
+      limit: '12',
+      countrycodes: 'br',
+      'accept-language': 'pt-BR',
+    });
+
+    if (hasLocalCoords) {
+      const delta = bounded ? 0.55 : 1.0;
+      params.set(
+        'viewbox',
+        `${biasLng - delta},${biasLat + delta},${biasLng + delta},${biasLat - delta}`
+      );
+      if (bounded) params.set('bounded', '1');
     }
+
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      signal,
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+    });
+    if (!res.ok) return;
+
+    const data = (await res.json()) as NominatimResult[];
+    for (const item of data) {
+      const lat = parseFloat(item.lat);
+      const lng = parseFloat(item.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+      const formatted = formatShortAddress(item, effectiveQuery);
+      const city =
+        item.address?.city ||
+        item.address?.town ||
+        item.address?.municipality ||
+        item.address?.village ||
+        '';
+      const hood = item.address?.neighbourhood || item.address?.suburb || '';
+      const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
+      const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
+      const subtitle =
+        [hood, city, item.address?.state, distTag].filter(Boolean).join(' · ') ||
+        item.display_name;
+      const catLabel = classifyNominatimType(item);
+      const isPoi = ['Comércio', 'Ponto comercial', 'Saúde', 'Parque / Praça', 'Referência'].includes(
+        catLabel
+      );
+
+      pushCandidate(
+        {
+          address: formatted,
+          subtitle,
+          categoryLabel: catLabel,
+          lat,
+          lng,
+        },
+        lat,
+        lng,
+        isPoi,
+        Boolean(item.address?.house_number)
+      );
+    }
+  };
+
+  const runOverpassLocalPois = async (qText: string) => {
+    if (!hasLocalCoords) return;
+    const safeToken = qText
+      .replace(/[^a-zA-Z0-9À-ÿ\s]/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length >= 3)
+      .slice(0, 3)
+      .join('.*');
+    if (!safeToken || safeToken.length < 3) return;
+
+    const overpassQuery = `[out:json][timeout:6];(node(around:22000,${biasLat},${biasLng})["name"~"${safeToken}",i];way(around:22000,${biasLat},${biasLng})["name"~"${safeToken}",i];);out center 12;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      signal,
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { elements?: OverpassElement[] };
+
+    for (const el of data.elements || []) {
+      const lat = el.lat ?? el.center?.lat;
+      const lng = el.lon ?? el.center?.lon;
+      const name = el.tags?.name?.trim();
+      if (!name || typeof lat !== 'number' || typeof lng !== 'number') continue;
+
+      const street = el.tags?.['addr:street']
+        ? `${el.tags['addr:street']}${el.tags['addr:housenumber'] ? `, ${el.tags['addr:housenumber']}` : ''}`
+        : '';
+      const hood = el.tags?.['addr:suburb'] || '';
+      const city = el.tags?.['addr:city'] || localCity;
+      const distKm = haversineKm(biasLat, biasLng, lat, lng);
+      const formatted = [name, street, hood, city].filter(Boolean).join(' · ');
+      const subtitle = [hood, city, `${distKm.toFixed(1)} km`].filter(Boolean).join(' · ');
+
+      pushCandidate(
+        {
+          address: formatted,
+          subtitle: subtitle || formatted,
+          categoryLabel: classifyOverpassType(el.tags || {}),
+          lat,
+          lng,
+        },
+        lat,
+        lng,
+        true,
+        Boolean(el.tags?.['addr:housenumber'])
+      );
+    }
+  };
+
+  const cityNorm = localCity
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const includesLocalCity = Boolean(cityNorm && queryNorm.includes(cityNorm));
+  const cityBoostQuery =
+    localCity && !includesLocalCity ? `${effectiveQuery} ${localCity}` : effectiveQuery;
+
+  const tasks: Promise<void>[] = [
+    runPhoton(effectiveQuery, hasLocalCoords),
+    runPhoton(cityBoostQuery, false),
+  ];
+
+  if (effectiveQuery.length >= 3) {
+    tasks.push(runNominatim(effectiveQuery, hasLocalCoords));
+    if (hasLocalCoords) {
+      tasks.push(runOverpassLocalPois(effectiveQuery));
+    }
+    if (localCity && !includesLocalCity) {
+      tasks.push(runNominatim(cityBoostQuery, hasLocalCoords));
+    }
+  }
+
+  try {
+    await Promise.allSettled(tasks);
+    if (signal?.aborted) return [];
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') return [];
   }
 
-  // 2. Bounded local Nominatim supplement for exact house numbers / local POIs if Photon has < 3 local matches
-  if (results.length < 3 && clean.length >= 3) {
-    try {
-      const params = new URLSearchParams({
-        q: clean,
-        format: 'jsonv2',
-        addressdetails: '1',
-        namedetails: '1',
-        extratags: '1',
-        limit: '8',
-        countrycodes: 'br',
-        'accept-language': 'pt-BR',
-      });
+  const finalPool = localPool.length > 0 ? localPool : widePool;
+  finalPool.sort((a, b) => b.score - a.score || a.distKm - b.distKm);
 
-      if (hasLocalCoords) {
-        const delta = 0.55;
-        params.set(
-          'viewbox',
-          `${biasLng - delta},${biasLat + delta},${biasLng + delta},${biasLat - delta}`
-        );
-        params.set('bounded', '1');
-      }
-
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-        {
-          signal,
-          headers: {
-            Accept: 'application/json',
-            'Accept-Language': 'pt-BR,pt;q=0.9',
-          },
-        }
-      );
-
-      if (res.ok) {
-        const data = (await res.json()) as NominatimResult[];
-        for (const item of data) {
-          const lat = parseFloat(item.lat);
-          const lng = parseFloat(item.lon);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-          const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
-          if (hasLocalCoords && distKm > MAX_LOCAL_RADIUS_KM) continue;
-
-          const formatted = formatShortAddress(item, clean);
-          const dedupeKey = `${formatted.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
-          if (seen.has(dedupeKey)) continue;
-          seen.add(dedupeKey);
-
-          const city =
-            item.address?.city ||
-            item.address?.town ||
-            item.address?.municipality ||
-            item.address?.village ||
-            '';
-          const hood = item.address?.neighbourhood || item.address?.suburb || '';
-          const distTag = hasLocalCoords ? `${distKm.toFixed(1)} km` : '';
-          const subtitle =
-            [hood, city, item.address?.state, distTag].filter(Boolean).join(' · ') ||
-            item.display_name;
-
-          results.push({
-            address: formatted,
-            subtitle,
-            categoryLabel: classifyNominatimType(item),
-            lat,
-            lng,
-          });
-        }
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return [];
-    }
-  }
-
-  const finalPool = results.length > 0 ? results : wideFallbackResults;
-  if (hasLocalCoords) {
-    finalPool.sort(
-      (a, b) =>
-        haversineKm(biasLat, biasLng, a.lat, a.lng) -
-        haversineKm(biasLat, biasLng, b.lat, b.lng)
-    );
-  }
-
-  return finalPool.slice(0, 8);
+  return finalPool.slice(0, 10).map((item) => item.entry);
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

@@ -19,11 +19,13 @@ import {
 import { useAppConfig } from '../context/AppConfigContext';
 import { logAuditEvent } from '../lib/audit';
 import { resolveBrandLogo } from '../lib/brandAssets';
+import { SUPPORTED_LANGUAGES, useTranslation } from '../lib/i18n';
 import {
   compressImageFileToDataUrl,
   loginUser,
   registerUser,
 } from '../lib/mobilityApi';
+import { getUserPreferences, saveUserPreferences } from '../lib/userPrefs';
 import type { PlatformConfig, UserProfile } from '../types/mobility';
 import { LegalDocsModal, type LegalDocTab } from './LegalDocsModal';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -37,6 +39,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onAuthenticated,
   platformConfig,
 }) => {
+  const { t, lang } = useTranslation();
   const { config: appConfig } = useAppConfig();
   const siteName = platformConfig?.site_name || appConfig.app_name || '66 Mobilidade';
   const brandLogoUrl = resolveBrandLogo({
@@ -185,7 +188,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 {siteName}
               </span>
             </div>
-            <PWAInstallButton />
+            <div className="flex items-center gap-2">
+              <select
+                value={lang || getUserPreferences().language}
+                onChange={(e) => saveUserPreferences({ language: e.target.value })}
+                aria-label={t.language_label}
+                className="min-h-[38px] rounded-xl border border-neutral-950/15 bg-white/85 px-2 text-xs font-extrabold text-neutral-950 outline-none"
+              >
+                {SUPPORTED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.nativeName}
+                  </option>
+                ))}
+              </select>
+              <PWAInstallButton />
+            </div>
           </div>
 
           <h1 className="mt-8 font-display text-3xl sm:text-4xl font-extrabold leading-tight text-neutral-950 [text-wrap:balance]">
@@ -350,7 +367,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
-                        Opção A · Passageiro
+                        {t.passenger_role_badge}
                       </span>
                       {accountGoal === 'passenger' && (
                         <CheckCircle2 className="h-4 w-4 text-neutral-950 dark:text-[#FFD100] shrink-0" />
@@ -372,7 +389,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
-                        Opção B · Motorista / Entregador
+                        {t.driver_role_badge} / {t.deliverer_role_badge}
                       </span>
                       {accountGoal === 'driver' && (
                         <CheckCircle2 className="h-4 w-4 text-neutral-950 dark:text-[#FFD100] shrink-0" />

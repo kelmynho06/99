@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Headphones, Send, ShieldCheck, X } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
+import { useTranslation } from '../lib/i18n';
 import { fetchDirectMessages, sendDirectMessage } from '../lib/mobilityApi';
 import { supabase } from '../lib/supabase';
 import type { DirectMessage, UserProfile } from '../types/mobility';
@@ -35,6 +36,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
   currentUser,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const { config: appConfig } = useAppConfig();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [text, setText] = useState('');
@@ -144,7 +146,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
                 {isAdmin ? 'Chat Direto · Super Admin' : 'Atendimento Oficial · Administração'}
               </p>
               <h3 className="text-base font-extrabold truncate">
-                {isAdmin ? threadUser.full_name : `Central ${appConfig.app_name} / Suporte`}
+                {isAdmin ? threadUser.full_name : `${appConfig.app_name} · ${t.support_admin}`}
               </h3>
             </div>
           </div>
@@ -153,7 +155,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
             type="button"
             onClick={onClose}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"
-            aria-label="Fechar conversa"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>

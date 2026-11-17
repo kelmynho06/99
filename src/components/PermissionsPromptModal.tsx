@@ -18,6 +18,13 @@ import {
   requestLocationPermission,
   requestNotificationPermission,
 } from '../lib/capacitorDevice';
+import {
+  getNativeBubblePermissions,
+  isNativeAndroidApp,
+  requestNativeBatteryOptimization,
+  requestNativeOverlayPermission,
+} from '../lib/floatingBubble';
+import { useTranslation } from '../lib/i18n';
 import { markPermissionsPromptSeen } from '../lib/userPrefs';
 import type { DevicePermissionsState, PermissionGrantState } from '../types/mobility';
 
@@ -53,6 +60,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
   siteName = '66 Mobilidade',
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [status, setStatus] = useState<DevicePermissionsState>({
     notifications: 'prompt',
@@ -63,14 +71,29 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
   });
   const [requesting, setRequesting] = useState(false);
   const [batteryDone, setBatteryDone] = useState(false);
+  const [overlayDone, setOverlayDone] = useState(false);
+  const isAndroidApk = isNativeAndroidApp();
 
   useEffect(() => {
     checkDevicePermissionsStatus().then(setStatus).catch(() => {});
-  }, []);
+    if (isAndroidApk) {
+      getNativeBubblePermissions()
+        .then((p) => {
+          setOverlayDone(p.overlay);
+          setBatteryDone(p.batteryIgnored);
+        })
+        .catch(() => {});
+    }
+  }, [isAndroidApk]);
 
   const refreshStatus = async () => {
     const next = await checkDevicePermissionsStatus();
     setStatus(next);
+    if (isAndroidApk) {
+      const bp = await getNativeBubblePermissions();
+      setOverlayDone(bp.overlay);
+      setBatteryDone(bp.batteryIgnored);
+    }
   };
 
   const handleGrantAll = async () => {
@@ -78,7 +101,20 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
     try {
       const next = await requestAllDevicePermissions();
       setStatus(next);
-      setBatteryDone(true);
+      if (isAndroidApk) {
+        const bp = await getNativeBubblePermissions();
+        if (!bp.overlay) {
+          await requestNativeOverlayPermission();
+        }
+        if (!bp.batteryIgnored) {
+          await requestNativeBatteryOptimization();
+        }
+        const bpAfter = await getNativeBubblePermissions();
+        setOverlayDone(bpAfter.overlay);
+        setBatteryDone(bpAfter.batteryIgnored);
+      } else {
+        setBatteryDone(true);
+      }
       markPermissionsPromptSeen();
       onClose();
     } finally {
@@ -109,7 +145,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
             </div>
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                Passo {step + 1} de 4 · Configuração Guiada ({siteName})
+                {step + 1}/4 · {t.permissions_btn} ({siteName})
               </p>
               <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                 {stepsMeta[step].title}
@@ -120,7 +156,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
             type="button"
             onClick={closeModal}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
-            aria-label="Fechar permissões"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
@@ -265,38 +301,68 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
           </div>
         )}
 
-        {/* Step 4: Visual Android Battery Optimization Guide */}
+        {/* Step 4: Native Android Battery Optimization & Background Floating Bubble */}
         {step === 3 && (
           <div className="space-y-3 rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50/70 dark:bg-amber-950/30 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
-                <BatteryCharging className="h-6 w-6" />
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
+                  <BatteryCharging className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
+                    Segundo Plano, Bateria &amp; Balão Flutuante
+                  </h4>
+                  <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200 leading-relaxed">
+                    O balão redondo da <strong>66</strong> aparece <strong>somente fora do app</strong>{' '}
+                    (quando você minimizar) para voltar com 1 toque sem gastar bateria.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                  Segundo Plano, Bateria &amp; Balão Flutuante
-                </h4>
-                <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                  Para o app rodar em segundo plano com GPS contínuo, toque de chamadas e exibir o
-                  balão redondo móvel sobre a tela:
-                </p>
-              </div>
+              <StatusBadge state={overlayDone && batteryDone ? 'granted' : 'prompt'} />
             </div>
 
-            <div className="rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-3 space-y-2 text-xs">
-              <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">1</span>
-                <span>Abra Configurações &gt; Aplicativos &gt; {siteName}</span>
+            {isAndroidApk ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await requestNativeOverlayPermission();
+                    setOverlayDone(ok);
+                  }}
+                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-3.5 text-xs font-extrabold text-neutral-950 dark:text-white"
+                >
+                  <span>1. Permitir Balão Sobrepor Outros Apps</span>
+                  <StatusBadge state={overlayDone ? 'granted' : 'prompt'} />
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await requestNativeBatteryOptimization();
+                    setBatteryDone(ok);
+                  }}
+                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-3.5 text-xs font-extrabold text-neutral-950 dark:text-white"
+                >
+                  <span>2. Bateria Irrestrita (Economia Inteligente)</span>
+                  <StatusBadge state={batteryDone ? 'granted' : 'prompt'} />
+                </button>
               </div>
-              <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">2</span>
-                <span>Em Bateria, marque &ldquo;Irrestrito&rdquo; (Sem restrições)</span>
+            ) : (
+              <div className="rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-3 space-y-2 text-xs">
+                <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">1</span>
+                  <span>No APK Android: Configurações &gt; Aplicativos &gt; {siteName}</span>
+                </div>
+                <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">2</span>
+                  <span>Em Bateria, marque &ldquo;Irrestrito&rdquo; (Sem restrições)</span>
+                </div>
+                <div className="flex items-center gap-2 font-extrabold text-emerald-700 dark:text-emerald-400">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]">3</span>
+                  <span>Ative &ldquo;Sobrepor a outros apps&rdquo; para o balão em segundo plano</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 font-extrabold text-emerald-700 dark:text-emerald-400">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]">3</span>
-                <span>Ative &ldquo;Sobrepor a outros apps&rdquo; para o pop-up flutuante</span>
-              </div>
-            </div>
+            )}
 
             <div className="flex items-center justify-between text-[11px] text-neutral-600 dark:text-neutral-300 px-1">
               <span className="inline-flex items-center gap-1">
@@ -345,7 +411,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
             onClick={closeModal}
             className="min-h-[40px] w-full text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
           >
-            Continuar para o aplicativo
+            {t.continue_btn}
           </button>
         </div>
       </div>

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CheckCircle2, Clock, Copy, QrCode, ShieldCheck, X } from 'lucide-react';
+import { Check, CheckCircle2, Clock, Copy, QrCode, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { buildPixEmvPayload, formatBRL } from '../lib/geo';
+import { useTranslation } from '../lib/i18n';
 import { declarePixPaid } from '../lib/mobilityApi';
-import { PixQrSvg } from '../lib/pixQr';
+import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import { playRideAcceptedChime } from '../lib/sound';
 import type { PlatformConfig, Ride } from '../types/mobility';
 
@@ -19,11 +20,13 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   onDeclared,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const celebratedRef = useRef(false);
+  const { formattedTimer, cycle } = usePixSecurityRotation(90);
 
   const amount = ride.final_fare ?? ride.estimated_fare;
   const pixPayload = useMemo(
@@ -33,9 +36,9 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         platformConfig.platform_pix_receiver,
         platformConfig.platform_city,
         amount,
-        ride.id
+        `${ride.id}S${cycle}`
       ),
-    [platformConfig, amount, ride.id]
+    [platformConfig, amount, ride.id, cycle]
   );
 
   const copyText = async (value: string, target: 'key' | 'code') => {
@@ -104,7 +107,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             onClick={onClose}
             className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
           >
-            Continuar
+            {t.continue_btn}
           </button>
         </div>
       </div>
@@ -121,7 +124,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             </div>
             <div>
               <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                {ride.status === 'completed' ? 'Aguardando Pagamento (Pix)' : 'Pix Copia e Cola'}
+                {ride.status === 'completed' ? t.pay_with_pix : 'Pix Copia e Cola'}
               </h3>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">{platformConfig.platform_pix_receiver}</p>
             </div>
@@ -130,7 +133,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             type="button"
             onClick={onClose}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
-            aria-label="Fechar pagamento Pix"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
@@ -158,10 +161,27 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           )}
         </div>
 
-        {/* Deterministic SVG QR Code */}
-        <div className="mt-4 flex justify-center">
-          <div className="rounded-2xl border-2 border-neutral-950 bg-white p-3.5 shadow-sm">
-            <PixQrSvg payload={pixPayload} size={160} />
+        {/* Official Custom QR Image or Deterministic SVG QR Code with 90s Security Rotation */}
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <div
+            key={cycle}
+            className="rounded-2xl border-2 border-neutral-950 bg-white p-3 shadow-sm transition-opacity"
+          >
+            {platformConfig.platform_pix_qr_url ? (
+              <img
+                src={platformConfig.platform_pix_qr_url}
+                alt="QR Code Pix Oficial"
+                className="h-44 w-44 object-contain rounded-lg"
+              />
+            ) : (
+              <PixQrSvg payload={pixPayload} size={160} />
+            )}
+          </div>
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+            <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: '6s' }} />
+            <span>
+              Atualização de segurança em <strong className="font-mono-num">{formattedTimer}</strong> · Mesma conta oficial
+            </span>
           </div>
         </div>
 
@@ -240,7 +260,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             onClick={onClose}
             className="min-h-[44px] w-full text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
           >
-            Minimizar
+            {t.close}
           </button>
         </div>
       </div>

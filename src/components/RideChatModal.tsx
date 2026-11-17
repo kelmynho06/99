@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
+import { useTranslation } from '../lib/i18n';
 import { sendRideMessage } from '../lib/mobilityApi';
 import type { RideMessage, UserProfile } from '../types/mobility';
 import { AvatarImage } from './AvatarImage';
@@ -39,6 +40,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
   onMessageSent,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -84,7 +86,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
             type="button"
             onClick={onClose}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
-            aria-label="Fechar chat"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
@@ -148,7 +150,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Digite sua mensagem..."
+              placeholder={t.any_note_chat}
               className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-neutral-900 dark:focus:border-[#FFD100]"
             />
             <button

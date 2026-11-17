@@ -22,7 +22,7 @@ export type RideStatus =
   | 'completed'
   | 'cancelled';
 
-export type MapLayerMode = 'urban' | 'satellite' | 'dark' | 'terrain_traffic';
+export type MapLayerMode = 'urban';
 
 export type ThemeMode = 'light' | 'dark' | 'auto';
 
@@ -39,6 +39,8 @@ export interface PlatformConfig {
   platform_pix_key: string;
   platform_pix_receiver: string;
   platform_city: string;
+  company_address?: string | null;
+  platform_pix_qr_url?: string | null;
   site_name: string;
   support_whatsapp: string;
   commission_percent: number;
@@ -59,6 +61,7 @@ export interface PlatformConfig {
   sound_cancel_url?: string | null;
   ota_latest_version?: string | null;
   ota_apk_url?: string | null;
+  ota_web_url?: string | null;
   ota_release_notes?: string | null;
 }
 
@@ -200,7 +203,11 @@ export interface WalletTransaction {
     | 'deposit'
     | 'ride_debit'
     | 'ride_refund'
-    | 'admin_adjustment';
+    | 'admin_adjustment'
+    | 'transfer_in'
+    | 'transfer_out'
+    | 'withdrawal'
+    | 'withdrawal_refund';
   description: string;
   created_at: string;
 }
@@ -217,6 +224,29 @@ export interface WalletDeposit {
   created_at: string;
   reviewed_at?: string | null;
   user?: UserProfile;
+}
+
+export type WalletWithdrawalStatus = 'pending' | 'paid' | 'rejected';
+
+export interface WalletWithdrawal {
+  id: string;
+  user_id: string;
+  amount: number;
+  pix_key: string;
+  status: WalletWithdrawalStatus;
+  note?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+  user?: UserProfile;
+}
+
+export interface WalletRecipientMatch {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  role: UserRole;
+  avatar_url?: string | null;
 }
 
 export interface AuditLogEntry {

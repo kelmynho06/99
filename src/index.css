@@ -36,13 +36,7 @@
   font-family: var(--font-body);
 }
 
-/* Sharp crisp-edge rendering for high-zoom Esri satellite & HD map tiles */
-.leaflet-satellite-crisp .leaflet-tile {
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
-  image-rendering: pixelated;
-  filter: contrast(1.06) saturate(1.08);
-}
+
 
 .leaflet-hud-viewport {
   transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);

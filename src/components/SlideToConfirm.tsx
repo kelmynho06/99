@@ -55,9 +55,15 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
     }
   };
 
-  const trackBg = variant === 'emerald' ? 'bg-emerald-950/80 border-emerald-500/40' : 'bg-[#1E222B] border-white/15';
-  const fillBg = variant === 'emerald' ? 'bg-emerald-500/25' : 'bg-[#FFD100]/25';
-  const thumbBg = variant === 'emerald' ? 'bg-emerald-400 text-neutral-950' : 'bg-[#FFD100] text-neutral-950';
+  const trackBg =
+    variant === 'emerald'
+      ? 'bg-emerald-950/90 border-emerald-500/45 shadow-inner'
+      : 'bg-neutral-900 border-neutral-700/80 shadow-inner';
+  const fillBg = variant === 'emerald' ? 'bg-emerald-500/30' : 'bg-[#FFD100]/25';
+  const thumbBg =
+    variant === 'emerald'
+      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-950/40'
+      : 'bg-[#FFD100] text-neutral-950 shadow-md shadow-black/30';
 
   return (
     <div
@@ -71,10 +77,14 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
         style={{ width: `${Math.round(progress * 100)}%` }}
       />
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center pl-12 pr-4">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center pl-14 pr-4">
         <span className="truncate text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">
           <span>{label}</span>
-          <ChevronsRight className="h-4 w-4 text-[#FFD100] shrink-0" />
+          <ChevronsRight
+            className={`h-4 w-4 shrink-0 ${
+              variant === 'emerald' ? 'text-emerald-400' : 'text-[#FFD100]'
+            }`}
+          />
         </span>
       </div>
 
@@ -102,7 +112,7 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
               : 0
           }px)`,
         }}
-        className={`touch-none absolute top-1 left-1 flex h-[50px] w-[52px] cursor-grab active:cursor-grabbing items-center justify-center rounded-xl shadow-lg transition-transform ${thumbBg}`}
+        className={`touch-none absolute top-1 left-1 flex h-[50px] w-[52px] cursor-grab active:cursor-grabbing items-center justify-center rounded-xl transition-transform ${thumbBg}`}
       >
         <ChevronRight className="h-6 w-6 stroke-[2.8]" />
       </div>

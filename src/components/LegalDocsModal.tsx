@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Cookie, FileText, Lock, ShieldCheck, X } from 'lucide-react';
+import { useTranslation } from '../lib/i18n';
 
 export type LegalDocTab = 'terms' | 'privacy' | 'security' | 'cookies';
 
@@ -18,6 +19,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
   onAcceptAll,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<LegalDocTab>(initialTab);
 
   return (
@@ -31,10 +33,10 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
             </div>
             <div>
               <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                Central Jurídica, Segurança e Privacidade
+                {t.privacy_security}
               </h3>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {siteName} Mobilidade · Conformidade LGPD (Lei 13.709/2018)
+                {siteName} Mobilidade · LGPD (Lei 13.709/2018)
               </p>
             </div>
           </div>
@@ -42,7 +44,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
             type="button"
             onClick={onClose}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
-            aria-label="Fechar documentos legais"
+            aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
@@ -212,7 +214,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
             onClick={onClose}
             className="min-h-[44px] w-full sm:w-auto rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-5 text-xs font-bold text-neutral-800 dark:text-neutral-200"
           >
-            Fechar
+            {t.close}
           </button>
           {requireAcceptanceButton && onAcceptAll && (
             <button

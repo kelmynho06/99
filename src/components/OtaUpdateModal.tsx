@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DownloadCloud, ExternalLink, RefreshCw, Sparkles, X } from 'lucide-react';
+import { applyNativeWebUpdate, isNativeAndroidApp, openExternalDownloadUrl } from '../lib/floatingBubble';
+import { useTranslation } from '../lib/i18n';
 import type { OtaUpdateInfo } from '../lib/otaUpdate';
 
 interface OtaUpdateModalProps {
@@ -13,10 +15,35 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
   siteName = '66 Mobilidade',
   onClose,
 }) => {
+  const { t } = useTranslation();
+  const [applyingWeb, setApplyingWeb] = useState(false);
+
+  const hasWebUpdate = Boolean(updateInfo.webUrl && updateInfo.webUrl.startsWith('http'));
   const isDirectApk =
-    updateInfo.apkUrl.toLowerCase().endsWith('.apk') ||
-    updateInfo.apkUrl.toLowerCase().includes('apk') ||
-    updateInfo.apkUrl.startsWith('http');
+    updateInfo.apkUrl.startsWith('http://') ||
+    updateInfo.apkUrl.startsWith('https://') ||
+    updateInfo.apkUrl.toLowerCase().includes('.apk');
+
+  const handleDownloadApk = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const handledNative = await openExternalDownloadUrl(updateInfo.apkUrl);
+    if (handledNative) {
+      e.preventDefault();
+    }
+    onClose();
+  };
+
+  const handleApplyLiveWeb = async () => {
+    if (hasWebUpdate && updateInfo.webUrl && isNativeAndroidApp()) {
+      setApplyingWeb(true);
+      try {
+        const applied = await applyNativeWebUpdate(updateInfo.webUrl);
+        if (applied) return;
+      } finally {
+        setApplyingWeb(false);
+      }
+    }
+    window.location.reload();
+  };
 
   return (
     <div className="fixed inset-0 z-[1400] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
@@ -28,10 +55,10 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
             </div>
             <div>
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                <Sparkles className="h-3 w-3" /> Atualização OTA
+                <Sparkles className="h-3 w-3" /> {siteName}
               </span>
               <h3 className="mt-1 font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                Nova atualização disponível!
+                {t.ota_new_update}
               </h3>
             </div>
           </div>
@@ -39,20 +66,21 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
             type="button"
             onClick={onClose}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
-            aria-label="Fechar aviso de atualização"
+            aria-label={t.close}
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
-          Uma nova versão do <strong>{siteName}</strong> está disponível. Deseja atualizar agora?
+          Uma nova versão do <strong>{siteName}</strong> está pronta para você. Atualize para
+          aproveitar as melhorias mais recentes.
         </p>
 
         <div className="grid grid-cols-2 gap-2.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 p-3.5 border border-neutral-200 dark:border-neutral-700">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-              Versão Atual
+              {t.app_version_label}
             </p>
             <p className="font-mono-num text-sm font-extrabold text-neutral-900 dark:text-neutral-100">
               v{updateInfo.currentVersion}
@@ -60,7 +88,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
           </div>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              Nova Versão
+              {t.ota_new_update}
             </p>
             <p className="font-mono-num text-sm font-extrabold text-emerald-700 dark:text-emerald-300">
               v{updateInfo.latestVersion}
@@ -80,34 +108,49 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
         )}
 
         <div className="flex flex-col gap-2 pt-1">
+          {hasWebUpdate && (
+            <button
+              type="button"
+              disabled={applyingWeb}
+              onClick={handleApplyLiveWeb}
+              className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+            >
+              <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
+              <span>{t.ota_apply_web}</span>
+            </button>
+          )}
           {isDirectApk ? (
             <a
               href={updateInfo.apkUrl}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={onClose}
-              className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+              onClick={handleDownloadApk}
+              className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition ${
+                hasWebUpdate
+                  ? 'border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white'
+                  : 'bg-[#FFD100] text-neutral-950'
+              }`}
             >
               <DownloadCloud className="h-5 w-5" />
-              <span>Baixar e Instalar APK Agora</span>
+              <span>{t.ota_download_now}</span>
               <ExternalLink className="h-4 w-4" />
             </a>
-          ) : (
+          ) : !hasWebUpdate ? (
             <button
               type="button"
               onClick={() => window.location.reload()}
               className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
             >
               <RefreshCw className="h-5 w-5" />
-              <span>Atualizar Aplicativo Agora</span>
+              <span>{t.ota_apply_web}</span>
             </button>
-          )}
+          ) : null}
           <button
             type="button"
             onClick={onClose}
             className="min-h-[42px] w-full rounded-xl text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
           >
-            Depois
+            {t.ota_later}
           </button>
         </div>
       </div>

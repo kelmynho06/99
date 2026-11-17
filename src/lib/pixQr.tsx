@@ -1,4 +1,27 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+
+export function usePixSecurityRotation(intervalSeconds = 90): {
+  secondsLeft: number;
+  formattedTimer: string;
+  cycle: number;
+} {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setTick((prev) => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const cycle = Math.floor(tick / intervalSeconds);
+  const secondsLeft = intervalSeconds - (tick % intervalSeconds);
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = secondsLeft % 60;
+  const formattedTimer = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  return { secondsLeft, formattedTimer, cycle };
+}
 
 export function generateDeterministicQrMatrix(seedStr: string, size = 21): boolean[][] {
   const grid: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));

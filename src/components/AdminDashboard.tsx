@@ -40,6 +40,7 @@ import {
 import { useAppConfig } from '../context/AppConfigContext';
 import { fetchAuditLogsFromSupabase } from '../lib/audit';
 import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
+import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import { formatBRL } from '../lib/geo';
 import {
   adminApproveWalletDeposit,
@@ -49,6 +50,7 @@ import {
   adminDeletePlatformEvent,
   adminDeleteUserAccount,
   adminPayDriverPix,
+  adminProcessWalletWithdrawal,
   adminRejectWalletDeposit,
   adminReviewDriver,
   adminSavePlatformConfig,
@@ -79,6 +81,7 @@ import type {
   UserProfile,
   WalletDeposit,
   WalletTransaction,
+  WalletWithdrawal,
 } from '../types/mobility';
 import { AdminAuditTab } from './AdminAuditTab';
 import { AdminSettlementReceiptModal } from './AdminSettlementReceiptModal';
@@ -119,6 +122,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [deposits, setDeposits] = useState<WalletDeposit[]>([]);
+  const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([]);
   const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(
     initialPlatformConfig ?? DEFAULT_PLATFORM_CONFIG
   );
@@ -145,6 +149,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [confirmingPixRideId, setConfirmingPixRideId] = useState<string | null>(null);
   const [processingDepositId, setProcessingDepositId] = useState<string | null>(null);
+  const [processingWithdrawalId, setProcessingWithdrawalId] = useState<string | null>(null);
+  const [copiedWithdrawPixId, setCopiedWithdrawPixId] = useState<string | null>(null);
   const [debtModalClient, setDebtModalClient] = useState<UserProfile | null>(null);
   const [debtAmountInput, setDebtAmountInput] = useState<string>('');
   const [debtNoteInput, setDebtNoteInput] = useState<string>('Corrida não paga');
@@ -194,6 +200,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setPricing(data.pricing);
       setTransactions(data.transactions);
       setDeposits(data.deposits);
+      setWithdrawals(data.withdrawals || []);
       setPlatformEvents(events);
       setAuditLogs(logs);
 
@@ -202,6 +209,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
       if (firstOnlineWithGps?.driver?.current_lat && firstOnlineWithGps?.driver?.current_lng) {
         setMapCenter([firstOnlineWithGps.driver.current_lat, firstOnlineWithGps.driver.current_lng]);
+      } else {
+        getCurrentGpsPosition()
+          .then((pos) => {
+            if (pos) setMapCenter([pos.lat, pos.lng]);
+          })
+          .catch(() => {});
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao carregar dados do Supabase.');
@@ -232,6 +245,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'wallet_deposits' },
+        () => {
+          loadOverview();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wallet_withdrawals' },
         () => {
           loadOverview();
         }
@@ -353,6 +373,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const reviewedDeposits = useMemo(
     () => deposits.filter((d) => d.status !== 'pending').slice(0, 15),
     [deposits]
+  );
+
+  const pendingWithdrawals = useMemo(
+    () => withdrawals.filter((w) => w.status === 'pending'),
+    [withdrawals]
+  );
+
+  const reviewedWithdrawals = useMemo(
+    () => withdrawals.filter((w) => w.status !== 'pending').slice(0, 15),
+    [withdrawals]
   );
 
   const filteredRides = useMemo(() => {
@@ -518,6 +548,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleApproveWithdrawal = async (w: WalletWithdrawal) => {
+    setProcessingWithdrawalId(w.id);
+    try {
+      await adminProcessWalletWithdrawal(w.id, 'paid');
+      await loadOverview();
+      showToast(
+        `Saque de ${formatBRL(w.amount)} marcado como pago para ${w.user?.full_name || 'Motorista'}!`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao confirmar pagamento de saque.');
+    } finally {
+      setProcessingWithdrawalId(null);
+    }
+  };
+
+  const handleRejectWithdrawal = async (w: WalletWithdrawal) => {
+    setProcessingWithdrawalId(w.id);
+    try {
+      await adminProcessWalletWithdrawal(w.id, 'rejected');
+      await loadOverview();
+      showToast(
+        `Saque de ${formatBRL(w.amount)} recusado e saldo estornado para ${w.user?.full_name || 'Motorista'}.`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao estornar solicitação de saque.');
+    } finally {
+      setProcessingWithdrawalId(null);
+    }
+  };
+
   const openBalanceModal = (usr: UserProfile) => {
     setBalanceModalUser(usr);
     setBalanceMode('set');
@@ -560,6 +620,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     file: File | undefined,
     kind:
       | 'logo'
+      | 'pix_qr'
       | 'moto'
       | 'pop'
       | 'delivery_moto'
@@ -578,6 +639,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const uploadedUrl = await uploadPlatformAssetFile(file, kind);
       const fieldMap: Record<typeof kind, keyof PlatformConfig> = {
         logo: 'app_logo_url',
+        pix_qr: 'platform_pix_qr_url',
         moto: 'vehicle_img_moto',
         pop: 'vehicle_img_pop',
         delivery_moto: 'vehicle_img_delivery_moto',
@@ -612,6 +674,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleResetPlatformAsset = async (
     field:
       | 'app_logo_url'
+      | 'platform_pix_qr_url'
       | 'vehicle_img_moto'
       | 'vehicle_img_pop'
       | 'vehicle_img_delivery_moto'
@@ -977,9 +1040,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     },
     {
       id: 'payments',
-      label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length})`,
+      label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length + pendingWithdrawals.length})`,
       icon: Wallet,
-      badge: awaitingPixRides.length + pendingDeposits.length,
+      badge: awaitingPixRides.length + pendingDeposits.length + pendingWithdrawals.length,
     },
     {
       id: 'events',
@@ -1191,7 +1254,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {(awaitingPixRides.length > 0 || pendingDeposits.length > 0) && (
+        {(awaitingPixRides.length > 0 || pendingDeposits.length > 0 || pendingWithdrawals.length > 0) && (
           <div className="no-print mb-5 rounded-3xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
@@ -1205,7 +1268,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       {awaitingPixRides.length === 1 ? 'corrida Pix' : 'corridas Pix'}
                     </>
                   )}
-                  {awaitingPixRides.length > 0 && pendingDeposits.length > 0 && ' e '}
+                  {awaitingPixRides.length > 0 && (pendingDeposits.length > 0 || pendingWithdrawals.length > 0) && ' · '}
                   {pendingDeposits.length > 0 && (
                     <>
                       {pendingDeposits.length}{' '}
@@ -1213,11 +1276,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         ? 'depósito de saldo'
                         : 'depósitos de saldo'}
                     </>
+                  )}
+                  {pendingDeposits.length > 0 && pendingWithdrawals.length > 0 && ' · '}
+                  {pendingWithdrawals.length > 0 && (
+                    <>
+                      {pendingWithdrawals.length}{' '}
+                      {pendingWithdrawals.length === 1
+                        ? 'saque Pix solicitado'
+                        : 'saques Pix solicitados'}
+                    </>
                   )}{' '}
-                  aguardando sua confirmação
+                  aguardando conferência
                 </p>
                 <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                  Confira seu extrato bancário e confirme os Pix recebidos na aba Pagamentos &amp;
+                  Confira seu extrato bancário e confirme depósitos, corridas e saques na aba Pagamentos &amp;
                   Saldos.
                 </p>
               </div>
@@ -1261,7 +1333,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Monitoramento GPS ao Vivo ({onlineDrivers.length} online)
                   </h2>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Total de cadastros: {users.length} usuários · Alterne entre modo Urbano e Satélite no mapa
+                    Total de cadastros: {users.length} usuários · Mapa Urbano GPS ao vivo
                   </p>
                 </div>
               </div>
@@ -1886,23 +1958,161 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
+            {/* Solicitações de Saque via Pix (Motoristas & Entregadores) */}
+            <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white flex items-center gap-2">
+                    <QrCode className="h-5 w-5 text-amber-600" />
+                    Saques Solicitados (Motoristas &amp; Entregadores) ({pendingWithdrawals.length})
+                  </h2>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    Transfira o valor solicitado para a chave Pix exibida e clique em{' '}
+                    <strong>Confirmar Pago</strong>. Caso recuse, o valor é estornado ao saldo do motorista.
+                  </p>
+                </div>
+              </div>
+
+              {pendingWithdrawals.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-6 text-center text-xs font-semibold text-neutral-500">
+                  Nenhuma solicitação de saque pendente neste momento.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {pendingWithdrawals.map((w) => {
+                    const isBusy = processingWithdrawalId === w.id;
+                    return (
+                      <div
+                        key={w.id}
+                        className="rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/20 p-4 flex flex-col justify-between gap-3"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
+                              {w.user?.full_name || 'Motorista'}
+                            </span>
+                            <span className="font-mono-num text-lg font-extrabold text-amber-700 dark:text-[#FFD100]">
+                              {formatBRL(w.amount)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-3 py-2 text-xs">
+                            <span className="font-mono-num font-bold text-neutral-900 dark:text-white truncate">
+                              Pix: {w.pix_key}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await navigator.clipboard.writeText(w.pix_key);
+                                setCopiedWithdrawPixId(w.id);
+                                setTimeout(() => setCopiedWithdrawPixId(null), 2000);
+                              }}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[10px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                            >
+                              {copiedWithdrawPixId === w.id ? (
+                                <Check className="h-3 w-3" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                              {copiedWithdrawPixId === w.id ? 'Copiada' : 'Copiar Pix'}
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-neutral-600 dark:text-neutral-400 font-mono-num">
+                            {w.user?.phone || '—'} · Saldo restante:{' '}
+                            <strong>{formatBRL(w.user?.wallet_balance || 0)}</strong> ·{' '}
+                            {new Date(w.created_at).toLocaleString('pt-BR')}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleRejectWithdrawal(w)}
+                            className="min-h-[42px] rounded-xl border border-red-200 dark:border-red-900 bg-white dark:bg-neutral-900 px-3.5 text-xs font-bold text-red-700 dark:text-red-300 hover:bg-red-50 disabled:opacity-60"
+                          >
+                            Recusar &amp; Estornar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleApproveWithdrawal(w)}
+                            className="min-h-[42px] flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-extrabold text-white shadow-sm disabled:opacity-60"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            {isBusy ? 'Confirmando...' : 'Confirmar Pago'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {reviewedWithdrawals.length > 0 && (
+                <div className="border-t border-neutral-100 dark:border-neutral-800 pt-3">
+                  <p className="text-[11px] font-bold text-neutral-500 mb-2">
+                    Últimos saques processados
+                  </p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {reviewedWithdrawals.map((w) => (
+                      <div
+                        key={w.id}
+                        className="flex items-center justify-between rounded-xl bg-neutral-50 dark:bg-neutral-800/50 px-3 py-2 text-[11px]"
+                      >
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate pr-2">
+                          {w.user?.full_name || 'Motorista'} ({w.pix_key}) ·{' '}
+                          <span className="font-mono-num">{formatBRL(w.amount)}</span>
+                        </span>
+                        <span
+                          className={`font-extrabold shrink-0 ${
+                            w.status === 'paid' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                          }`}
+                        >
+                          {w.status === 'paid' ? 'Pago' : 'Recusado / Estornado'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Official Owner Pix Configuration */}
+              {/* Official Owner Pix Configuration & Central Address */}
               <form
                 onSubmit={handleSavePlatformConfig}
-                className="lg:col-span-4 rounded-2xl border border-neutral-200 bg-white p-5 space-y-4 h-fit"
+                className="lg:col-span-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-4 h-fit"
               >
-                <div className="flex items-center gap-2.5 text-neutral-950 font-extrabold text-sm">
+                <div className="flex items-center gap-2.5 text-neutral-950 dark:text-white font-extrabold text-sm">
                   <QrCode className="h-5 w-5 text-amber-600" />
                   <span>Minha Conta Pix Oficial (Dono)</span>
                 </div>
-                <p className="text-xs text-neutral-600">
-                  Todo passageiro que escolher pagar por Pix ou depositar Saldo no App pagará
-                  diretamente para esta chave. Depois, você realiza os repasses abaixo.
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  Todo passageiro que pagar por Pix ou depositar Saldo no App enviará diretamente
+                  para esta conta, com atualização automática de segurança a cada 90 segundos.
                 </p>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    <MapPin className="h-3.5 w-3.5 text-amber-600" />
+                    Endereço Central da Empresa
+                  </label>
+                  <input
+                    type="text"
+                    value={platformConfig.company_address || ''}
+                    onChange={(e) =>
+                      setPlatformConfig((prev) => ({
+                        ...prev,
+                        company_address: e.target.value,
+                      }))
+                    }
+                    placeholder="Ex: Av. Rui Barbosa, 450 - Heliópolis, Garanhuns - PE"
+                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-semibold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                     Chave Pix Recebedora
                   </label>
                   <input
@@ -1912,12 +2122,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) =>
                       setPlatformConfig((prev) => ({ ...prev, platform_pix_key: e.target.value }))
                     }
-                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950"
+                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-sm font-bold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                     Nome do Titular / Favorecido
                   </label>
                   <input
@@ -1930,16 +2140,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         platform_pix_receiver: e.target.value,
                       }))
                     }
-                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-sm font-semibold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                   />
+                </div>
+
+                {/* Custom Official Pix QR Code Image Upload */}
+                <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-xs font-extrabold text-neutral-900 dark:text-white">
+                      <ImageIcon className="h-4 w-4 text-amber-600" />
+                      Imagem do QR Code Pix (Opcional)
+                    </span>
+                    {platformConfig.platform_pix_qr_url && (
+                      <button
+                        type="button"
+                        onClick={() => handleResetPlatformAsset('platform_pix_qr_url')}
+                        className="text-[11px] font-bold text-red-600 dark:text-red-400"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+
+                  {platformConfig.platform_pix_qr_url ? (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={platformConfig.platform_pix_qr_url}
+                        alt="QR Code Pix Oficial"
+                        className="h-16 w-16 rounded-xl border border-neutral-300 bg-white object-contain p-1 shrink-0"
+                      />
+                      <p className="text-[11px] text-neutral-600 dark:text-neutral-300">
+                        Imagem ativa! Será exibida nos pagamentos e recargas Pix com rotação visual de 90s.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      Envie a imagem do QR Code do seu banco (ou deixe vazio para gerar automaticamente pela Chave Pix).
+                    </p>
+                  )}
+
+                  <label className="flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 text-xs font-extrabold text-neutral-950 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                    <ImageIcon className="h-4 w-4 text-amber-600" />
+                    <span>
+                      {uploadingAssetKind === 'pix_qr'
+                        ? 'Enviando QR Code...'
+                        : platformConfig.platform_pix_qr_url
+                        ? 'Trocar Imagem do QR Code'
+                        : 'Fazer Upload do QR Code Pix'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleUploadPlatformAsset(e.target.files?.[0], 'pix_qr')}
+                    />
+                  </label>
                 </div>
 
                 <button
                   type="submit"
                   disabled={savingPlatform}
-                  className="min-h-[48px] w-full rounded-2xl bg-neutral-950 text-sm font-extrabold text-[#FFD100]"
+                  className="min-h-[48px] w-full rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-sm font-extrabold text-[#FFD100] dark:text-neutral-950"
                 >
-                  {savingPlatform ? 'Salvando...' : 'Salvar Minha Chave Pix'}
+                  {savingPlatform ? 'Salvando...' : 'Salvar Conta & Endereço'}
                 </button>
               </form>
 
@@ -2820,7 +3083,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ota_latest_version: e.target.value,
                           }))
                         }
-                        placeholder="1.2.1"
+                        placeholder="1.2.2"
                         className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 font-mono-num text-xs font-bold"
                       />
                     </div>
@@ -2837,10 +3100,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ota_apk_url: e.target.value,
                           }))
                         }
-                        placeholder="https://seu-link.com/66mobilidade-v1.2.1.apk"
+                        placeholder="https://github.com/.../66mobilidade-v1.2.2.apk"
                         className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                      URL Web OTA ao Vivo (Atualização Instantânea no APK sem reinstalar)
+                    </label>
+                    <input
+                      type="url"
+                      value={platformConfig.ota_web_url || ''}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          ota_web_url: e.target.value,
+                        }))
+                      }
+                      placeholder="https://seu-app-hospedado.vercel.app"
+                      className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
+                    />
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
@@ -2855,7 +3135,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           ota_release_notes: e.target.value,
                         }))
                       }
-                      placeholder="Melhorias de GPS, mapa noturno e performance."
+                      placeholder="Avaliações com foto e nome, transferências/saques Pix e PIN moderno."
                       className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
                     />
                   </div>
@@ -2917,7 +3197,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Incremental Atualizado (supabase/migration_incremental_latest.sql)
                   </h3>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Contém somente o delta recente (constraints de Saldo do App e funções RPC de pagamento), preservando integralmente suas tabelas existentes.
+                    Contém somente o delta recente v1.2.2 (coluna <span className="font-mono-num">ota_web_url</span>, tabela <span className="font-mono-num">wallet_withdrawals</span>, transferências P2P de saldo e saques Pix), preservando integralmente suas tabelas existentes.
                   </p>
                 </div>
                 <button

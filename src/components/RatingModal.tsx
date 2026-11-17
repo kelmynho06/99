@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Star, X } from 'lucide-react';
+import { Bike, Car, Package, ShieldCheck, Star, X } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
 import { resolveBrandLogo } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
+import { useTranslation } from '../lib/i18n';
 import { submitRideRating } from '../lib/mobilityApi';
 import type { PlatformConfig, Ride, UserProfile } from '../types/mobility';
 import { AvatarImage } from './AvatarImage';
@@ -21,12 +22,31 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   onSkip,
 }) => {
   const { config: appConfig } = useAppConfig();
+  const { t } = useTranslation();
   const [stars, setStars] = useState(5);
   const [submitting, setSubmitting] = useState(false);
 
-  const isPassenger = currentUser.id === ride.passenger_id;
-  const targetUser = isPassenger ? ride.driver : ride.passenger;
-  const targetId = isPassenger ? ride.driver_id : ride.passenger_id;
+  const isPassengerEvaluatingDriver = currentUser.id === ride.passenger_id;
+  const targetUser = isPassengerEvaluatingDriver ? ride.driver : ride.passenger;
+  const targetId = isPassengerEvaluatingDriver ? ride.driver_id : ride.passenger_id;
+  const isDelivery =
+    ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+
+  const roleBadgeLabel = isPassengerEvaluatingDriver
+    ? isDelivery
+      ? t.deliverer_role_badge
+      : t.driver_role_badge
+    : t.passenger_role_badge;
+
+  const headingTitle = isPassengerEvaluatingDriver
+    ? isDelivery
+      ? t.rate_deliverer_title
+      : t.rate_driver_title
+    : t.rate_passenger_title;
+
+  const targetFullName =
+    targetUser?.full_name || roleBadgeLabel;
+  const driverMeta = isPassengerEvaluatingDriver ? targetUser?.driver : undefined;
   const brandLogo = resolveBrandLogo({ app_logo_url: appConfig.logo_url } as PlatformConfig);
 
   const submitRating = async () => {
@@ -43,13 +63,13 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/55 p-4">
-      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl text-center border border-neutral-100 dark:border-neutral-800">
+    <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/65 backdrop-blur-xs p-4">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl text-center border border-neutral-200 dark:border-neutral-800">
         <button
           type="button"
           onClick={onSkip}
           className="absolute top-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition"
-          aria-label="Fechar avaliação"
+          aria-label={t.close}
         >
           <X className="h-4 w-4" />
         </button>
@@ -58,71 +78,111 @@ export const RatingModal: React.FC<RatingModalProps> = ({
           <img
             src={brandLogo}
             alt={appConfig.app_name}
-            className="h-12 w-12 rounded-2xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
+            className="h-11 w-11 rounded-2xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
           />
         </div>
 
-        <h3 className="mt-3.5 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
-          Corrida finalizada!
+        <h3 className="mt-3 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+          {headingTitle}
         </h3>
-        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Valor total:{' '}
-          <span className="font-bold text-neutral-950 dark:text-white font-mono-num">
-            {formatBRL(ride.final_fare ?? ride.estimated_fare)}
-          </span>
+        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+          {formatBRL(ride.final_fare ?? ride.estimated_fare)}
         </p>
 
-        <div className="mt-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 p-4 border border-neutral-200/70 dark:border-neutral-700">
-          <div className="flex flex-col items-center gap-2 mb-2">
+        {/* Evaluated Person Identification Card */}
+        <div className="mt-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/80 p-4 border border-neutral-200 dark:border-neutral-700 space-y-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            {t.evaluating_person_label}
+          </p>
+
+          <div className="flex items-center gap-3 text-left rounded-2xl bg-white dark:bg-neutral-900 p-3 border border-neutral-200/80 dark:border-neutral-700 shadow-xs">
             <AvatarImage
               src={targetUser?.avatar_url}
-              name={targetUser?.full_name || (isPassenger ? 'Motorista' : 'Passageiro')}
-              className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shadow-xs"
-              fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg"
+              name={targetFullName}
+              className="h-16 w-16 rounded-2xl object-cover border-2 border-[#FFD100] shrink-0 shadow-xs"
+              fallbackClassName="flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100] font-extrabold text-xl shrink-0"
             />
-            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
-              Como foi sua experiência com{' '}
-              <strong className="text-neutral-950 dark:text-white">
-                {targetUser?.full_name || (isPassenger ? 'o motorista' : 'o passageiro')}
-              </strong>
-              ?
-            </p>
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-2 py-0.5 text-[10px] font-extrabold text-neutral-950 uppercase">
+                  {isDelivery ? (
+                    <Package className="h-3 w-3" />
+                  ) : driverMeta?.vehicle_type === 'moto' ? (
+                    <Bike className="h-3 w-3" />
+                  ) : isPassengerEvaluatingDriver ? (
+                    <Car className="h-3 w-3" />
+                  ) : (
+                    <ShieldCheck className="h-3 w-3" />
+                  )}
+                  {roleBadgeLabel}
+                </span>
+                {typeof targetUser?.rating_avg === 'number' && (
+                  <span className="inline-flex items-center gap-0.5 text-[11px] font-mono-num font-bold text-neutral-700 dark:text-neutral-300">
+                    <Star className="h-3 w-3 fill-[#FFD100] text-[#F59E0B]" />
+                    {targetUser.rating_avg.toFixed(1)}
+                  </span>
+                )}
+              </div>
+
+              <p className="font-display text-base font-extrabold text-neutral-950 dark:text-white truncate leading-tight">
+                {targetFullName}
+              </p>
+
+              {driverMeta && (
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-neutral-600 dark:text-neutral-300">
+                  <span className="font-semibold truncate">
+                    {driverMeta.vehicle_color} {driverMeta.vehicle_model}
+                  </span>
+                  {driverMeta.vehicle_plate && (
+                    <span className="rounded-md bg-neutral-950 dark:bg-neutral-800 px-1.5 py-0.5 font-mono-num text-[10px] font-extrabold text-[#FFD100] border border-neutral-800">
+                      {driverMeta.vehicle_plate}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="mt-2 flex items-center justify-center gap-2">
+
+          {/* 5-Star Picker */}
+          <div className="pt-1 flex items-center justify-center gap-1.5">
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setStars(n)}
-                className="flex h-11 w-11 items-center justify-center rounded-xl transition active:scale-90"
+                className="flex h-11 w-11 items-center justify-center rounded-xl transition active:scale-90 hover:bg-white dark:hover:bg-neutral-900"
                 aria-label={`${n} estrelas`}
               >
                 <Star
-                  className={`h-8 w-8 ${
-                    n <= stars ? 'fill-[#FFD100] text-[#F59E0B]' : 'text-neutral-300 dark:text-neutral-600'
+                  className={`h-8 w-8 transition ${
+                    n <= stars
+                      ? 'fill-[#FFD100] text-[#F59E0B] drop-shadow-xs'
+                      : 'text-neutral-300 dark:text-neutral-600'
                   }`}
                 />
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-xs font-bold text-neutral-800 dark:text-neutral-200">{stars} de 5 estrelas</p>
+          <p className="text-xs font-extrabold text-neutral-900 dark:text-white font-mono-num">
+            {stars} / 5 ★
+          </p>
         </div>
 
         <button
           type="button"
           onClick={submitRating}
           disabled={submitting}
-          className="mt-5 min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm transition active:scale-[0.98]"
+          className="mt-5 min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm transition active:scale-[0.98]"
         >
-          {submitting ? 'Enviando avaliação...' : 'Enviar Avaliação'}
+          {submitting ? t.saving : t.submit_rating}
         </button>
 
         <button
           type="button"
           onClick={onSkip}
-          className="mt-2 min-h-[42px] w-full text-xs font-semibold text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white"
+          className="mt-2 min-h-[40px] w-full text-xs font-semibold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
         >
-          Avaliar depois
+          {t.skip_rating}
         </button>
       </div>
     </div>

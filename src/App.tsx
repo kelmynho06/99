@@ -3,7 +3,6 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieBanner } from './components/CookieBanner';
 import { DriverView } from './components/DriverView';
-import { FloatingBubble } from './components/FloatingBubble';
 import { OtaUpdateModal } from './components/OtaUpdateModal';
 import { PassengerView } from './components/PassengerView';
 import { PermissionsPromptModal } from './components/PermissionsPromptModal';
@@ -12,8 +11,18 @@ import { useAppConfig } from './context/AppConfigContext';
 import { useRealtimeMobility } from './hooks/useRealtimeMobility';
 import { logAuditEvent } from './lib/audit';
 import { resolveBrandLogo } from './lib/brandAssets';
+import {
+  syncNativeFloatingBubbleActiveRide,
+  syncNativeFloatingBubbleEnabled,
+} from './lib/floatingBubble';
 import { logoutUser, restoreSessionUser } from './lib/mobilityApi';
-import { checkForOtaUpdate, type OtaUpdateInfo } from './lib/otaUpdate';
+import { useTranslation } from './lib/i18n';
+import {
+  checkAndApplyWebAutoUpdate,
+  checkForOtaUpdate,
+  type OtaUpdateInfo,
+} from './lib/otaUpdate';
+import { unlockAudioContext } from './lib/sound';
 import { supabase } from './lib/supabase';
 import {
   applyThemeToDocument,
@@ -28,6 +37,7 @@ const STORAGE_KEY = 'velo99_session_user';
 
 export default function App() {
   const { config: appConfig } = useAppConfig();
+  const { t } = useTranslation();
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -42,17 +52,18 @@ export default function App() {
     () => getUserPreferences().floating_bubble_enabled ?? true
   );
   const [otaUpdateInfo, setOtaUpdateInfo] = useState<OtaUpdateInfo | null>(null);
-  const [otaDismissed, setOtaDismissed] = useState(false);
+  const [dismissedOtaVersion, setDismissedOtaVersion] = useState<string | null>(null);
 
   const syncedLangUserIdRef = useRef<string | null>(null);
   const loggedSessionUserIdRef = useRef<string | null>(null);
-  const otaCheckedRef = useRef(false);
 
   useEffect(() => {
     applyThemeToDocument();
     const unsub = subscribeUserPreferences((prefs) => {
       applyThemeToDocument(prefs.theme_mode, prefs.language);
-      setFloatingBubbleEnabled(prefs.floating_bubble_enabled ?? true);
+      const nextBubble = prefs.floating_bubble_enabled ?? true;
+      setFloatingBubbleEnabled(nextBubble);
+      void syncNativeFloatingBubbleEnabled(nextBubble);
     });
     const timer = window.setInterval(() => {
       const prefs = getUserPreferences();
@@ -63,6 +74,18 @@ export default function App() {
     return () => {
       unsub();
       window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleUnlock = () => {
+      unlockAudioContext();
+    };
+    window.addEventListener('pointerdown', handleUnlock, { once: true, passive: true });
+    window.addEventListener('touchstart', handleUnlock, { once: true, passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleUnlock);
+      window.removeEventListener('touchstart', handleUnlock);
     };
   }, []);
 
@@ -183,17 +206,62 @@ export default function App() {
     [platformConfig, appConfig]
   );
 
+  // Sync native Android background-only bubble state & active ride badge (zero in-app overlay)
+  const hasActiveRide = useMemo(
+    () =>
+      Boolean(
+        currentUser &&
+          rides.some(
+            (r) =>
+              ['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status) &&
+              (r.passenger_id === currentUser.id || r.driver_id === currentUser.id)
+          )
+      ),
+    [currentUser, rides]
+  );
+
   useEffect(() => {
-    if (booting || otaCheckedRef.current) return;
-    otaCheckedRef.current = true;
-    checkForOtaUpdate(effectivePlatformConfig)
-      .then((info) => {
-        if (info.hasUpdate) {
-          setOtaUpdateInfo(info);
-        }
-      })
-      .catch(() => {});
-  }, [booting, effectivePlatformConfig]);
+    void syncNativeFloatingBubbleEnabled(Boolean(currentUser) && floatingBubbleEnabled);
+    void syncNativeFloatingBubbleActiveRide(hasActiveRide);
+  }, [currentUser, floatingBubbleEnabled, hasActiveRide]);
+
+  // Web auto-updates silently without showing APK modal; Android APK checks OTA reactively
+  useEffect(() => {
+    if (booting) return;
+
+    const runChecks = () => {
+      void checkAndApplyWebAutoUpdate();
+      checkForOtaUpdate(effectivePlatformConfig)
+        .then((info) => {
+          if (info.hasUpdate) {
+            setOtaUpdateInfo(info);
+          } else {
+            setOtaUpdateInfo(null);
+          }
+        })
+        .catch(() => {});
+    };
+
+    runChecks();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        runChecks();
+      }
+    };
+    window.addEventListener('focus', runChecks);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', runChecks);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [
+    booting,
+    effectivePlatformConfig.ota_latest_version,
+    effectivePlatformConfig.ota_apk_url,
+    effectivePlatformConfig.ota_web_url,
+    effectivePlatformConfig.ota_release_notes,
+  ]);
 
   if (booting && !currentUser) {
     return (
@@ -208,12 +276,18 @@ export default function App() {
             className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-neutral-950 shadow-lg"
           />
           <p className="mt-3 text-sm font-extrabold text-neutral-950">
-            Conectando ao {effectivePlatformConfig.site_name || '66 Mobilidade'}...
+            {t.connecting_to} {effectivePlatformConfig.site_name || '66 Mobilidade'}...
           </p>
         </div>
       </div>
     );
   }
+
+  const showOtaModal = Boolean(
+    otaUpdateInfo?.hasUpdate &&
+      otaUpdateInfo.isNativePlatform &&
+      dismissedOtaVersion !== otaUpdateInfo.latestVersion
+  );
 
   return (
     <>
@@ -268,27 +342,11 @@ export default function App() {
         />
       )}
 
-      {currentUser && floatingBubbleEnabled && (
-        <FloatingBubble
-          currentUser={currentUser}
-          platformConfig={effectivePlatformConfig}
-          hasActiveRide={rides.some(
-            (r) =>
-              ['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status) &&
-              (r.passenger_id === currentUser.id || r.driver_id === currentUser.id)
-          )}
-          onDismiss={() => {
-            saveUserPreferences({ floating_bubble_enabled: false });
-            setFloatingBubbleEnabled(false);
-          }}
-        />
-      )}
-
-      {otaUpdateInfo?.hasUpdate && !otaDismissed && (
+      {showOtaModal && otaUpdateInfo && (
         <OtaUpdateModal
           updateInfo={otaUpdateInfo}
           siteName={effectivePlatformConfig.site_name}
-          onClose={() => setOtaDismissed(true)}
+          onClose={() => setDismissedOtaVersion(otaUpdateInfo.latestVersion)}
         />
       )}
     </>
