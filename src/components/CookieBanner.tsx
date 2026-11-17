@@ -7,7 +7,7 @@ interface CookieBannerProps {
   siteName?: string;
 }
 
-export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = 'Velo99' }) => {
+export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobilidade' }) => {
   const [choice, setChoice] = useState<'all' | 'essential' | null>(() => getCookieConsent());
   const [showDocs, setShowDocs] = useState(false);
 

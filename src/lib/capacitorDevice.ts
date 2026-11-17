@@ -34,7 +34,7 @@ export async function initLocalNotifications(): Promise<void> {
       }
       await LocalNotifications.createChannel({
         id: 'velo99_rides',
-        name: 'Corridas e Entregas Velo99',
+        name: 'Corridas e Entregas 66 Mobilidade',
         description: 'Alertas imediatos de status, mensagens e eventos',
         importance: 5,
         visibility: 1,

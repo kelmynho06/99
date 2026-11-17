@@ -38,7 +38,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   platformConfig,
 }) => {
   const { config: appConfig } = useAppConfig();
-  const siteName = platformConfig?.site_name || appConfig.app_name || 'Velo99';
+  const siteName = platformConfig?.site_name || appConfig.app_name || '66 Mobilidade';
   const brandLogoUrl = resolveBrandLogo({
     app_logo_url: platformConfig?.app_logo_url ?? appConfig.logo_url,
   } as PlatformConfig);

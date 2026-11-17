@@ -16,6 +16,7 @@ import {
   Image as ImageIcon,
   LogOut,
   MapPin,
+  Menu,
   MessageSquare,
   Music,
   Package,
@@ -85,7 +86,7 @@ import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
-import migrationSqlRaw from '../../supabase/migration_update.sql?raw';
+import migrationSqlRaw from '../../supabase/migration_incremental_latest.sql?raw';
 
 interface AdminDashboardProps {
   currentUser: UserProfile;
@@ -112,6 +113,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const { refreshConfig, applyLocalConfig } = useAppConfig();
   const [tab, setTab] = useState<AdminTab>('livemap');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
@@ -942,6 +944,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </section>
   );
 
+  const navItems: Array<{
+    id: AdminTab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }> = [
+    {
+      id: 'livemap',
+      label: `Mapa ao Vivo (${metrics.onlineCount} online)`,
+      icon: Radio,
+    },
+    {
+      id: 'drivers',
+      label: `Motoristas (${passengerDrivers.length})`,
+      icon: Car,
+    },
+    {
+      id: 'deliverers',
+      label: `Entregadores (${deliverers.length})`,
+      icon: Package,
+    },
+    {
+      id: 'clients',
+      label: `Clientes (${clients.length})`,
+      icon: Users,
+    },
+    {
+      id: 'rides',
+      label: `Corridas & Disputas (${rides.length})`,
+      icon: ShieldCheck,
+    },
+    {
+      id: 'payments',
+      label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length})`,
+      icon: Wallet,
+      badge: awaitingPixRides.length + pendingDeposits.length,
+    },
+    {
+      id: 'events',
+      label: `Eventos Motoboys (${platformEvents.filter((e) => e.active).length})`,
+      icon: Sparkles,
+    },
+    {
+      id: 'pricing',
+      label: 'Tarifas, Marca & Sons',
+      icon: Settings,
+    },
+    {
+      id: 'audit',
+      label: `Auditoria & Dispositivos (${auditLogs.length})`,
+      icon: Activity,
+    },
+    {
+      id: 'infra',
+      label: 'SQL & APK',
+      icon: Database,
+    },
+  ];
+  const activeNavItem = navItems.find((item) => item.id === tab) || navItems[0];
+
   return (
     <div
       className={`min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col ${
@@ -951,23 +1013,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Top Bar */}
       <header className="no-print sticky top-0 z-30 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 sm:px-8 py-3.5">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-950 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-700 active:scale-95 transition"
+              aria-label="Abrir menu lateral"
+              title="Abrir menu de seções"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
             <img
               src={resolveBrandLogo(platformConfig)}
-              alt={platformConfig.site_name || 'Velo99'}
-              className="h-10 w-10 rounded-xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
+              alt={platformConfig.site_name || '66 Mobilidade'}
+              className="h-10 w-10 shrink-0 rounded-xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
             />
-            <div>
-              <h1 className="font-display text-base sm:text-lg font-extrabold text-neutral-950 dark:text-white leading-tight">
-                {platformConfig.site_name || 'Velo99'} · Painel Super Admin
+            <div className="min-w-0">
+              <h1 className="font-display text-base sm:text-lg font-extrabold text-neutral-950 dark:text-white leading-tight truncate">
+                {platformConfig.site_name || '66 Mobilidade'} · Super Admin
               </h1>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {platformConfig.platform_city} · {currentUser.email}
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                {platformConfig.platform_city} · {activeNavItem.label}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               disabled={loadingData}
@@ -988,6 +1059,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       </header>
+
+      {/* Left Hamburger Drawer Menu (Top-to-bottom section navigation) */}
+      {drawerOpen && (
+        <div className="no-print fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/65 backdrop-blur-xs"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <aside className="relative z-10 flex h-full w-80 max-w-[85vw] flex-col bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 p-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <img
+                  src={resolveBrandLogo(platformConfig)}
+                  alt={platformConfig.site_name || '66 Mobilidade'}
+                  className="h-10 w-10 rounded-xl object-cover border border-neutral-200 dark:border-neutral-700 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="font-display text-sm font-extrabold text-neutral-950 dark:text-white truncate">
+                    {platformConfig.site_name || '66 Mobilidade'}
+                  </p>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                    {currentUser.email}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
+                aria-label="Fechar menu"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setTab(item.id);
+                      setDrawerOpen(false);
+                    }}
+                    className={`flex min-h-[46px] w-full items-center justify-between gap-2.5 rounded-2xl px-3.5 text-left text-xs font-bold transition ${
+                      active
+                        ? 'bg-neutral-950 text-[#FFD100] dark:bg-[#FFD100] dark:text-neutral-950 shadow-sm'
+                        : 'text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    {typeof item.badge === 'number' && item.badge > 0 && (
+                      <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold text-white font-mono-num shrink-0">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="border-t border-neutral-200 dark:border-neutral-800 p-3">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl bg-red-50 dark:bg-red-950/40 text-xs font-extrabold text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900"
+              >
+                <LogOut className="h-4 w-4" />
+                Sair do Painel Admin
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
 
       {toast && (
         <div className="no-print fixed bottom-5 right-5 z-50 rounded-2xl bg-neutral-950 px-4 py-3 text-xs font-bold text-[#FFD100] shadow-xl">
@@ -1081,91 +1232,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* Separated Admin Management Navigation */}
-        <nav className="no-print flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {[
-            {
-              id: 'livemap' as AdminTab,
-              label: `Mapa ao Vivo (${metrics.onlineCount} online)`,
-              icon: Radio,
-            },
-            {
-              id: 'drivers' as AdminTab,
-              label: `Motoristas (${passengerDrivers.length})`,
-              icon: Car,
-            },
-            {
-              id: 'deliverers' as AdminTab,
-              label: `Entregadores (${deliverers.length})`,
-              icon: Package,
-            },
-            {
-              id: 'clients' as AdminTab,
-              label: `Clientes (${clients.length})`,
-              icon: Users,
-            },
-            {
-              id: 'rides' as AdminTab,
-              label: `Corridas & Disputas (${rides.length})`,
-              icon: ShieldCheck,
-            },
-            {
-              id: 'payments' as AdminTab,
-              label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length})`,
-              icon: Wallet,
-            },
-            {
-              id: 'events' as AdminTab,
-              label: `Eventos Motoboys (${platformEvents.filter((e) => e.active).length})`,
-              icon: Sparkles,
-            },
-            {
-              id: 'pricing' as AdminTab,
-              label: 'Tarifas, Marca & Sons',
-              icon: Settings,
-            },
-            {
-              id: 'audit' as AdminTab,
-              label: `Auditoria & Dispositivos (${auditLogs.length})`,
-              icon: Activity,
-            },
-            {
-              id: 'infra' as AdminTab,
-              label: 'SQL & APK',
-              icon: Database,
-            },
-          ].map((item) => {
-            const Icon = item.icon;
-            const active = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`flex min-h-[44px] shrink-0 items-center gap-2 rounded-2xl px-4 text-xs font-bold transition whitespace-nowrap ${
-                  active
-                    ? 'bg-neutral-950 text-[#FFD100] dark:bg-[#FFD100] dark:text-neutral-950 shadow-sm'
-                    : 'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
+        {/* Active Section Pill + Quick Drawer Trigger */}
+        <div className="no-print flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <activeNavItem.icon className="h-4 w-4 text-amber-600 dark:text-[#FFD100] shrink-0" />
+            <span className="font-display text-sm font-extrabold text-neutral-950 dark:text-white truncate">
+              {activeNavItem.label}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 px-3 text-xs font-extrabold text-neutral-900 dark:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700"
+          >
+            <Menu className="h-3.5 w-3.5" />
+            <span>Menu</span>
+          </button>
+        </div>
 
         {/* TAB 0: MAPA AO VIVO & ONLINE */}
         {tab === 'livemap' && (
           <section className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <div className="lg:col-span-8 rounded-3xl border border-neutral-200 bg-white overflow-hidden shadow-sm">
-              <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
+            <div className="lg:col-span-8 rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
+              <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 px-5 py-3.5">
                 <div>
-                  <h2 className="font-display text-base font-extrabold text-neutral-950 flex items-center gap-2">
+                  <h2 className="font-display text-base font-extrabold text-neutral-950 dark:text-white flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
                     Monitoramento GPS ao Vivo ({onlineDrivers.length} online)
                   </h2>
-                  <p className="text-xs text-neutral-500">
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     Total de cadastros: {users.length} usuários · Alterne entre modo Urbano e Satélite no mapa
                   </p>
                 </div>
@@ -1180,18 +1275,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="lg:col-span-4 space-y-4">
-              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-3">
+              <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-display text-base font-extrabold text-neutral-950">
+                  <h3 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
                     Quem está Online Agora
                   </h3>
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700">
+                  <span className="rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700 dark:text-emerald-400">
                     {onlineDrivers.length} ativos
                   </span>
                 </div>
 
                 {onlineDrivers.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-neutral-500">
+                  <p className="py-6 text-center text-xs text-neutral-500 dark:text-neutral-400">
                     Nenhum motorista ou entregador online neste momento.
                   </p>
                 ) : (
@@ -1199,14 +1294,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {onlineDrivers.map((d) => (
                       <div
                         key={d.id}
-                        className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 flex items-center justify-between gap-2"
+                        className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/70 p-3 flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0">
-                          <p className="text-xs font-extrabold text-neutral-950 truncate flex items-center gap-1.5">
+                          <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate flex items-center gap-1.5">
                             <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
                             {d.full_name}
                           </p>
-                          <p className="text-[11px] text-neutral-600 truncate">
+                          <p className="text-[11px] text-neutral-600 dark:text-neutral-300 truncate">
                             {d.driver?.vehicle_type === 'delivery'
                               ? 'Motoboy / Entrega'
                               : d.driver?.vehicle_type === 'moto'
@@ -1225,7 +1320,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   d.driver!.current_lng!,
                                 ])
                               }
-                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-neutral-200 text-blue-600 hover:bg-blue-50"
+                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50"
                               title="Focar no mapa"
                             >
                               <MapPin className="h-4 w-4" />
@@ -1234,7 +1329,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <button
                             type="button"
                             onClick={() => setChatTargetUser(d)}
-                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-950 text-[#FFD100]"
+                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950"
                             title="Conversar"
                           >
                             <MessageSquare className="h-4 w-4" />
@@ -1246,28 +1341,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 )}
               </div>
 
-              <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-2">
-                <h3 className="font-display text-sm font-extrabold text-neutral-950">
+              <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-2">
+                <h3 className="font-display text-sm font-extrabold text-neutral-950 dark:text-white">
                   Resumo da Base Cadastrada
                 </h3>
                 <div className="grid grid-cols-3 gap-2 text-center pt-1">
-                  <div className="rounded-xl bg-neutral-50 p-2.5">
-                    <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                  <div className="rounded-xl bg-neutral-50 dark:bg-neutral-800 p-2.5">
+                    <p className="font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white">
                       {clients.length}
                     </p>
-                    <p className="text-[10px] font-bold text-neutral-500">Clientes</p>
+                    <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">Clientes</p>
                   </div>
-                  <div className="rounded-xl bg-neutral-50 p-2.5">
-                    <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                  <div className="rounded-xl bg-neutral-50 dark:bg-neutral-800 p-2.5">
+                    <p className="font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white">
                       {passengerDrivers.length}
                     </p>
-                    <p className="text-[10px] font-bold text-neutral-500">Motoristas</p>
+                    <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">Motoristas</p>
                   </div>
-                  <div className="rounded-xl bg-neutral-50 p-2.5">
-                    <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                  <div className="rounded-xl bg-neutral-50 dark:bg-neutral-800 p-2.5">
+                    <p className="font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white">
                       {deliverers.length}
                     </p>
-                    <p className="text-[10px] font-bold text-neutral-500">Entregadores</p>
+                    <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">Entregadores</p>
                   </div>
                 </div>
               </div>
@@ -2490,9 +2585,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="h-12 w-12 rounded-xl object-cover border border-neutral-200 bg-white shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-extrabold text-neutral-950">Logo Principal</p>
-                        <p className="text-[11px] text-neutral-500">
-                          {platformConfig.app_logo_url ? 'Personalizada' : 'Padrão Velo'}
+                        <p className="text-xs font-extrabold text-neutral-950 dark:text-white">Logo Principal</p>
+                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                          {platformConfig.app_logo_url ? 'Personalizada' : 'Padrão 66 Mobilidade'}
                         </p>
                       </div>
                     </div>
@@ -2742,7 +2837,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ota_apk_url: e.target.value,
                           }))
                         }
-                        placeholder="https://seu-link.com/velo99-v1.2.1.apk"
+                        placeholder="https://seu-link.com/66mobilidade-v1.2.1.apk"
                         className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
                       />
                     </div>
@@ -2800,14 +2895,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 7: SQL INCREMENTAL & APK */}
         {tab === 'infra' && (
           <section className="mt-5 space-y-6">
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5">
               <div className="flex items-center gap-2.5">
-                <Smartphone className="h-5 w-5 text-neutral-950" />
-                <h3 className="font-display text-base font-extrabold text-neutral-950">
-                  Conexão Direta Supabase (Web, PWA & Capacitor APK)
+                <Smartphone className="h-5 w-5 text-neutral-950 dark:text-[#FFD100]" />
+                <h3 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
+                  Conexão Direta Supabase (Web, PWA &amp; Capacitor APK)
                 </h3>
               </div>
-              <p className="mt-2 text-xs text-neutral-700 leading-relaxed">
+              <p className="mt-2 text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
                 O aplicativo agora conecta diretamente no seu projeto Supabase em todas as telas
                 (inclusive dentro do APK Android sem depender de servidor local), usando{' '}
                 <span className="font-mono-num">capacitor.config.ts</span> e{' '}
@@ -2815,28 +2910,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </p>
             </div>
 
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+            <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
-                  <h3 className="font-display text-base font-extrabold text-neutral-950">
-                    SQL Incremental de Atualização (supabase/migration_update.sql)
+                  <h3 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
+                    SQL Incremental Atualizado (supabase/migration_incremental_latest.sql)
                   </h3>
-                  <p className="text-xs text-neutral-600">
-                    Contém apenas as tabelas, colunas, triggers e políticas que faltavam no seu
-                    banco Supabase atual (sem recriar nada do zero).
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    Contém somente o delta recente (constraints de Saldo do App e funções RPC de pagamento), preservando integralmente suas tabelas existentes.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={copySql}
-                  className="flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-950 px-4 text-xs font-bold text-[#FFD100]"
+                  className="flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-bold text-[#FFD100] dark:text-neutral-950"
                 >
                   <Copy className="h-4 w-4" />
                   {copiedSql ? 'Copiado!' : 'Copiar SQL'}
                 </button>
               </div>
               <pre className="max-h-96 overflow-auto rounded-xl bg-neutral-950 p-4 text-[11px] font-mono text-neutral-200 leading-relaxed">
-                {migrationSql || 'Veja o arquivo supabase/migration_update.sql no repositório.'}
+                {migrationSql || 'Veja o arquivo supabase/migration_incremental_latest.sql no repositório.'}
               </pre>
             </div>
           </section>
@@ -2846,13 +2940,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Document Inspection Modal */}
       {inspectDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
-          <div className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <div className="w-full max-w-3xl rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
               <div>
-                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   Documentos de {inspectDriver.full_name}
                 </h3>
-                <p className="text-xs text-neutral-600">
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
                   {inspectDriver.driver?.vehicle_model} · Placa{' '}
                   <span className="font-mono-num font-bold">
                     {inspectDriver.driver?.vehicle_plate}
@@ -2863,7 +2957,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setInspectDriver(null)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -2871,32 +2965,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="text-xs font-bold text-neutral-700 mb-1.5">CNH (Habilitação)</p>
+                <p className="text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">CNH (Habilitação)</p>
                 <img
                   src={resolvedCnhUrl || inspectDriver.driver?.cnh_url}
                   alt="CNH do Motorista"
                   referrerPolicy="no-referrer"
-                  className="h-56 w-full rounded-2xl border border-neutral-200 object-cover bg-neutral-100"
+                  className="h-56 w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 object-cover bg-neutral-100 dark:bg-neutral-800"
                 />
               </div>
               <div>
-                <p className="text-xs font-bold text-neutral-700 mb-1.5">CRLV (Documento Veículo)</p>
+                <p className="text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">CRLV (Documento Veículo)</p>
                 <img
                   src={resolvedCrlvUrl || inspectDriver.driver?.crlv_url}
                   alt="CRLV do Veículo"
                   referrerPolicy="no-referrer"
-                  className="h-56 w-full rounded-2xl border border-neutral-200 object-cover bg-neutral-100"
+                  className="h-56 w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 object-cover bg-neutral-100 dark:bg-neutral-800"
                 />
               </div>
             </div>
 
-            <div className="mt-5 space-y-3 border-t border-neutral-100 pt-4">
+            <div className="mt-5 space-y-3 border-t border-neutral-100 dark:border-neutral-800 pt-4">
               <input
                 type="text"
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder="Motivo caso reprove ou suspenda (opcional)"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3.5 text-xs outline-none focus:border-neutral-950"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
               <div className="flex flex-wrap items-center justify-end gap-2.5">
                 <button
@@ -2908,7 +3002,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       rejectionReason || 'Documentação ilegível ou divergente.'
                     )
                   }
-                  className="min-h-[46px] flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 text-xs font-bold text-red-700"
+                  className="min-h-[46px] flex items-center gap-1.5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 text-xs font-bold text-red-700 dark:text-red-300"
                 >
                   <Ban className="h-4 w-4" />
                   Reprovar
@@ -2932,14 +3026,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
           <form
             onSubmit={handleSubmitPayout}
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-2xl space-y-4"
           >
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
               <div>
-                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   Registrar Repasse Pix
                 </h3>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   {payoutModalDriver.full_name} · Saldo:{' '}
                   <strong className="font-mono-num">
                     {formatBRL(payoutModalDriver.wallet_balance)}
@@ -2949,21 +3043,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setPayoutModalDriver(null)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="rounded-2xl bg-neutral-50 border border-neutral-200 p-3.5 text-xs">
-              <p className="text-neutral-500 font-bold">Chave Pix do Motorista / Entregador</p>
-              <p className="mt-1 font-mono-num text-sm font-extrabold text-neutral-950">
+            <div className="rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3.5 text-xs">
+              <p className="text-neutral-500 dark:text-neutral-400 font-bold">Chave Pix do Motorista / Entregador</p>
+              <p className="mt-1 font-mono-num text-sm font-extrabold text-neutral-950 dark:text-white">
                 {payoutModalDriver.driver?.pix_key || payoutModalDriver.email}
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                 Valor a repassar (R$)
               </label>
               <input
@@ -2974,12 +3068,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 required
                 value={payoutAmount}
                 onChange={(e) => setPayoutAmount(e.target.value)}
-                className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-base font-extrabold outline-none focus:border-neutral-950"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                 Observação / Comprovante
               </label>
               <input
@@ -2987,7 +3081,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={payoutNote}
                 onChange={(e) => setPayoutNote(e.target.value)}
                 placeholder="Ex: Pix enviado às 18:30"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-neutral-950"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
             </div>
 
@@ -3020,32 +3114,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
           <form
             onSubmit={handleSaveClientDebt}
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-2xl space-y-4"
           >
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
               <div>
-                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   Cobrança / Corrida não paga
                 </h3>
-                <p className="text-xs text-neutral-500">{debtModalClient.full_name}</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{debtModalClient.full_name}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setDebtModalClient(null)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+            <p className="rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-900 dark:text-amber-200">
               O valor definido aqui será exibido como pendência para o cliente e somado
               automaticamente na próxima corrida que ele solicitar (ou digite <strong>0</strong>{' '}
               para limpar a dívida).
             </p>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                 Valor da Pendência (R$)
               </label>
               <input
@@ -3056,12 +3150,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={debtAmountInput}
                 onChange={(e) => setDebtAmountInput(e.target.value)}
                 placeholder="0.00"
-                className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-base font-extrabold outline-none focus:border-neutral-950"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                 Motivo / Descrição exibida ao cliente
               </label>
               <input
@@ -3069,7 +3163,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={debtNoteInput}
                 onChange={(e) => setDebtNoteInput(e.target.value)}
                 placeholder="Ex: Corrida não paga"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-neutral-950"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
             </div>
 
@@ -3091,7 +3185,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     setSavingDebt(false);
                   }
                 }}
-                className="min-h-[48px] flex-1 rounded-2xl border border-neutral-200 bg-neutral-50 text-xs font-extrabold text-neutral-800"
+                className="min-h-[48px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-extrabold text-neutral-800 dark:text-neutral-200"
               >
                 Zerar Dívida
               </button>
@@ -3112,14 +3206,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
           <form
             onSubmit={handleSaveUserBalance}
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-2xl space-y-4"
           >
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
               <div>
-                <h3 className="font-display text-lg font-extrabold text-neutral-950">
+                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   Editar Saldo do Usuário
                 </h3>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   {balanceModalUser.full_name} ·{' '}
                   {balanceModalUser.role === 'passenger'
                     ? 'Cliente'
@@ -3131,32 +3225,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setBalanceModalUser(null)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-neutral-50 border border-neutral-200 p-3.5">
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3.5">
               <div>
-                <p className="text-[11px] font-bold text-neutral-500">Saldo Atual</p>
-                <p className="font-mono-num text-lg font-extrabold text-neutral-950">
+                <p className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400">Saldo Atual</p>
+                <p className="font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white">
                   {formatBRL(balanceModalUser.wallet_balance || 0)}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[11px] font-bold text-emerald-700">Novo Saldo Final</p>
-                <p className="font-mono-num text-lg font-extrabold text-emerald-700">
+                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">Novo Saldo Final</p>
+                <p className="font-mono-num text-lg font-extrabold text-emerald-700 dark:text-emerald-400">
                   {formatBRL(computedPreviewBalance)}
                 </p>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1.5">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
                 Tipo de Alteração
               </label>
-              <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-neutral-100 p-1">
+              <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-1">
                 {(
                   [
                     { id: 'set', label: 'Valor Exato' },
@@ -3179,8 +3273,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`min-h-[38px] rounded-xl text-[11px] font-extrabold transition ${
                       balanceMode === m.id
-                        ? 'bg-neutral-950 text-[#FFD100] shadow-xs'
-                        : 'text-neutral-700'
+                        ? 'bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-xs'
+                        : 'text-neutral-700 dark:text-neutral-300'
                     }`}
                   >
                     {m.label}
@@ -3190,7 +3284,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                 {balanceMode === 'set'
                   ? 'Definir novo saldo total (R$)'
                   : balanceMode === 'add'
@@ -3205,12 +3299,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={balanceAmountInput}
                 onChange={(e) => setBalanceAmountInput(e.target.value)}
                 placeholder="0.00"
-                className="min-h-[46px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-base font-extrabold outline-none focus:border-neutral-950"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                 Motivo / Descrição no Extrato (opcional)
               </label>
               <input
@@ -3218,7 +3312,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={balanceNoteInput}
                 onChange={(e) => setBalanceNoteInput(e.target.value)}
                 placeholder="Ex: Crédito confirmado / Ajuste manual / Bônus"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-neutral-950"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
               />
             </div>
 

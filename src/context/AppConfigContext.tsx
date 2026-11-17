@@ -18,7 +18,7 @@ interface AppConfigContextValue {
 }
 
 const DEFAULT_APP_CONFIG: AppConfig = {
-  app_name: 'Velo99',
+  app_name: '66 Mobilidade',
   logo_url: null,
   primary_color: '#FFD100',
   secondary_color: '#111827',
@@ -30,7 +30,7 @@ function readInitialCachedConfig(): AppConfig {
     if (!raw) return DEFAULT_APP_CONFIG;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
-      app_name: String(parsed.site_name || parsed.app_name || 'Velo99'),
+      app_name: String(parsed.site_name || parsed.app_name || '66 Mobilidade'),
       logo_url:
         typeof parsed.app_logo_url === 'string'
           ? parsed.app_logo_url
@@ -54,8 +54,8 @@ const AppConfigContext = createContext<AppConfigContextValue>({
 
 function syncHeadMetadata(cfg: AppConfig) {
   if (typeof document === 'undefined') return;
-  const brand = cfg.app_name.trim() || 'Velo99';
-  document.title = `${brand} Mobilidade — Corridas e Entregas`;
+  const brand = cfg.app_name.trim() || '66 Mobilidade';
+  document.title = `${brand} — Corridas e Entregas`;
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
   if (appleTitle) appleTitle.setAttribute('content', brand);

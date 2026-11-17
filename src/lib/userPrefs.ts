@@ -13,6 +13,7 @@ export const DEFAULT_USER_PREFS: UserPreferences = {
   theme_mode: 'auto',
   map_layer: 'urban',
   hud_compass_enabled: true,
+  floating_bubble_enabled: true,
 };
 
 export function getUserPreferences(): UserPreferences {
@@ -36,6 +37,7 @@ export function getUserPreferences(): UserPreferences {
           ? parsed.map_layer
           : 'urban',
       hud_compass_enabled: parsed.hud_compass_enabled ?? true,
+      floating_bubble_enabled: parsed.floating_bubble_enabled ?? true,
     };
   } catch {
     return DEFAULT_USER_PREFS;

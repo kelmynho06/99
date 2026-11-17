@@ -102,7 +102,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `auditoria_${(platformConfig.site_name || 'velo99').toLowerCase()}_${new Date()
+    link.download = `auditoria_${(platformConfig.site_name || '66mobilidade').toLowerCase().replace(/\s+/g, '')}_${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
     document.body.appendChild(link);

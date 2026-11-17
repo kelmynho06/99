@@ -50,7 +50,7 @@ function StatusBadge({ state }: { state: PermissionGrantState }) {
 }
 
 export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
-  siteName = 'Velo99',
+  siteName = '66 Mobilidade',
   onClose,
 }) => {
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
@@ -274,11 +274,11 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                  Guia Visual: Otimização de Bateria Android
+                  Segundo Plano, Bateria &amp; Balão Flutuante
                 </h4>
                 <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                  Para que o Android nunca suspenda seu GPS ou toque de chamadas quando o celular estiver
-                  no bolso, siga este caminho:
+                  Para o app rodar em segundo plano com GPS contínuo, toque de chamadas e exibir o
+                  balão redondo móvel sobre a tela:
                 </p>
               </div>
             </div>
@@ -290,11 +290,11 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               </div>
               <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">2</span>
-                <span>Toque em Bateria / Uso da bateria</span>
+                <span>Em Bateria, marque &ldquo;Irrestrito&rdquo; (Sem restrições)</span>
               </div>
               <div className="flex items-center gap-2 font-extrabold text-emerald-700 dark:text-emerald-400">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]">3</span>
-                <span>Marque &ldquo;Irrestrito&rdquo; (ou &ldquo;Sem restrições&rdquo;)</span>
+                <span>Ative &ldquo;Sobrepor a outros apps&rdquo; para o pop-up flutuante</span>
               </div>
             </div>
 

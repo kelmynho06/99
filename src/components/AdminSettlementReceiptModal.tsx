@@ -197,7 +197,7 @@ export const AdminSettlementReceiptModal: React.FC<AdminSettlementReceiptModalPr
               />
               <div>
                 <h2 className="font-display text-xl font-extrabold text-neutral-950">
-                  {platformConfig.site_name || 'Velo99'}
+                  {platformConfig.site_name || '66 Mobilidade'}
                 </h2>
                 <p className="text-xs font-semibold text-neutral-600">
                   Operação Local · {platformConfig.platform_city}

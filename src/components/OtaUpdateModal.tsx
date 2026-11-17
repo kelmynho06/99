@@ -10,7 +10,7 @@ interface OtaUpdateModalProps {
 
 export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
   updateInfo,
-  siteName = 'Velo99',
+  siteName = '66 Mobilidade',
   onClose,
 }) => {
   const isDirectApk =

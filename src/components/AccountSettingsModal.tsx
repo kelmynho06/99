@@ -564,7 +564,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     {t.app_version_label}
                   </p>
                   <p className="font-mono-num text-sm font-extrabold text-neutral-950 dark:text-white">
-                    v{CURRENT_APP_VERSION} · {platformConfig?.site_name || 'Velo99'}
+                    v{CURRENT_APP_VERSION} · {platformConfig?.site_name || '66 Mobilidade'}
                   </p>
                 </div>
                 <button
@@ -1099,6 +1099,37 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </button>
               </div>
 
+              {/* Floating Bubble Toggle */}
+              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 flex items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
+                      Balão Flutuante Móvel
+                    </p>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                      Botão redondo móvel na tela para acesso rápido (arraste até o X para fechar).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = saveUserPreferences({
+                      floating_bubble_enabled: !(userPrefs.floating_bubble_enabled ?? true),
+                    });
+                    setUserPrefs(next);
+                  }}
+                  className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
+                    (userPrefs.floating_bubble_enabled ?? true)
+                      ? 'bg-[#FFD100] text-neutral-950'
+                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                  }`}
+                >
+                  {(userPrefs.floating_bubble_enabled ?? true) ? 'Ativo' : 'Oculto'}
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setPermsModalOpen(true)}
@@ -1183,7 +1214,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
       {permsModalOpen && (
         <PermissionsPromptModal
-          siteName={platformConfig?.site_name || 'Velo99'}
+          siteName={platformConfig?.site_name || '66 Mobilidade'}
           onClose={() => setPermsModalOpen(false)}
         />
       )}
@@ -1191,7 +1222,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       {legalDocsOpen && (
         <LegalDocsModal
           initialTab="terms"
-          siteName={platformConfig?.site_name || 'Velo99'}
+          siteName={platformConfig?.site_name || '66 Mobilidade'}
           onClose={() => setLegalDocsOpen(false)}
         />
       )}
@@ -1199,7 +1230,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       {otaUpdateInfo && (
         <OtaUpdateModal
           updateInfo={otaUpdateInfo}
-          siteName={platformConfig?.site_name || 'Velo99'}
+          siteName={platformConfig?.site_name || '66 Mobilidade'}
           onClose={() => setOtaUpdateInfo(null)}
         />
       )}

@@ -24,10 +24,10 @@ export const ADMIN_EMAIL = 'driver@admin.com';
 export const PLATFORM_BRAND_CACHE_KEY = 'velo99_platform_brand_cache_v1';
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
-  platform_pix_key: 'pix@velo99.app',
-  platform_pix_receiver: 'Velo99 Mobilidade Ltda',
+  platform_pix_key: 'pix@66mobilidade.app',
+  platform_pix_receiver: '66 Mobilidade Ltda',
   platform_city: 'São Paulo, SP',
-  site_name: 'Velo99',
+  site_name: '66 Mobilidade',
   support_whatsapp: '',
   commission_percent: 0,
   maintenance_mode: false,
@@ -45,7 +45,7 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   sound_completed_url: null,
   sound_chat_url: null,
   sound_cancel_url: null,
-  ota_latest_version: '1.2.0',
+  ota_latest_version: '1.2.1',
   ota_apk_url: null,
   ota_release_notes: null,
 };
@@ -960,8 +960,16 @@ export async function createRideRequest(input: {
     .select('*')
     .single();
 
-  if (error && (error.code === '42703' || error.message.includes('category'))) {
-    // Fallback if incremental migration hasn't been executed yet on Supabase
+  if (
+    error &&
+    (error.code === '42703' ||
+      error.message.includes('category') ||
+      error.message.includes('require_pin') ||
+      error.message.includes('pending_debt_included') ||
+      error.message.includes('delivery_notes') ||
+      error.message.includes('negotiated_fare'))
+  ) {
+    // Fallback if optional incremental columns haven't been executed yet on Supabase
     const legacyCategory =
       input.category === 'delivery_moto' || input.category === 'delivery_car'
         ? 'delivery'
@@ -972,7 +980,7 @@ export async function createRideRequest(input: {
       .from('rides')
       .insert({
         passenger_id: input.passenger_id,
-        category: legacyCategory,
+        category: error.message.includes('category') ? legacyCategory : input.category,
         payment_method: input.payment_method,
         payment_status: input.payment_method === 'wallet' ? 'paid_wallet' : 'pending',
         status: 'searching',
@@ -993,6 +1001,11 @@ export async function createRideRequest(input: {
   }
 
   if (error || !data) {
+    if (error?.code === '23514' || error?.message?.includes('check constraint')) {
+      throw new Error(
+        'Atualize o SQL do Supabase (aba Admin > SQL & APK) para habilitar o pagamento com Saldo do App.'
+      );
+    }
     throw new Error(error?.message || 'Erro ao registrar corrida no Supabase.');
   }
 
@@ -1008,6 +1021,10 @@ export async function createRideRequest(input: {
       p_description: desc,
     });
     if (rpcErr) {
+      if (rpcErr.message?.toLowerCase().includes('saldo insuficiente')) {
+        await supabase.from('rides').delete().eq('id', rideId);
+        throw new Error('Saldo insuficiente na carteira.');
+      }
       // Fallback direct debit (user updating own profile & inserting own transaction)
       const { data: freshProf } = await supabase
         .from('profiles')
@@ -1028,13 +1045,16 @@ export async function createRideRequest(input: {
         await supabase.from('rides').delete().eq('id', rideId);
         throw new Error(updErr.message);
       }
-      await supabase.from('wallet_transactions').insert({
-        user_id: input.passenger_id,
-        ride_id: rideId,
-        amount: -fareRounded,
-        type: 'ride_debit',
-        description: desc,
-      });
+      await supabase
+        .from('wallet_transactions')
+        .insert({
+          user_id: input.passenger_id,
+          ride_id: rideId,
+          amount: -fareRounded,
+          type: 'ride_debit',
+          description: desc,
+        })
+        .then(() => undefined, () => undefined);
     }
 
     if (input.pending_debt_included && input.pending_debt_included > 0) {
@@ -1380,6 +1400,116 @@ export async function confirmCashReceived(ride: Ride): Promise<Ride> {
   return enriched;
 }
 
+export async function payCompletedRideWithWallet(ride: Ride): Promise<Ride> {
+  const finalFare = Number((ride.final_fare ?? ride.estimated_fare).toFixed(2));
+
+  const { error: rpcErr } = await supabase.rpc('pay_completed_ride_with_wallet', {
+    p_ride_id: ride.id,
+  });
+
+  if (rpcErr) {
+    if (
+      rpcErr.message?.toLowerCase().includes('saldo insuficiente') ||
+      rpcErr.message?.toLowerCase().includes('já foi quitada')
+    ) {
+      throw new Error(rpcErr.message);
+    }
+
+    // Fallback when RPC hasn't been deployed yet
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('wallet_balance')
+      .eq('id', ride.passenger_id)
+      .maybeSingle();
+    const bal = Number(prof?.wallet_balance ?? 0);
+    if (bal < finalFare) {
+      throw new Error(
+        `Saldo insuficiente (${bal.toFixed(2)}). Deposite via Pix ou escolha Pix/Dinheiro.`
+      );
+    }
+
+    const nextBal = Number((bal - finalFare).toFixed(2));
+    const { error: updProfErr } = await supabase
+      .from('profiles')
+      .update({ wallet_balance: nextBal, updated_at: new Date().toISOString() })
+      .eq('id', ride.passenger_id);
+    if (updProfErr) throw new Error(updProfErr.message);
+
+    const { error: rideUpdErr } = await supabase
+      .from('rides')
+      .update({
+        payment_method: 'wallet',
+        payment_status: 'paid_wallet',
+        final_fare: finalFare,
+      })
+      .eq('id', ride.id);
+
+    if (rideUpdErr) {
+      // Restore balance if ride constraint rejected 'wallet'
+      await supabase
+        .from('profiles')
+        .update({ wallet_balance: bal, updated_at: new Date().toISOString() })
+        .eq('id', ride.passenger_id);
+      if (rideUpdErr.code === '23514' || rideUpdErr.message?.includes('check constraint')) {
+        throw new Error(
+          'Aplique o SQL incremental na aba Admin > SQL & APK para habilitar pagamentos com Saldo do App.'
+        );
+      }
+      throw new Error(rideUpdErr.message);
+    }
+
+    await supabase
+      .from('wallet_transactions')
+      .insert({
+        user_id: ride.passenger_id,
+        ride_id: ride.id,
+        amount: -finalFare,
+        type: 'ride_debit',
+        description: `Pagamento pós-corrida Saldo do App #${ride.id.slice(-4)}`,
+      })
+      .then(() => undefined, () => undefined);
+
+    if (ride.driver_id) {
+      const isDelivery = ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+      await creditDriverForPixRideIdempotent(
+        ride.driver_id,
+        ride.id,
+        finalFare,
+        `${isDelivery ? 'Entrega Saldo App' : 'Corrida Saldo App'} #${ride.id.slice(-4)} · ${
+          ride.destination_address.split(',')[0]
+        }`
+      ).catch(() => {});
+    }
+
+    await clearPassengerIncludedDebtIfAny(ride);
+  }
+
+  const enriched = await fetchRideByIdEnriched(ride.id);
+  if (!enriched) throw new Error('Corrida não encontrada.');
+  return enriched;
+}
+
+export async function switchCompletedRidePaymentMethod(
+  rideId: string,
+  method: 'pix' | 'cash'
+): Promise<Ride> {
+  const { error: rpcErr } = await supabase.rpc('client_select_ride_payment_method', {
+    p_ride_id: rideId,
+    p_method: method,
+  });
+
+  if (rpcErr) {
+    const patch: Record<string, unknown> = { payment_method: method };
+    if (method === 'cash') patch.pix_declared_at = null;
+    const { error } = await supabase.from('rides').update(patch).eq('id', rideId);
+    if (error) throw new Error(error.message);
+  }
+
+  const enriched = await fetchRideByIdEnriched(rideId);
+  if (!enriched) throw new Error('Corrida não encontrada.');
+  return enriched;
+}
+
 export async function reportRideUnpaid(rideId: string, reason: string): Promise<Ride> {
   const cleanReason =
     reason.trim() || 'Motorista informou que o passageiro não efetuou o pagamento.';
@@ -1690,7 +1820,7 @@ export async function adminSavePricing(pricingList: PricingSetting[]): Promise<v
 }
 
 export async function adminSavePlatformConfig(config: PlatformConfig): Promise<void> {
-  const cleanName = config.site_name.trim() || 'Velo99';
+  const cleanName = config.site_name.trim() || '66 Mobilidade';
   const cleanPrimary = config.primary_color || '#FFD100';
   const cleanSecondary = config.secondary_color || '#111827';
 

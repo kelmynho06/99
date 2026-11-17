@@ -1,4 +1,4 @@
-package com.mobilidade99.app;
+package com.mobilidade66.app;
 
 import com.getcapacitor.BridgeActivity;
 

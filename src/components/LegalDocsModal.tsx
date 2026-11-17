@@ -13,7 +13,7 @@ interface LegalDocsModalProps {
 
 export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
   initialTab = 'terms',
-  siteName = 'Velo99',
+  siteName = '66 Mobilidade',
   requireAcceptanceButton = false,
   onAcceptAll,
   onClose,

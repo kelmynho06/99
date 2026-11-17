@@ -601,12 +601,12 @@ export function buildPixEmvPayload(
   txId: string
 ): string {
   const cleanKey = pixKey.trim();
-  const cleanName = (stripDiacritics(receiverName) || 'VELO99').slice(0, 25).toUpperCase();
+  const cleanName = (stripDiacritics(receiverName) || '66 MOBILIDADE').slice(0, 25).toUpperCase();
   const cleanCity = (stripDiacritics(city.split(',')[0].split('-')[0]) || 'BRASIL')
     .trim()
     .slice(0, 15)
     .toUpperCase();
-  const cleanTx = txId.replace(/[^A-Za-z0-9]/g, '').slice(-8).toUpperCase() || 'VELO99';
+  const cleanTx = txId.replace(/[^A-Za-z0-9]/g, '').slice(-8).toUpperCase() || 'MOB66';
 
   const merchantInfo = tlv('00', 'BR.GOV.BCB.PIX') + tlv('01', cleanKey);
   const additionalData = tlv('05', cleanTx);

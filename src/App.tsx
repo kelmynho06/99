@@ -3,6 +3,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieBanner } from './components/CookieBanner';
 import { DriverView } from './components/DriverView';
+import { FloatingBubble } from './components/FloatingBubble';
 import { OtaUpdateModal } from './components/OtaUpdateModal';
 import { PassengerView } from './components/PassengerView';
 import { PermissionsPromptModal } from './components/PermissionsPromptModal';
@@ -37,6 +38,9 @@ export default function App() {
   });
   const [booting, setBooting] = useState(true);
   const [showPermsModal, setShowPermsModal] = useState<boolean>(() => !hasSeenPermissionsPrompt());
+  const [floatingBubbleEnabled, setFloatingBubbleEnabled] = useState<boolean>(
+    () => getUserPreferences().floating_bubble_enabled ?? true
+  );
   const [otaUpdateInfo, setOtaUpdateInfo] = useState<OtaUpdateInfo | null>(null);
   const [otaDismissed, setOtaDismissed] = useState(false);
 
@@ -48,6 +52,7 @@ export default function App() {
     applyThemeToDocument();
     const unsub = subscribeUserPreferences((prefs) => {
       applyThemeToDocument(prefs.theme_mode, prefs.language);
+      setFloatingBubbleEnabled(prefs.floating_bubble_enabled ?? true);
     });
     const timer = window.setInterval(() => {
       const prefs = getUserPreferences();
@@ -169,7 +174,7 @@ export default function App() {
   const effectivePlatformConfig = useMemo(
     () => ({
       ...platformConfig,
-      site_name: appConfig.app_name || platformConfig.site_name || 'Velo99',
+      site_name: appConfig.app_name || platformConfig.site_name || '66 Mobilidade',
       app_logo_url:
         appConfig.logo_url !== undefined ? appConfig.logo_url : platformConfig.app_logo_url,
       primary_color: appConfig.primary_color || platformConfig.primary_color || '#FFD100',
@@ -199,11 +204,11 @@ export default function App() {
         <div className="text-center">
           <img
             src={resolveBrandLogo(effectivePlatformConfig)}
-            alt={effectivePlatformConfig.site_name || 'Velo99'}
+            alt={effectivePlatformConfig.site_name || '66 Mobilidade'}
             className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-neutral-950 shadow-lg"
           />
           <p className="mt-3 text-sm font-extrabold text-neutral-950">
-            Conectando ao {effectivePlatformConfig.site_name || 'Velo99'}...
+            Conectando ao {effectivePlatformConfig.site_name || '66 Mobilidade'}...
           </p>
         </div>
       </div>
@@ -260,6 +265,22 @@ export default function App() {
         <PermissionsPromptModal
           siteName={effectivePlatformConfig.site_name}
           onClose={() => setShowPermsModal(false)}
+        />
+      )}
+
+      {currentUser && floatingBubbleEnabled && (
+        <FloatingBubble
+          currentUser={currentUser}
+          platformConfig={effectivePlatformConfig}
+          hasActiveRide={rides.some(
+            (r) =>
+              ['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status) &&
+              (r.passenger_id === currentUser.id || r.driver_id === currentUser.id)
+          )}
+          onDismiss={() => {
+            saveUserPreferences({ floating_bubble_enabled: false });
+            setFloatingBubbleEnabled(false);
+          }}
         />
       )}
 

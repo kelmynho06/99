@@ -255,6 +255,7 @@ export interface UserPreferences {
   theme_mode: ThemeMode;
   map_layer: MapLayerMode;
   hud_compass_enabled: boolean;
+  floating_bubble_enabled?: boolean;
 }
 
 export type PermissionGrantState = 'granted' | 'denied' | 'prompt' | 'unknown';
