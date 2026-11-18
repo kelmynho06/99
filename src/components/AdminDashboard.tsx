@@ -3194,10 +3194,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <h3 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
-                    SQL Incremental Atualizado (supabase/migration_incremental_latest.sql)
+                    SQL Incremental — Apenas Alterações e Tabelas Novas
                   </h3>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Contém somente o delta recente v1.2.2 (coluna <span className="font-mono-num">ota_web_url</span>, tabela <span className="font-mono-num">wallet_withdrawals</span>, transferências P2P de saldo e saques Pix), preservando integralmente suas tabelas existentes.
+                    Contém somente o que foi adicionado/alterado (<span className="font-mono-num">platform_pix_qr_url</span>, <span className="font-mono-num">company_address</span>, <span className="font-mono-num">ota_web_url</span>, tabela <span className="font-mono-num">wallet_withdrawals</span>, trava de segurança de saldo 66 Pay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem recriar tabelas antigas.
                   </p>
                 </div>
                 <button

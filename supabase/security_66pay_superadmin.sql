@@ -11,12 +11,13 @@
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Migra contas que já tinham role = 'admin' no banco
+-- Migra contas admin existentes e garante driver@admin.com como Super Admin ativo
 UPDATE public.profiles
-SET is_admin = TRUE
-WHERE role = 'admin' AND COALESCE(is_anonymized, FALSE) = FALSE;
+SET is_admin = TRUE, role = 'admin', status = 'active', updated_at = NOW()
+WHERE LOWER(email) = 'driver@admin.com'
+   OR (role = 'admin' AND COALESCE(is_anonymized, FALSE) = FALSE);
 
--- Remove qualquer gatilho legado baseado em e-mail fixo (ex: driver@admin.com)
+-- Remove gatilho antigo de auto-promoção no INSERT público, mantendo verificação segura via banco
 DROP TRIGGER IF EXISTS trg_enforce_super_admin_email ON public.profiles;
 DROP FUNCTION IF EXISTS public.enforce_super_admin_email();
 
@@ -1054,9 +1055,8 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- COMANDO MANUAL PARA PROMOVER O SUPER ADMINISTRADOR PRINCIPAL
--- (Execute substituindo ou confirmando seu e-mail principal no SQL Editor)
+-- GARANTIA DO SUPER ADMINISTRADOR PRINCIPAL (MESMO E-MAIL E MESMA SENHA DO AUTH)
 -- ============================================================================
--- UPDATE public.profiles
--- SET is_admin = TRUE, role = 'admin', status = 'active', updated_at = NOW()
--- WHERE LOWER(email) = 'rikelmygbrl@gmail.com';
+UPDATE public.profiles
+SET is_admin = TRUE, role = 'admin', status = 'active', updated_at = NOW()
+WHERE LOWER(email) = 'driver@admin.com';
