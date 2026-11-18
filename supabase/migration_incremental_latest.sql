@@ -1,13 +1,145 @@
 -- ============================================================================
--- 66 Mobilidade — SQL Incremental Atualizado v1.2.2 (Apenas Delta Novo)
+-- 66 Mobilidade / Meia Meia — SQL Incremental Atualizado (Segurança + 66 Pay + Admin)
 -- Seguro para executar em bancos que já possuem as tabelas principais.
 -- ============================================================================
 
--- 1. URL da versão web/OTA dentro do APK (atualização automática de interface)
+-- 1. URL da versão web/OTA dentro do APK + Endereço e QR Code Pix do Admin
 ALTER TABLE public.platform_settings
-  ADD COLUMN IF NOT EXISTS ota_web_url TEXT;
+  ADD COLUMN IF NOT EXISTS ota_web_url TEXT,
+  ADD COLUMN IF NOT EXISTS company_address TEXT,
+  ADD COLUMN IF NOT EXISTS platform_pix_qr_url TEXT;
 
--- 2. Novos tipos no extrato da carteira (Transferência P2P e Saque Pix de Motorista)
+-- 2. Coluna explícita is_admin (Super Admin sem hardcode)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE public.profiles
+SET is_admin = TRUE
+WHERE role = 'admin' AND COALESCE(is_anonymized, FALSE) = FALSE;
+
+DROP TRIGGER IF EXISTS trg_enforce_super_admin_email ON public.profiles;
+DROP FUNCTION IF EXISTS public.enforce_super_admin_email();
+
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_role TEXT;
+  v_status TEXT;
+BEGIN
+  v_role := COALESCE(NULLIF(NEW.raw_user_meta_data->>'role', ''), 'passenger');
+  IF v_role NOT IN ('passenger', 'driver') THEN
+    v_role := 'passenger';
+  END IF;
+  v_status := CASE WHEN v_role = 'driver' THEN 'pending' ELSE 'active' END;
+
+  INSERT INTO public.profiles (
+    id, role, is_admin, status, full_name, phone, email, cpf, preferred_payment
+  )
+  VALUES (
+    NEW.id,
+    v_role,
+    FALSE,
+    v_status,
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'full_name', ''), split_part(COALESCE(NEW.email, 'Usuário'), '@', 1)),
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'phone', ''), ''),
+    LOWER(COALESCE(NEW.email, '')),
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'cpf', ''), ''),
+    'pix'
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_auth_user();
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND (is_admin = TRUE OR role = 'admin')
+      AND status = 'active'
+      AND COALESCE(is_anonymized, FALSE) = FALSE
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.check_my_admin_access()
+RETURNS TABLE (
+  is_admin BOOLEAN,
+  role TEXT,
+  status TEXT
+) AS $$
+  SELECT
+    (COALESCE(p.is_admin, FALSE) OR p.role = 'admin')
+      AND p.status = 'active'
+      AND COALESCE(p.is_anonymized, FALSE) = FALSE AS is_admin,
+    p.role,
+    p.status
+  FROM public.profiles p
+  WHERE p.id = auth.uid();
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+-- 3. Trigger que bloqueia alteração direta de saldo, cargo ou privilégios no cliente
+CREATE OR REPLACE FUNCTION public.protect_sensitive_profile_columns()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_trusted TEXT;
+  v_has_jwt BOOLEAN;
+BEGIN
+  v_trusted := current_setting('app.trusted_wallet_tx', true);
+  v_has_jwt := auth.uid() IS NOT NULL;
+
+  IF NOT v_has_jwt OR v_trusted = '1' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NOT public.is_admin() THEN
+    IF NEW.is_admin IS DISTINCT FROM OLD.is_admin THEN
+      RAISE EXCEPTION 'Permissão negada: privilégio is_admin só pode ser alterado pelo banco.';
+    END IF;
+    IF NEW.role IS DISTINCT FROM OLD.role THEN
+      RAISE EXCEPTION 'Permissão negada: não é permitido alterar o próprio cargo (role).';
+    END IF;
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
+      RAISE EXCEPTION 'Permissão negada: alteração de status restrita à administração.';
+    END IF;
+    IF NEW.wallet_balance IS DISTINCT FROM OLD.wallet_balance THEN
+      RAISE EXCEPTION 'Permissão negada: saldo só pode ser movimentado via RPC segura 66 Pay.';
+    END IF;
+    IF NEW.pending_debt_amount IS DISTINCT FROM OLD.pending_debt_amount THEN
+      RAISE EXCEPTION 'Permissão negada: débitos pendentes são controlados apenas pelo servidor.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_protect_sensitive_profile_columns ON public.profiles;
+CREATE TRIGGER trg_protect_sensitive_profile_columns
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.protect_sensitive_profile_columns();
+
+CREATE OR REPLACE VIEW public.user_wallets AS
+SELECT
+  id AS user_id,
+  full_name,
+  wallet_balance,
+  pending_debt_amount,
+  updated_at
+FROM public.profiles
+WHERE id = auth.uid() OR public.is_admin();
+
+-- 4. Tipos no extrato 66 Pay + tabela de saques Pix
 DO $$
 DECLARE
   c RECORD;
@@ -38,7 +170,6 @@ ALTER TABLE public.wallet_transactions
     'withdrawal_refund'
   ));
 
--- 3. Tabela de solicitações de Saque Pix para Motoristas / Entregadores
 CREATE TABLE IF NOT EXISTS public.wallet_withdrawals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -50,32 +181,7 @@ CREATE TABLE IF NOT EXISTS public.wallet_withdrawals (
   reviewed_at TIMESTAMPTZ
 );
 
-ALTER TABLE public.wallet_withdrawals ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Usuario ve proprios saques" ON public.wallet_withdrawals;
-CREATE POLICY "Usuario ve proprios saques"
-  ON public.wallet_withdrawals FOR SELECT
-  TO authenticated
-  USING (user_id = auth.uid() OR public.is_admin());
-
-DROP POLICY IF EXISTS "Admin atualiza saques" ON public.wallet_withdrawals;
-CREATE POLICY "Admin atualiza saques"
-  ON public.wallet_withdrawals FOR UPDATE
-  TO authenticated
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'wallet_withdrawals'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_withdrawals;
-  END IF;
-END $$;
-
--- 4. RPC segura: localizar destinatário por e-mail, telefone ou nome para transferir saldo
+-- 5. RPCs 66 Pay Atômicas & Seguras
 CREATE OR REPLACE FUNCTION public.lookup_wallet_recipient(p_query TEXT)
 RETURNS TABLE (
   id UUID,
@@ -124,57 +230,87 @@ BEGIN
     p.full_name ASC
   LIMIT 5;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 5. RPC atômica: transferir Saldo do App entre contas (Cliente <-> Motorista/Cliente)
-CREATE OR REPLACE FUNCTION public.transfer_wallet_balance(
-  p_to_user_id UUID,
-  p_amount NUMERIC,
-  p_note TEXT DEFAULT NULL
+CREATE OR REPLACE FUNCTION public.transferir_saldo_66(
+  p_destinatario TEXT,
+  p_valor NUMERIC,
+  p_observacao TEXT DEFAULT NULL
 )
-RETURNS VOID AS $$
+RETURNS JSONB AS $$
 DECLARE
   v_from UUID;
+  v_to UUID;
+  v_clean TEXT;
+  v_digits TEXT;
   v_amount NUMERIC(10,2);
   v_from_name TEXT;
   v_to_name TEXT;
   v_from_bal NUMERIC(10,2);
+  v_from_status TEXT;
 BEGIN
   v_from := auth.uid();
   IF v_from IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado.';
   END IF;
-  IF p_to_user_id IS NULL OR p_to_user_id = v_from THEN
-    RAISE EXCEPTION 'Selecione outro destinatário válido.';
+
+  v_clean := TRIM(COALESCE(p_destinatario, ''));
+  IF v_clean = '' THEN
+    RAISE EXCEPTION 'Informe o destinatário (UUID, e-mail ou telefone).';
   END IF;
 
-  v_amount := ROUND(COALESCE(p_amount, 0)::NUMERIC, 2);
+  v_amount := ROUND(COALESCE(p_valor, 0)::NUMERIC, 2);
   IF v_amount < 1 THEN
-    RAISE EXCEPTION 'O valor mínimo para transferência é R$ 1,00.';
+    RAISE EXCEPTION 'O valor mínimo para transferência 66 Pay é R$ 1,00.';
   END IF;
 
-  IF v_from < p_to_user_id THEN
-    PERFORM 1 FROM public.profiles WHERE id IN (v_from, p_to_user_id) ORDER BY id FOR UPDATE;
+  BEGIN
+    v_to := v_clean::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    v_digits := regexp_replace(v_clean, '\D', '', 'g');
+    SELECT id INTO v_to
+    FROM public.profiles
+    WHERE COALESCE(is_anonymized, FALSE) = FALSE
+      AND status = 'active'
+      AND (
+        LOWER(email) = LOWER(v_clean)
+        OR (LENGTH(v_digits) >= 10 AND regexp_replace(COALESCE(phone, ''), '\D', '', 'g') = v_digits)
+      )
+    LIMIT 1;
+  END;
+
+  IF v_to IS NULL OR v_to = v_from THEN
+    RAISE EXCEPTION 'Destinatário não encontrado ou inválido para transferência.';
+  END IF;
+
+  IF v_from < v_to THEN
+    PERFORM 1 FROM public.profiles WHERE id IN (v_from, v_to) ORDER BY id FOR UPDATE;
   ELSE
-    PERFORM 1 FROM public.profiles WHERE id IN (p_to_user_id, v_from) ORDER BY id FOR UPDATE;
+    PERFORM 1 FROM public.profiles WHERE id IN (v_to, v_from) ORDER BY id FOR UPDATE;
   END IF;
 
-  SELECT full_name, COALESCE(wallet_balance, 0)
-  INTO v_from_name, v_from_bal
+  SELECT full_name, COALESCE(wallet_balance, 0), status
+  INTO v_from_name, v_from_bal, v_from_status
   FROM public.profiles
   WHERE id = v_from;
 
+  IF v_from_status <> 'active' THEN
+    RAISE EXCEPTION 'Sua conta não está ativa para movimentar saldo.';
+  END IF;
+
   SELECT full_name INTO v_to_name
   FROM public.profiles
-  WHERE id = p_to_user_id AND COALESCE(is_anonymized, FALSE) = FALSE;
+  WHERE id = v_to AND COALESCE(is_anonymized, FALSE) = FALSE AND status = 'active';
 
   IF v_to_name IS NULL THEN
-    RAISE EXCEPTION 'Destinatário não encontrado.';
+    RAISE EXCEPTION 'Destinatário indisponível para receber transferências.';
   END IF;
 
   IF v_from_bal < v_amount THEN
-    RAISE EXCEPTION 'Saldo insuficiente para realizar a transferência.';
+    RAISE EXCEPTION 'Saldo insuficiente na carteira 66 Pay.';
   END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
 
   UPDATE public.profiles
   SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) - v_amount)::NUMERIC, 2),
@@ -184,27 +320,282 @@ BEGIN
   UPDATE public.profiles
   SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_amount)::NUMERIC, 2),
       updated_at = NOW()
-  WHERE id = p_to_user_id;
+  WHERE id = v_to;
 
   INSERT INTO public.wallet_transactions (user_id, amount, type, description)
   VALUES (
     v_from,
     -v_amount,
     'transfer_out',
-    COALESCE(NULLIF(TRIM(p_note), ''), 'Transferência enviada para ' || v_to_name)
+    COALESCE(NULLIF(TRIM(p_observacao), ''), 'Transferência 66 Pay enviada para ' || v_to_name)
   );
 
   INSERT INTO public.wallet_transactions (user_id, amount, type, description)
   VALUES (
-    p_to_user_id,
+    v_to,
     v_amount,
     'transfer_in',
-    COALESCE(NULLIF(TRIM(p_note), ''), 'Transferência recebida de ' || v_from_name)
+    COALESCE(NULLIF(TRIM(p_observacao), ''), 'Transferência 66 Pay recebida de ' || v_from_name)
+  );
+
+  RETURN jsonb_build_object(
+    'ok', TRUE,
+    'amount', v_amount,
+    'recipient_id', v_to,
+    'recipient_name', v_to_name,
+    'new_balance', ROUND((v_from_bal - v_amount)::NUMERIC, 2)
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 6. RPC atômica: motorista solicita Saque Pix do seu Saldo do App
+CREATE OR REPLACE FUNCTION public.transfer_wallet_balance(
+  p_to_user_id UUID,
+  p_amount NUMERIC,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS VOID AS $$
+BEGIN
+  PERFORM public.transferir_saldo_66(p_to_user_id::TEXT, p_amount, p_note);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.credit_driver_wallet_for_ride(
+  p_ride_id UUID,
+  p_description TEXT DEFAULT NULL,
+  p_type TEXT DEFAULT 'ride_earning'
+)
+RETURNS VOID AS $$
+DECLARE
+  v_ride public.rides%ROWTYPE;
+  v_already BOOLEAN;
+  v_amount NUMERIC(10,2);
+  v_tx_type TEXT;
+BEGIN
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND OR v_ride.driver_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  IF auth.uid() IS DISTINCT FROM v_ride.driver_id
+     AND auth.uid() IS DISTINCT FROM v_ride.passenger_id
+     AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão para creditar esta corrida.';
+  END IF;
+
+  IF v_ride.payment_status NOT IN ('paid_pix', 'paid_wallet', 'admin_settled') THEN
+    RETURN;
+  END IF;
+
+  v_tx_type := CASE WHEN p_type IN ('ride_earning', 'dispute_settlement') THEN p_type ELSE 'ride_earning' END;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.wallet_transactions
+    WHERE ride_id = p_ride_id
+      AND user_id = v_ride.driver_id
+      AND type IN ('ride_earning', 'dispute_settlement')
+  ) INTO v_already;
+
+  IF v_already THEN
+    RETURN;
+  END IF;
+
+  v_amount := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, 0)::NUMERIC, 2);
+  IF v_amount <= 0 THEN
+    RETURN;
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_amount)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_ride.driver_id;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (
+    v_ride.driver_id,
+    p_ride_id,
+    v_amount,
+    v_tx_type,
+    COALESCE(NULLIF(TRIM(p_description), ''), 'Ganho de corrida #' || RIGHT(p_ride_id::TEXT, 4))
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.debit_own_wallet_for_ride(
+  p_ride_id UUID,
+  p_amount NUMERIC,
+  p_description TEXT DEFAULT 'Pagamento de corrida com Saldo 66 Pay'
+)
+RETURNS VOID AS $$
+DECLARE
+  v_uid UUID;
+  v_balance NUMERIC(10,2);
+  v_debit NUMERIC(10,2);
+BEGIN
+  v_uid := auth.uid();
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  v_debit := ROUND(GREATEST(0, COALESCE(p_amount, 0))::NUMERIC, 2);
+  IF v_debit <= 0 THEN
+    RETURN;
+  END IF;
+
+  SELECT COALESCE(wallet_balance, 0) INTO v_balance
+  FROM public.profiles WHERE id = v_uid FOR UPDATE;
+
+  IF v_balance < v_debit THEN
+    RAISE EXCEPTION 'Saldo insuficiente na carteira.';
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((wallet_balance - v_debit)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_uid;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (v_uid, p_ride_id, -v_debit, 'ride_debit', p_description);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.refund_wallet_for_cancelled_ride(p_ride_id UUID)
+RETURNS VOID AS $$
+DECLARE
+  v_ride public.rides%ROWTYPE;
+  v_already_refunded BOOLEAN;
+  v_refund NUMERIC(10,2);
+BEGIN
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF auth.uid() IS DISTINCT FROM v_ride.passenger_id
+     AND auth.uid() IS DISTINCT FROM v_ride.driver_id
+     AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão para estornar esta corrida.';
+  END IF;
+
+  IF v_ride.payment_method <> 'wallet' OR v_ride.payment_status <> 'paid_wallet' THEN
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.wallet_transactions
+    WHERE ride_id = p_ride_id AND user_id = v_ride.passenger_id AND type = 'ride_refund'
+  ) INTO v_already_refunded;
+
+  IF v_already_refunded THEN
+    RETURN;
+  END IF;
+
+  v_refund := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, 0)::NUMERIC, 2);
+  IF v_refund <= 0 THEN
+    RETURN;
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_refund)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_ride.passenger_id;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (v_ride.passenger_id, p_ride_id, v_refund, 'ride_refund', 'Estorno automático de corrida cancelada');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.pay_completed_ride_with_wallet(p_ride_id UUID)
+RETURNS VOID AS $$
+DECLARE
+  v_uid UUID;
+  v_ride public.rides%ROWTYPE;
+  v_bal NUMERIC(10,2);
+  v_fare NUMERIC(10,2);
+BEGIN
+  v_uid := auth.uid();
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Corrida não encontrada.';
+  END IF;
+
+  IF v_ride.passenger_id <> v_uid AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão para quitar esta corrida.';
+  END IF;
+
+  IF v_ride.payment_status IN ('paid_wallet', 'paid_pix', 'paid_cash', 'admin_settled') THEN
+    RAISE EXCEPTION 'Esta corrida já foi quitada.';
+  END IF;
+
+  v_fare := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, 0)::NUMERIC, 2);
+  SELECT COALESCE(wallet_balance, 0) INTO v_bal
+  FROM public.profiles WHERE id = v_ride.passenger_id FOR UPDATE;
+
+  IF v_bal < v_fare THEN
+    RAISE EXCEPTION 'Saldo insuficiente na carteira.';
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) - v_fare)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_ride.passenger_id;
+
+  UPDATE public.rides
+  SET payment_method = 'wallet',
+      payment_status = 'paid_wallet',
+      final_fare = v_fare
+  WHERE id = p_ride_id;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (v_ride.passenger_id, p_ride_id, -v_fare, 'ride_debit', 'Pagamento pós-corrida 66 Pay #' || RIGHT(p_ride_id::TEXT, 4));
+
+  IF v_ride.driver_id IS NOT NULL THEN
+    PERFORM public.credit_driver_wallet_for_ride(p_ride_id, 'Corrida Saldo 66 Pay #' || RIGHT(p_ride_id::TEXT, 4), 'ride_earning');
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.client_select_ride_payment_method(
+  p_ride_id UUID,
+  p_method TEXT
+)
+RETURNS VOID AS $$
+DECLARE
+  v_ride public.rides%ROWTYPE;
+BEGIN
+  IF p_method NOT IN ('pix', 'cash') THEN
+    RAISE EXCEPTION 'Método inválido.';
+  END IF;
+
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Corrida não encontrada.';
+  END IF;
+  IF v_ride.passenger_id <> auth.uid() AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão.';
+  END IF;
+  IF v_ride.payment_status <> 'pending' THEN
+    RETURN;
+  END IF;
+
+  UPDATE public.rides
+  SET payment_method = p_method,
+      pix_declared_at = CASE WHEN p_method = 'cash' THEN NULL ELSE pix_declared_at END
+  WHERE id = p_ride_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 CREATE OR REPLACE FUNCTION public.request_wallet_withdrawal(
   p_amount NUMERIC,
   p_pix_key TEXT
@@ -238,6 +629,8 @@ BEGIN
     RAISE EXCEPTION 'Saldo insuficiente para este saque.';
   END IF;
 
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
   UPDATE public.profiles
   SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) - v_amount)::NUMERIC, 2),
       updated_at = NOW()
@@ -252,9 +645,8 @@ BEGIN
 
   RETURN v_withdrawal_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 7. RPC Admin: marcar saque como pago ou recusar (estornando o saldo automaticamente)
 CREATE OR REPLACE FUNCTION public.admin_process_wallet_withdrawal(
   p_withdrawal_id UUID,
   p_action TEXT,
@@ -291,6 +683,8 @@ BEGIN
   WHERE id = p_withdrawal_id;
 
   IF p_action = 'rejected' THEN
+    PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
     UPDATE public.profiles
     SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_w.amount)::NUMERIC, 2),
         updated_at = NOW()
@@ -305,4 +699,198 @@ BEGIN
     );
   END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.admin_approve_wallet_deposit(
+  p_deposit_id UUID,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS VOID AS $$
+DECLARE
+  v_dep public.wallet_deposits%ROWTYPE;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Apenas administradores podem confirmar depósitos.';
+  END IF;
+
+  SELECT * INTO v_dep FROM public.wallet_deposits WHERE id = p_deposit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Solicitação de depósito não encontrada.';
+  END IF;
+  IF v_dep.status = 'approved' THEN
+    RETURN;
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.wallet_deposits
+  SET status = 'approved',
+      note = COALESCE(NULLIF(TRIM(p_note), ''), note),
+      reviewed_at = NOW()
+  WHERE id = p_deposit_id;
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_dep.amount)::NUMERIC, 2),
+      updated_at = NOW()
+  WHERE id = v_dep.user_id;
+
+  INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+  VALUES (
+    v_dep.user_id,
+    NULL,
+    v_dep.amount,
+    'deposit',
+    COALESCE(NULLIF(TRIM(p_note), ''), 'Depósito Pix confirmado pelo Administrador')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.admin_adjust_user_wallet(
+  p_user_id UUID,
+  p_new_balance NUMERIC,
+  p_description TEXT DEFAULT 'Ajuste de saldo pelo Administrador'
+)
+RETURNS VOID AS $$
+DECLARE
+  v_current NUMERIC(10,2);
+  v_target NUMERIC(10,2);
+  v_delta NUMERIC(10,2);
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Apenas administradores podem editar saldos.';
+  END IF;
+
+  SELECT COALESCE(wallet_balance, 0) INTO v_current
+  FROM public.profiles WHERE id = p_user_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Usuário não encontrado.';
+  END IF;
+
+  v_target := ROUND(GREATEST(0, COALESCE(p_new_balance, 0))::NUMERIC, 2);
+  v_delta := ROUND((v_target - v_current)::NUMERIC, 2);
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = v_target,
+      updated_at = NOW()
+  WHERE id = p_user_id;
+
+  IF v_delta <> 0 THEN
+    INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+    VALUES (
+      p_user_id,
+      NULL,
+      v_delta,
+      'admin_adjustment',
+      COALESCE(NULLIF(TRIM(p_description), ''), 'Ajuste de saldo pelo Administrador')
+    );
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.admin_register_payout(
+  p_driver_id UUID,
+  p_amount NUMERIC,
+  p_description TEXT DEFAULT NULL
+)
+RETURNS VOID AS $$
+DECLARE
+  v_driver public.profiles%ROWTYPE;
+  v_pay NUMERIC(10,2);
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso restrito ao Super Admin.';
+  END IF;
+
+  SELECT * INTO v_driver FROM public.profiles WHERE id = p_driver_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Motorista não encontrado.';
+  END IF;
+
+  v_pay := ROUND(LEAST(COALESCE(p_amount, v_driver.wallet_balance), GREATEST(0, v_driver.wallet_balance)), 2);
+  IF v_pay <= 0 THEN
+    RETURN;
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND(GREATEST(0, wallet_balance - v_pay), 2),
+      updated_at = NOW()
+  WHERE id = p_driver_id;
+
+  INSERT INTO public.wallet_transactions (user_id, amount, type, description)
+  VALUES (
+    p_driver_id,
+    -v_pay,
+    'payout',
+    COALESCE(NULLIF(p_description, ''), 'Repasse Pix realizado pelo Super Admin')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 6. Auditoria RLS Estrita para Extrato Imutável & Carteira
+ALTER TABLE public.wallet_withdrawals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Leitura da própria carteira" ON public.wallet_transactions;
+DROP POLICY IF EXISTS "Inserir transações na carteira" ON public.wallet_transactions;
+DROP POLICY IF EXISTS "wallet_transactions_select" ON public.wallet_transactions;
+DROP POLICY IF EXISTS "wallet_transactions_insert_admin_only" ON public.wallet_transactions;
+DROP POLICY IF EXISTS "wallet_transactions_no_update" ON public.wallet_transactions;
+DROP POLICY IF EXISTS "wallet_transactions_no_delete" ON public.wallet_transactions;
+
+CREATE POLICY "wallet_transactions_select"
+  ON public.wallet_transactions FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin());
+
+CREATE POLICY "wallet_transactions_insert_admin_only"
+  ON public.wallet_transactions FOR INSERT
+  TO authenticated
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "wallet_transactions_no_update"
+  ON public.wallet_transactions FOR UPDATE
+  TO authenticated
+  USING (FALSE);
+
+CREATE POLICY "wallet_transactions_no_delete"
+  ON public.wallet_transactions FOR DELETE
+  TO authenticated
+  USING (FALSE);
+
+DROP POLICY IF EXISTS "Usuario ve proprios saques" ON public.wallet_withdrawals;
+DROP POLICY IF EXISTS "Admin atualiza saques" ON public.wallet_withdrawals;
+DROP POLICY IF EXISTS "wallet_withdrawals_select" ON public.wallet_withdrawals;
+DROP POLICY IF EXISTS "wallet_withdrawals_update_admin" ON public.wallet_withdrawals;
+
+CREATE POLICY "wallet_withdrawals_select"
+  ON public.wallet_withdrawals FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin());
+
+CREATE POLICY "wallet_withdrawals_update_admin"
+  ON public.wallet_withdrawals FOR UPDATE
+  TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'wallet_withdrawals'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_withdrawals;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'wallet_transactions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_transactions;
+  END IF;
+END $$;
+
+-- Comando manual para promover o Super Admin principal no SQL Editor:
+-- UPDATE public.profiles SET is_admin = TRUE, role = 'admin', status = 'active' WHERE LOWER(email) = 'rikelmygbrl@gmail.com';

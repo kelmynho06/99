@@ -33,25 +33,31 @@ interface PermissionsPromptModalProps {
   onClose: () => void;
 }
 
-function StatusBadge({ state }: { state: PermissionGrantState }) {
+function StatusBadge({
+  state,
+  labels,
+}: {
+  state: PermissionGrantState;
+  labels: { granted: string; denied: string; pending: string };
+}) {
   if (state === 'granted') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
         <CheckCircle2 className="h-3 w-3" />
-        Permitido
+        {labels.granted}
       </span>
     );
   }
   if (state === 'denied') {
     return (
       <span className="rounded-full bg-red-50 dark:bg-red-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
-        Bloqueado
+        {labels.denied}
       </span>
     );
   }
   return (
     <span className="rounded-full bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-      Pendente
+      {labels.pending}
     </span>
   );
 }
@@ -61,6 +67,11 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
+  const badgeLabels = {
+    granted: t.perm_granted,
+    denied: t.perm_denied,
+    pending: t.perm_pending,
+  };
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [status, setStatus] = useState<DevicePermissionsState>({
     notifications: 'prompt',
@@ -198,7 +209,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   </p>
                 </div>
               </div>
-              <StatusBadge state={status.notifications} />
+              <StatusBadge state={status.notifications} labels={badgeLabels} />
             </div>
 
             <button
@@ -237,7 +248,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   </p>
                 </div>
               </div>
-              <StatusBadge state={status.location} />
+              <StatusBadge state={status.location} labels={badgeLabels} />
             </div>
 
             <button
@@ -280,7 +291,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   </p>
                 </div>
               </div>
-              <StatusBadge state={status.camera} />
+              <StatusBadge state={status.camera} labels={badgeLabels} />
             </div>
 
             <button
@@ -319,7 +330,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   </p>
                 </div>
               </div>
-              <StatusBadge state={overlayDone && batteryDone ? 'granted' : 'prompt'} />
+              <StatusBadge state={overlayDone && batteryDone ? 'granted' : 'prompt'} labels={badgeLabels} />
             </div>
 
             {isAndroidApk ? (
@@ -333,7 +344,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-3.5 text-xs font-extrabold text-neutral-950 dark:text-white"
                 >
                   <span>1. Permitir Balão Sobrepor Outros Apps</span>
-                  <StatusBadge state={overlayDone ? 'granted' : 'prompt'} />
+                  <StatusBadge state={overlayDone ? 'granted' : 'prompt'} labels={badgeLabels} />
                 </button>
                 <button
                   type="button"
@@ -344,7 +355,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                   className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-3.5 text-xs font-extrabold text-neutral-950 dark:text-white"
                 >
                   <span>2. Bateria Irrestrita (Economia Inteligente)</span>
-                  <StatusBadge state={batteryDone ? 'granted' : 'prompt'} />
+                  <StatusBadge state={batteryDone ? 'granted' : 'prompt'} labels={badgeLabels} />
                 </button>
               </div>
             ) : (
@@ -385,14 +396,14 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 onClick={handleGrantAll}
                 className="min-h-[48px] flex-1 rounded-2xl bg-[#FFD100] text-xs sm:text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
               >
-                {requesting ? 'Solicitando...' : 'Ativar Todas Agora'}
+                {requesting ? t.saving : t.perm_activate_all}
               </button>
               <button
                 type="button"
                 onClick={() => setStep((prev) => Math.min(3, prev + 1) as 0 | 1 | 2 | 3)}
                 className="flex min-h-[48px] items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 px-4 text-xs font-extrabold text-neutral-800 dark:text-neutral-200"
               >
-                <span>Próximo</span>
+                <span>{t.perm_next}</span>
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -403,7 +414,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               onClick={handleGrantAll}
               className="min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
             >
-              {requesting ? 'Finalizando...' : 'Concluir Configuração & Entrar'}
+              {requesting ? t.saving : t.perm_finish_enter}
             </button>
           )}
           <button

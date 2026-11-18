@@ -114,6 +114,7 @@ export interface DriverDetails {
 export interface UserProfile {
   id: string;
   role: UserRole;
+  is_admin?: boolean;
   status: AccountStatus;
   full_name: string;
   phone: string;

@@ -22,8 +22,6 @@ import type {
   WalletWithdrawalStatus,
 } from '../types/mobility';
 
-export const ADMIN_EMAIL = 'driver@admin.com';
-
 export const PLATFORM_BRAND_CACHE_KEY = 'velo99_platform_brand_cache_v1';
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
@@ -131,13 +129,20 @@ export function mapDbProfile(
   driverRow?: Record<string, unknown> | null
 ): UserProfile {
   const email = String(row.email || '').toLowerCase();
+  const isAdminFlag = Boolean(row.is_admin ?? false);
   const rawRole = String(row.role || 'passenger');
-  const role = email === ADMIN_EMAIL ? 'admin' : (rawRole as UserProfile['role']);
-  const status = email === ADMIN_EMAIL ? 'active' : (String(row.status || 'active') as UserProfile['status']);
+  const role: UserProfile['role'] =
+    isAdminFlag || rawRole === 'admin'
+      ? 'admin'
+      : rawRole === 'driver'
+      ? 'driver'
+      : 'passenger';
+  const status = String(row.status || 'active') as UserProfile['status'];
 
   return {
     id: String(row.id),
     role,
+    is_admin: isAdminFlag || role === 'admin',
     status,
     full_name: String(row.full_name || ''),
     phone: String(row.phone || ''),
@@ -459,6 +464,37 @@ export async function restoreSessionUser(): Promise<UserProfile | null> {
   return fetchUserProfileById(uid);
 }
 
+export async function verifyMyAdminAccess(): Promise<boolean> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const uid = sessionData.session?.user?.id;
+    if (!uid) return false;
+
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc('check_my_admin_access');
+    if (!rpcErr && Array.isArray(rpcRows) && rpcRows.length > 0) {
+      const row = rpcRows[0] as { is_admin?: boolean; role?: string; status?: string };
+      return Boolean(row.is_admin) && row.status === 'active';
+    }
+
+    const { data: prof, error: profErr } = await supabase
+      .from('profiles')
+      .select('role,is_admin,status,is_anonymized')
+      .eq('id', uid)
+      .maybeSingle();
+
+    if (!profErr && prof) {
+      return (
+        (Boolean(prof.is_admin) || prof.role === 'admin') &&
+        prof.status === 'active' &&
+        !prof.is_anonymized
+      );
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function translateAuthError(msg: string): string {
   const lower = msg.toLowerCase();
   if (lower.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
@@ -491,18 +527,8 @@ export async function loginUser(email: string, password: string): Promise<UserPr
   let profile = await fetchUserProfileById(data.user.id);
   if (!profile) {
     const meta = (data.user.user_metadata || {}) as Record<string, unknown>;
-    const inferredRole =
-      cleanEmail === ADMIN_EMAIL
-        ? 'admin'
-        : meta.role === 'driver'
-        ? 'driver'
-        : 'passenger';
-    const inferredStatus =
-      cleanEmail === ADMIN_EMAIL
-        ? 'active'
-        : inferredRole === 'driver'
-        ? 'pending'
-        : 'active';
+    const inferredRole = meta.role === 'driver' ? 'driver' : 'passenger';
+    const inferredStatus = inferredRole === 'driver' ? 'pending' : 'active';
 
     await supabase.from('profiles').upsert({
       id: data.user.id,
@@ -547,10 +573,10 @@ export async function registerUser(payload: RegisterPayload): Promise<{
   pendingEmailConfirmation?: boolean;
 }> {
   const cleanEmail = payload.email.trim().toLowerCase();
-  const isAdminEmail = cleanEmail === ADMIN_EMAIL;
-  const effectiveRole: UserProfile['role'] = isAdminEmail ? 'admin' : payload.role;
+  const effectiveRole: 'passenger' | 'driver' =
+    payload.role === 'driver' ? 'driver' : 'passenger';
   const effectiveStatus: UserProfile['status'] =
-    isAdminEmail || effectiveRole === 'passenger' ? 'active' : 'pending';
+    effectiveRole === 'passenger' ? 'active' : 'pending';
 
   const { data, error } = await supabase.auth.signUp({
     email: cleanEmail,
@@ -695,17 +721,39 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
 
   const cached = readCachedPlatformBrand();
   if (error || !data) {
+    const fallbackLogo =
+      (appCfg?.logo_url as string | null | undefined) ?? cached.app_logo_url ?? null;
+    const resolvedFallbackLogo = fallbackLogo
+      ? await resolveDocumentDisplayUrl(fallbackLogo)
+      : null;
+    const resolvedFallbackQr = cached.platform_pix_qr_url
+      ? await resolveDocumentDisplayUrl(cached.platform_pix_qr_url)
+      : null;
     return {
       ...DEFAULT_PLATFORM_CONFIG,
       ...cached,
       site_name: String(appCfg?.app_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
-      app_logo_url:
-        (appCfg?.logo_url as string | null | undefined) ?? cached.app_logo_url ?? null,
+      app_logo_url: resolvedFallbackLogo,
+      platform_pix_qr_url: resolvedFallbackQr,
       primary_color: String(appCfg?.primary_color || cached.primary_color || '#FFD100'),
       secondary_color: String(appCfg?.secondary_color || cached.secondary_color || '#111827'),
       ota_web_url: cached.ota_web_url ?? null,
     };
   }
+
+  const rawQrUrl =
+    (data.platform_pix_qr_url as string | null | undefined) ??
+    cached.platform_pix_qr_url ??
+    null;
+  const rawLogoUrl =
+    (appCfg?.logo_url as string | null | undefined) ??
+    (data.app_logo_url as string | null | undefined) ??
+    cached.app_logo_url ??
+    null;
+  const [resolvedQrUrl, resolvedLogoUrl] = await Promise.all([
+    rawQrUrl ? resolveDocumentDisplayUrl(rawQrUrl) : Promise.resolve(null),
+    rawLogoUrl ? resolveDocumentDisplayUrl(rawLogoUrl) : Promise.resolve(null),
+  ]);
 
   return {
     platform_pix_key: String(data.platform_pix_key || DEFAULT_PLATFORM_CONFIG.platform_pix_key),
@@ -715,21 +763,14 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     platform_city: String(data.platform_city || DEFAULT_PLATFORM_CONFIG.platform_city),
     company_address:
       (data.company_address as string | null | undefined) ?? cached.company_address ?? '',
-    platform_pix_qr_url:
-      (data.platform_pix_qr_url as string | null | undefined) ??
-      cached.platform_pix_qr_url ??
-      null,
+    platform_pix_qr_url: resolvedQrUrl || null,
     site_name: String(
       appCfg?.app_name || data.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name
     ),
     support_whatsapp: String(data.support_whatsapp || cached.support_whatsapp || ''),
     commission_percent: Number(data.commission_percent ?? cached.commission_percent ?? 0),
     maintenance_mode: Boolean(data.maintenance_mode ?? false),
-    app_logo_url:
-      (appCfg?.logo_url as string | null | undefined) ??
-      (data.app_logo_url as string | null | undefined) ??
-      cached.app_logo_url ??
-      null,
+    app_logo_url: resolvedLogoUrl || null,
     primary_color: String(
       appCfg?.primary_color || data.primary_color || cached.primary_color || '#FFD100'
     ),
@@ -1276,6 +1317,14 @@ async function creditDriverForPixRideIdempotent(
   description: string,
   type: 'ride_earning' | 'dispute_settlement' = 'ride_earning'
 ) {
+  const { error: rpcErr } = await supabase.rpc('credit_driver_wallet_for_ride', {
+    p_ride_id: rideId,
+    p_description: description,
+    p_type: type,
+  });
+
+  if (!rpcErr) return;
+
   const { data: existing } = await supabase
     .from('wallet_transactions')
     .select('id')
@@ -1933,14 +1982,33 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     updated_at: new Date().toISOString(),
   };
 
-  let { error } = await supabase.from('platform_settings').upsert(fullPayload);
-  if (error && error.code === '42703') {
-    const withoutOtaWeb = { ...fullPayload } as Record<string, unknown>;
-    delete withoutOtaWeb.ota_web_url;
-    const retryOta = await supabase.from('platform_settings').upsert(withoutOtaWeb);
-    error = retryOta.error;
+  let workingPayload: Record<string, unknown> = { ...fullPayload };
+  let { error } = await supabase.from('platform_settings').upsert(workingPayload);
+  let pixQrColumnMissing = false;
+
+  // Progressively strip only the exact missing column when schema hasn't run latest delta yet
+  for (let attempt = 0; attempt < 10 && error && (error.code === '42703' || error.code === 'PGRST204'); attempt++) {
+    const msg = String(error.message || '');
+    const match =
+      msg.match(/Could not find the '([^']+)' column/i) ||
+      msg.match(/column "?([a-zA-Z0-9_]+)"? of relation/i) ||
+      msg.match(/column "?([a-zA-Z0-9_]+)"? does not exist/i);
+    const missingCol = match?.[1];
+    if (missingCol && missingCol in workingPayload) {
+      if (missingCol === 'platform_pix_qr_url' && config.platform_pix_qr_url) {
+        pixQrColumnMissing = true;
+      }
+      const nextPayload = { ...workingPayload };
+      delete nextPayload[missingCol];
+      workingPayload = nextPayload;
+      const retryRes = await supabase.from('platform_settings').upsert(workingPayload);
+      error = retryRes.error;
+    } else {
+      break;
+    }
   }
-  if (error && error.code === '42703') {
+
+  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
     const legacyV15Retry = await supabase.from('platform_settings').upsert({
       id: 1,
       platform_pix_key: config.platform_pix_key.trim(),
@@ -1963,7 +2031,7 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
       updated_at: new Date().toISOString(),
     });
     error = legacyV15Retry.error;
-    if (error && error.code === '42703') {
+    if (error && (error.code === '42703' || error.code === 'PGRST204')) {
       const retry = await supabase.from('platform_settings').upsert({
         id: 1,
         platform_pix_key: config.platform_pix_key.trim(),
@@ -1975,6 +2043,11 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     }
   }
   if (error) throw new Error(error.message);
+  if (pixQrColumnMissing) {
+    throw new Error(
+      'Execute o SQL incremental para criar a coluna platform_pix_qr_url em platform_settings e sincronizar o QR Code para todos os motoristas.'
+    );
+  }
 }
 
 export async function updateUserLanguagePref(userId: string, language: string): Promise<void> {
@@ -2468,25 +2541,49 @@ export async function lookupWalletRecipient(query: string): Promise<WalletRecipi
   }));
 }
 
+export async function transferirSaldo66(
+  destinatario: string,
+  valor: number,
+  observacao?: string
+): Promise<void> {
+  const cleanTarget = destinatario.trim();
+  const cleanAmount = Number(Math.max(0, valor).toFixed(2));
+  if (!cleanTarget) {
+    throw new Error('Informe o destinatário da transferência 66 Pay.');
+  }
+  if (cleanAmount < 1) {
+    throw new Error('O valor mínimo para transferência 66 Pay é R$ 1,00.');
+  }
+
+  const { error: rpc66Err } = await supabase.rpc('transferir_saldo_66', {
+    p_destinatario: cleanTarget,
+    p_valor: cleanAmount,
+    p_observacao: observacao?.trim() || null,
+  });
+
+  if (!rpc66Err) return;
+
+  // Fallback to UUID RPC alias if only transfer_wallet_balance is present
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(cleanTarget)) {
+    const { error: legacyErr } = await supabase.rpc('transfer_wallet_balance', {
+      p_to_user_id: cleanTarget,
+      p_amount: cleanAmount,
+      p_note: observacao?.trim() || null,
+    });
+    if (!legacyErr) return;
+    throw new Error(legacyErr.message || rpc66Err.message || 'Erro ao transferir saldo.');
+  }
+
+  throw new Error(rpc66Err.message || 'Erro ao transferir saldo na carteira 66 Pay.');
+}
+
 export async function transferWalletBalance(
   toUserId: string,
   amount: number,
   note?: string
 ): Promise<void> {
-  const cleanAmount = Number(Math.max(0, amount).toFixed(2));
-  if (cleanAmount <= 0) {
-    throw new Error('Informe um valor maior que zero para transferir.');
-  }
-
-  const { error } = await supabase.rpc('transfer_wallet_balance', {
-    p_to_user_id: toUserId,
-    p_amount: cleanAmount,
-    p_note: note?.trim() || null,
-  });
-
-  if (error) {
-    throw new Error(error.message || 'Erro ao transferir saldo. Verifique o SQL incremental.');
-  }
+  return transferirSaldo66(toUserId, amount, note);
 }
 
 export async function fetchMyWalletWithdrawals(userId: string): Promise<WalletWithdrawal[]> {

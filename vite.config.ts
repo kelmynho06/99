@@ -17,8 +17,8 @@ export default defineConfig(() => {
           name: '66 Mobilidade',
           short_name: '66 Mobilidade',
           description: 'Mobilidade urbana e entregas rápidas com rastreamento GPS em tempo real.',
-          theme_color: '#FFCC00',
-          background_color: '#1C1F24',
+          theme_color: '#FFDD00',
+          background_color: '#FFDD00',
           display: 'standalone',
           orientation: 'portrait',
           start_url: '/',
@@ -54,8 +54,8 @@ export default defineConfig(() => {
               options: {
                 cacheName: 'osm-tiles-cache',
                 expiration: {
-                  maxEntries: 250,
-                  maxAgeSeconds: 60 * 60 * 24 * 7,
+                  maxEntries: 2500,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],

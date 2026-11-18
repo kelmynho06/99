@@ -25,7 +25,11 @@ import {
   loginUser,
   registerUser,
 } from '../lib/mobilityApi';
-import { getUserPreferences, saveUserPreferences } from '../lib/userPrefs';
+import {
+  getUserPreferences,
+  markExplicitLanguageChoice,
+  saveUserPreferences,
+} from '../lib/userPrefs';
 import type { PlatformConfig, UserProfile } from '../types/mobility';
 import { LegalDocsModal, type LegalDocTab } from './LegalDocsModal';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -76,6 +80,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [infoNotice, setInfoNotice] = useState<string | null>(null);
 
+  const handleLanguageChange = (nextLang: string) => {
+    markExplicitLanguageChoice();
+    saveUserPreferences({ language: nextLang });
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -85,7 +94,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       const user = await loginUser(loginEmail, loginPassword);
       onAuthenticated(user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao entrar na conta.');
+      setError(err instanceof Error ? err.message : t.auth_err_login);
     } finally {
       setLoading(false);
     }
@@ -102,7 +111,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       if (target === 'cnh') setCnhPreview(compressed);
       else setCrlvPreview(compressed);
     } catch {
-      setError('Não foi possível processar a imagem selecionada.');
+      setError(t.auth_err_image);
     }
   };
 
@@ -112,14 +121,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setInfoNotice(null);
 
     if (!acceptedTerms) {
-      setError(
-        'Leia e aceite os Termos de Uso, Segurança e Política de Privacidade para criar sua conta.'
-      );
+      setError(t.auth_err_terms);
       return;
     }
 
     if (accountGoal === 'driver' && (!cnhPreview || !crlvPreview)) {
-      setError('Envie as fotos da sua CNH e do documento do veículo (CRLV).');
+      setError(t.auth_err_driver_docs);
       return;
     }
 
@@ -146,9 +153,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       });
 
       if (result.pendingEmailConfirmation) {
-        setInfoNotice(
-          'Cadastro realizado! Confirme o link enviado ao seu e-mail (ou desative "Confirm email" no painel do Supabase Auth) e faça login.'
-        );
+        setInfoNotice(t.auth_email_confirm_notice);
         setMode('login');
         setLoginEmail(email.trim().toLowerCase());
         return;
@@ -163,7 +168,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         onAuthenticated(result.user);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao registrar conta.');
+      setError(err instanceof Error ? err.message : t.auth_err_register);
     } finally {
       setLoading(false);
     }
@@ -177,7 +182,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         style={{ backgroundColor: primaryColor }}
       >
         <div>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <img
                 src={brandLogoUrl}
@@ -191,9 +196,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <div className="flex items-center gap-2">
               <select
                 value={lang || getUserPreferences().language}
-                onChange={(e) => saveUserPreferences({ language: e.target.value })}
+                onChange={(e) => handleLanguageChange(e.target.value)}
                 aria-label={t.language_label}
-                className="min-h-[38px] rounded-xl border border-neutral-950/15 bg-white/85 px-2 text-xs font-extrabold text-neutral-950 outline-none"
+                className="min-h-[38px] rounded-xl border border-neutral-950/20 bg-white/90 px-2.5 text-xs font-extrabold text-neutral-950 outline-none shadow-xs cursor-pointer"
               >
                 {SUPPORTED_LANGUAGES.map((l) => (
                   <option key={l.code} value={l.code}>
@@ -206,10 +211,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
 
           <h1 className="mt-8 font-display text-3xl sm:text-4xl font-extrabold leading-tight text-neutral-950 [text-wrap:balance]">
-            Mobilidade rápida para passageiros, ganhos reais para motoristas.
+            {t.auth_hero_title}
           </h1>
           <p className="mt-3 text-sm sm:text-base font-medium text-neutral-900/80 max-w-md">
-            Chame carros, motos ou entregas em segundos com rastreamento GPS ao vivo e embarque protegido por PIN de 4 dígitos.
+            {t.auth_hero_subtitle}
           </p>
         </div>
 
@@ -217,25 +222,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <div className="rounded-2xl bg-neutral-950/10 p-4">
             <div className="flex items-center gap-3 text-neutral-950">
               <MapPin className="h-5 w-5 shrink-0" />
-              <p className="text-sm font-bold">Mapa aberto com GPS ao vivo</p>
+              <p className="text-sm font-bold">{t.auth_feature_map_title}</p>
             </div>
             <p className="mt-1 pl-8 text-xs text-neutral-900/75">
-              OpenStreetMap interativo sem barreiras de toque e rotas diretas pelo Google Maps para o motorista.
+              {t.auth_feature_map_desc}
             </p>
           </div>
           <div className="rounded-2xl bg-neutral-950/10 p-4">
             <div className="flex items-center gap-3 text-neutral-950">
               <ShieldCheck className="h-5 w-5 shrink-0" />
-              <p className="text-sm font-bold">Segurança com PIN, Pix oficial e CNH verificada</p>
+              <p className="text-sm font-bold">{t.auth_feature_sec_title}</p>
             </div>
             <p className="mt-1 pl-8 text-xs text-neutral-900/75">
-              Motoristas e entregadores passam por validação de CNH e CRLV antes de ficar online.
+              {t.auth_feature_sec_desc}
             </p>
           </div>
         </div>
 
         <div className="mt-6 hidden lg:block text-xs font-medium text-neutral-900/70">
-          {siteName} Mobilidade · Web App, PWA e Android Capacitor
+          {siteName} · {t.auth_footer_platforms}
         </div>
       </div>
 
@@ -256,7 +261,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white'
               }`}
             >
-              Entrar na conta
+              {t.auth_tab_login}
             </button>
             <button
               type="button"
@@ -270,7 +275,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   : 'text-neutral-600 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white'
               }`}
             >
-              Criar cadastro
+              {t.auth_tab_register}
             </button>
           </div>
 
@@ -289,7 +294,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           {mode === 'login' ? (
             <form onSubmit={handleLogin} className="mt-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">E-mail</label>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                  {t.auth_email_label}
+                </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                   <input
@@ -297,14 +304,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     required
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="seu@email.com"
+                    placeholder={t.auth_email_placeholder}
                     className="min-h-[48px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-4 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900 transition"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">Senha</label>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                  {t.auth_password_label}
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                   <input
@@ -312,14 +321,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Digite sua senha"
+                    placeholder={t.auth_password_placeholder}
                     className="min-h-[48px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-12 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900 transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center text-neutral-500 dark:text-neutral-400"
-                    aria-label="Mostrar senha"
+                    aria-label={t.auth_show_password}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -331,11 +340,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 disabled={loading}
                 className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm hover:bg-[#f5c400] active:scale-[0.99] transition disabled:opacity-50"
               >
-                {loading ? 'Entrando...' : 'Entrar'}
+                {loading ? t.auth_logging_in : t.auth_login_btn}
               </button>
 
               <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 pt-2">
-                Ainda não possui conta?{' '}
+                {t.auth_no_account}{' '}
                 <button
                   type="button"
                   onClick={() => {
@@ -344,7 +353,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   }}
                   className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                 >
-                  Criar cadastro agora
+                  {t.auth_create_now}
                 </button>
               </p>
             </form>
@@ -353,7 +362,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {/* Dual Profile Selector */}
               <div>
                 <p className="text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-2">
-                  Qual é o objetivo da sua conta?
+                  {t.auth_account_goal_q}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <button
@@ -374,7 +383,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       )}
                     </div>
                     <p className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-300">
-                      Quero Viajar / Pedir Corridas (acesso imediato)
+                      {t.auth_goal_passenger_desc}
                     </p>
                   </button>
 
@@ -396,7 +405,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       )}
                     </div>
                     <p className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-300">
-                      Quero Dirigir / Fazer Entregas (análise CNH/CRLV)
+                      {t.auth_goal_driver_desc}
                     </p>
                   </button>
                 </div>
@@ -405,7 +414,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {/* Basic Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">Nome completo</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t.auth_full_name_label}
+                  </label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                     <input
@@ -413,7 +424,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Ex: Lucas Pereira Silva"
+                      placeholder={t.auth_full_name_placeholder}
                       className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-10 pr-3 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                     />
                   </div>
@@ -421,7 +432,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Telefone / WhatsApp
+                    {t.auth_phone_label}
                   </label>
                   <div className="relative">
                     <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
@@ -437,7 +448,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">CPF</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t.auth_doc_id_label}
+                  </label>
                   <div className="relative">
                     <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
                     <input
@@ -452,26 +465,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">E-mail</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t.auth_email_label}
+                  </label>
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="voce@email.com"
+                    placeholder={t.auth_email_placeholder}
                     className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3.5 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">Senha</label>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t.auth_password_label}
+                  </label>
                   <input
                     type="password"
                     required
                     minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Mínimo 6 dígitos"
+                    placeholder={t.auth_password_min_placeholder}
                     className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3.5 text-sm text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100] focus:bg-white dark:focus:bg-neutral-900"
                   />
                 </div>
@@ -482,7 +499,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 <div className="space-y-3 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/30 p-4">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-neutral-950 dark:text-amber-200">
                     <FileText className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    <span>Documentação do Motorista & Veículo</span>
+                    <span>{t.auth_driver_docs_title}</span>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -495,7 +512,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
-                      <Car className="h-4 w-4" /> Carro
+                      <Car className="h-4 w-4" /> {t.auth_vehicle_car}
                     </button>
                     <button
                       type="button"
@@ -506,7 +523,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
-                      <Bike className="h-4 w-4" /> Moto
+                      <Bike className="h-4 w-4" /> {t.auth_vehicle_moto}
                     </button>
                     <button
                       type="button"
@@ -517,7 +534,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
-                      <Package className="h-4 w-4" /> Entregador
+                      <Package className="h-4 w-4" /> {t.auth_vehicle_delivery}
                     </button>
                   </div>
 
@@ -527,7 +544,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       required
                       value={vehicleModel}
                       onChange={(e) => setVehicleModel(e.target.value)}
-                      placeholder="Modelo (Ex: Onix 1.0)"
+                      placeholder={t.auth_vehicle_model_ph}
                       className="min-h-[44px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                     <input
@@ -535,7 +552,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       required
                       value={vehiclePlate}
                       onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                      placeholder="Placa (ABC-1D23)"
+                      placeholder={t.auth_vehicle_plate_ph}
                       className="min-h-[44px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-mono-num uppercase text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                     <input
@@ -543,21 +560,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       required
                       value={vehicleColor}
                       onChange={(e) => setVehicleColor(e.target.value)}
-                      placeholder="Cor (Ex: Branco)"
+                      placeholder={t.auth_vehicle_color_ph}
                       className="min-h-[44px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                      Sua Chave Pix para receber repasses do Admin
+                      {t.auth_driver_pix_label}
                     </label>
                     <input
                       type="text"
                       required
                       value={pixKey}
                       onChange={(e) => setPixKey(e.target.value)}
-                      placeholder="CPF, e-mail, telefone ou chave aleatória"
+                      placeholder={t.auth_driver_pix_ph}
                       className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
                     />
                   </div>
@@ -567,7 +584,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       {cnhPreview ? (
                         <img
                           src={cnhPreview}
-                          alt="Prévia CNH"
+                          alt={t.auth_cnh_photo}
                           referrerPolicy="no-referrer"
                           className="h-20 w-full rounded-lg object-cover"
                         />
@@ -575,9 +592,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <>
                           <Upload className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
                           <span className="mt-1.5 text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
-                            Foto da CNH
+                            {t.auth_cnh_photo}
                           </span>
-                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400">Toque para enviar</span>
+                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                            {t.auth_tap_upload}
+                          </span>
                         </>
                       )}
                       <input
@@ -592,7 +611,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       {crlvPreview ? (
                         <img
                           src={crlvPreview}
-                          alt="Prévia CRLV"
+                          alt={t.auth_crlv_doc}
                           referrerPolicy="no-referrer"
                           className="h-20 w-full rounded-lg object-cover"
                         />
@@ -600,9 +619,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <>
                           <Upload className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
                           <span className="mt-1.5 text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
-                            Documento CRLV
+                            {t.auth_crlv_doc}
                           </span>
-                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400">Toque para enviar</span>
+                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                            {t.auth_tap_upload}
+                          </span>
                         </>
                       )}
                       <input
@@ -626,13 +647,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     className="mt-0.5 h-5 w-5 shrink-0 rounded border-neutral-300 accent-neutral-950"
                   />
                   <span className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
-                    <strong>Li e aceito</strong> os{' '}
+                    <strong>{t.auth_terms_prefix}</strong>{' '}
                     <button
                       type="button"
                       onClick={() => setLegalModalTab('terms')}
                       className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                     >
-                      Termos de Uso
+                      {t.auth_terms_link}
                     </button>
                     ,{' '}
                     <button
@@ -640,15 +661,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       onClick={() => setLegalModalTab('security')}
                       className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                     >
-                      Termo de Segurança e PIN
+                      {t.auth_security_link}
                     </button>{' '}
-                    e a{' '}
+                    &amp;{' '}
                     <button
                       type="button"
                       onClick={() => setLegalModalTab('privacy')}
                       className="font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                     >
-                      Política de Privacidade (LGPD)
+                      {t.auth_privacy_link}
                     </button>
                     .
                   </span>
@@ -659,7 +680,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     onClick={() => setLegalModalTab('terms')}
                     className="text-[11px] font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                   >
-                    Abrir documento completo e aceitar
+                    {t.auth_open_full_terms}
                   </button>
                 </div>
               </div>
@@ -670,10 +691,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm hover:bg-[#f5c400] active:scale-[0.99] transition disabled:opacity-50"
               >
                 {loading
-                  ? 'Criando conta...'
+                  ? t.auth_creating_account
                   : accountGoal === 'driver'
-                  ? 'Enviar documentos para análise'
-                  : 'Concluir cadastro e viajar'}
+                  ? t.auth_submit_driver
+                  : t.auth_submit_passenger}
               </button>
             </form>
           )}

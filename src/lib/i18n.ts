@@ -131,6 +131,80 @@ export type TranslationKeys = {
   passenger_role_badge: string;
   cookies_notice_title: string;
   accept_cookies_btn: string;
+  cookies_notice_body: string;
+  cookies_essential_btn: string;
+  validating_admin: string;
+  auth_hero_title: string;
+  auth_hero_subtitle: string;
+  auth_feature_map_title: string;
+  auth_feature_map_desc: string;
+  auth_feature_sec_title: string;
+  auth_feature_sec_desc: string;
+  auth_footer_platforms: string;
+  auth_tab_login: string;
+  auth_tab_register: string;
+  auth_email_label: string;
+  auth_email_placeholder: string;
+  auth_password_label: string;
+  auth_password_placeholder: string;
+  auth_show_password: string;
+  auth_login_btn: string;
+  auth_logging_in: string;
+  auth_no_account: string;
+  auth_create_now: string;
+  auth_account_goal_q: string;
+  auth_goal_passenger_desc: string;
+  auth_goal_driver_desc: string;
+  auth_full_name_label: string;
+  auth_full_name_placeholder: string;
+  auth_phone_label: string;
+  auth_doc_id_label: string;
+  auth_password_min_placeholder: string;
+  auth_driver_docs_title: string;
+  auth_vehicle_car: string;
+  auth_vehicle_moto: string;
+  auth_vehicle_delivery: string;
+  auth_vehicle_model_ph: string;
+  auth_vehicle_plate_ph: string;
+  auth_vehicle_color_ph: string;
+  auth_driver_pix_label: string;
+  auth_driver_pix_ph: string;
+  auth_cnh_photo: string;
+  auth_crlv_doc: string;
+  auth_tap_upload: string;
+  auth_terms_prefix: string;
+  auth_terms_link: string;
+  auth_security_link: string;
+  auth_privacy_link: string;
+  auth_open_full_terms: string;
+  auth_creating_account: string;
+  auth_submit_driver: string;
+  auth_submit_passenger: string;
+  auth_err_login: string;
+  auth_err_image: string;
+  auth_err_terms: string;
+  auth_err_driver_docs: string;
+  auth_err_register: string;
+  auth_email_confirm_notice: string;
+  checkout_pix_waiting_title: string;
+  checkout_payment_title: string;
+  checkout_pix_confirmed_admin: string;
+  checkout_payment_success: string;
+  checkout_waiting_admin_headline: string;
+  checkout_waiting_admin_desc: string;
+  checkout_qr_cash_option: string;
+  checkout_qr_admin_platform: string;
+  checkout_copy_pix: string;
+  checkout_copied_pix: string;
+  checkout_pix_sent_btn: string;
+  checkout_cash_received_prefix: string;
+  checkout_report_unpaid: string;
+  perm_granted: string;
+  perm_denied: string;
+  perm_pending: string;
+  perm_activate_all: string;
+  perm_next: string;
+  perm_finish_enter: string;
 };
 
 const PT_BR: TranslationKeys = {
@@ -241,6 +315,86 @@ const PT_BR: TranslationKeys = {
   passenger_role_badge: 'Passageiro',
   cookies_notice_title: 'Cookies & Armazenamento Local',
   accept_cookies_btn: 'Aceitar e Continuar',
+  cookies_notice_body:
+    'Usamos cookies essenciais e armazenamento local para manter sua sessão, mapa em tempo real e preferências de idioma, tema e notificações no site e no aplicativo Android.',
+  cookies_essential_btn: 'Essenciais',
+  validating_admin: 'Validando credenciais de Super Administrador...',
+  auth_hero_title: 'Mobilidade rápida para passageiros, ganhos reais para motoristas.',
+  auth_hero_subtitle:
+    'Chame carros, motos ou entregas em segundos com rastreamento GPS ao vivo e embarque protegido por PIN de 4 dígitos.',
+  auth_feature_map_title: 'Mapa urbano com GPS ao vivo e cache offline',
+  auth_feature_map_desc:
+    'OpenStreetMap interativo sem barreiras de toque e rotas diretas pelo Google Maps para o motorista.',
+  auth_feature_sec_title: 'Segurança com PIN, Pix oficial e CNH verificada',
+  auth_feature_sec_desc:
+    'Motoristas e entregadores passam por validação de CNH e CRLV antes de ficar online.',
+  auth_footer_platforms: 'Mobilidade · Web App, PWA e Android Capacitor',
+  auth_tab_login: 'Entrar na conta',
+  auth_tab_register: 'Criar cadastro',
+  auth_email_label: 'E-mail',
+  auth_email_placeholder: 'seu@email.com',
+  auth_password_label: 'Senha',
+  auth_password_placeholder: 'Digite sua senha',
+  auth_show_password: 'Mostrar senha',
+  auth_login_btn: 'Entrar',
+  auth_logging_in: 'Entrando...',
+  auth_no_account: 'Ainda não possui conta?',
+  auth_create_now: 'Criar cadastro agora',
+  auth_account_goal_q: 'Qual é o objetivo da sua conta?',
+  auth_goal_passenger_desc: 'Quero Viajar / Pedir Corridas (acesso imediato)',
+  auth_goal_driver_desc: 'Quero Dirigir / Fazer Entregas (análise CNH/CRLV)',
+  auth_full_name_label: 'Nome completo',
+  auth_full_name_placeholder: 'Ex: Lucas Pereira Silva',
+  auth_phone_label: 'Telefone / WhatsApp',
+  auth_doc_id_label: 'CPF',
+  auth_password_min_placeholder: 'Mínimo 6 dígitos',
+  auth_driver_docs_title: 'Documentação do Motorista & Veículo',
+  auth_vehicle_car: 'Carro',
+  auth_vehicle_moto: 'Moto',
+  auth_vehicle_delivery: 'Entregador',
+  auth_vehicle_model_ph: 'Modelo (Ex: Onix 1.0)',
+  auth_vehicle_plate_ph: 'Placa (ABC-1D23)',
+  auth_vehicle_color_ph: 'Cor (Ex: Branco)',
+  auth_driver_pix_label: 'Sua Chave Pix para receber repasses do Admin',
+  auth_driver_pix_ph: 'CPF, e-mail, telefone ou chave aleatória',
+  auth_cnh_photo: 'Foto da CNH',
+  auth_crlv_doc: 'Documento CRLV',
+  auth_tap_upload: 'Toque para enviar',
+  auth_terms_prefix: 'Li e aceito os',
+  auth_terms_link: 'Termos de Uso',
+  auth_security_link: 'Termo de Segurança e PIN',
+  auth_privacy_link: 'Política de Privacidade (LGPD)',
+  auth_open_full_terms: 'Abrir documento completo e aceitar',
+  auth_creating_account: 'Criando conta...',
+  auth_submit_driver: 'Enviar documentos para análise',
+  auth_submit_passenger: 'Concluir cadastro e viajar',
+  auth_err_login: 'Erro ao entrar na conta.',
+  auth_err_image: 'Não foi possível processar a imagem selecionada.',
+  auth_err_terms: 'Leia e aceite os Termos de Uso, Segurança e Política de Privacidade para criar sua conta.',
+  auth_err_driver_docs: 'Envie as fotos da sua CNH e do documento do veículo (CRLV).',
+  auth_err_register: 'Erro ao registrar conta.',
+  auth_email_confirm_notice:
+    'Cadastro realizado! Confirme o link enviado ao seu e-mail e faça login.',
+  checkout_pix_waiting_title: 'Aguardando Confirmação Pix (Admin)',
+  checkout_payment_title: 'Conferência de Pagamento',
+  checkout_pix_confirmed_admin: 'Pix Confirmado pelo Admin',
+  checkout_payment_success: 'Pagamento recebido com sucesso!',
+  checkout_waiting_admin_headline: 'Aguardando confirmação do Pix pelo Administrador',
+  checkout_waiting_admin_desc:
+    'Assim que o Admin confirmar o recebimento do Pix, seu painel é desbloqueado automaticamente e o saldo entra na sua carteira.',
+  checkout_qr_cash_option: 'QR Code Pix do Administrador (opção se cliente pagar por Pix)',
+  checkout_qr_admin_platform: 'QR Code Pix Oficial (Admin)',
+  checkout_copy_pix: 'Copiar Pix',
+  checkout_copied_pix: 'Copiado',
+  checkout_pix_sent_btn: 'Cliente pagou via QR Pix (Enviar p/ Admin confirmar)',
+  checkout_cash_received_prefix: 'Recebi em Dinheiro:',
+  checkout_report_unpaid: 'Tive problemas ao receber (Relatar não pagamento)',
+  perm_granted: 'Permitido',
+  perm_denied: 'Bloqueado',
+  perm_pending: 'Pendente',
+  perm_activate_all: 'Ativar Todas Agora',
+  perm_next: 'Próximo',
+  perm_finish_enter: 'Concluir Configuração & Entrar',
 };
 
 const EN: TranslationKeys = {
@@ -351,6 +505,86 @@ const EN: TranslationKeys = {
   passenger_role_badge: 'Passenger',
   cookies_notice_title: 'Cookies & Local Storage',
   accept_cookies_btn: 'Accept & Continue',
+  cookies_notice_body:
+    'We use essential cookies and local storage to keep your session active, power real-time maps, and remember your language, theme, and notification preferences.',
+  cookies_essential_btn: 'Essential only',
+  validating_admin: 'Verifying Super Administrator credentials...',
+  auth_hero_title: 'Fast mobility for passengers, real earnings for drivers.',
+  auth_hero_subtitle:
+    'Request cars, motorbikes, or deliveries in seconds with live GPS tracking and 4-digit PIN boarding protection.',
+  auth_feature_map_title: 'Urban map with live GPS & offline cache',
+  auth_feature_map_desc:
+    'Smooth interactive OpenStreetMap with turn-by-turn Google Maps navigation for drivers.',
+  auth_feature_sec_title: 'PIN safety, official Pix & verified license',
+  auth_feature_sec_desc:
+    'Drivers and couriers undergo document verification before going online.',
+  auth_footer_platforms: 'Mobility · Web App, PWA & Android Capacitor',
+  auth_tab_login: 'Sign in',
+  auth_tab_register: 'Create account',
+  auth_email_label: 'Email',
+  auth_email_placeholder: 'you@email.com',
+  auth_password_label: 'Password',
+  auth_password_placeholder: 'Enter your password',
+  auth_show_password: 'Show password',
+  auth_login_btn: 'Sign in',
+  auth_logging_in: 'Signing in...',
+  auth_no_account: "Don't have an account yet?",
+  auth_create_now: 'Create an account now',
+  auth_account_goal_q: 'What is your account goal?',
+  auth_goal_passenger_desc: 'I want to Ride / Order Deliveries (instant access)',
+  auth_goal_driver_desc: 'I want to Drive / Deliver (document review)',
+  auth_full_name_label: 'Full name',
+  auth_full_name_placeholder: 'e.g. Alex Johnson',
+  auth_phone_label: 'Phone / WhatsApp',
+  auth_doc_id_label: 'ID / Tax Number',
+  auth_password_min_placeholder: 'Minimum 6 characters',
+  auth_driver_docs_title: 'Driver & Vehicle Documentation',
+  auth_vehicle_car: 'Car',
+  auth_vehicle_moto: 'Moto',
+  auth_vehicle_delivery: 'Courier',
+  auth_vehicle_model_ph: 'Model (e.g. Sedan)',
+  auth_vehicle_plate_ph: 'Plate (ABC-1234)',
+  auth_vehicle_color_ph: 'Color (e.g. White)',
+  auth_driver_pix_label: 'Your Pix key to receive payouts from Admin',
+  auth_driver_pix_ph: 'CPF, email, phone or random Pix key',
+  auth_cnh_photo: 'Driver License Photo',
+  auth_crlv_doc: 'Vehicle Registration',
+  auth_tap_upload: 'Tap to upload',
+  auth_terms_prefix: 'I have read and agree to the',
+  auth_terms_link: 'Terms of Use',
+  auth_security_link: 'Safety & PIN Policy',
+  auth_privacy_link: 'Privacy Policy',
+  auth_open_full_terms: 'Open full document and accept',
+  auth_creating_account: 'Creating account...',
+  auth_submit_driver: 'Submit documents for review',
+  auth_submit_passenger: 'Complete sign up & ride',
+  auth_err_login: 'Failed to sign in.',
+  auth_err_image: 'Could not process the selected image.',
+  auth_err_terms: 'Please read and accept the Terms of Use, Safety, and Privacy Policy.',
+  auth_err_driver_docs: 'Please upload photos of your Driver License and Vehicle Registration.',
+  auth_err_register: 'Failed to create account.',
+  auth_email_confirm_notice:
+    'Account created! Please confirm the link sent to your email and sign in.',
+  checkout_pix_waiting_title: 'Awaiting Admin Pix Confirmation',
+  checkout_payment_title: 'Payment Confirmation',
+  checkout_pix_confirmed_admin: 'Pix Confirmed by Admin',
+  checkout_payment_success: 'Payment received successfully!',
+  checkout_waiting_admin_headline: 'Waiting for Administrator to confirm Pix payment',
+  checkout_waiting_admin_desc:
+    'As soon as the Admin confirms receipt of the Pix transfer, your screen unlocks automatically and your wallet is credited.',
+  checkout_qr_cash_option: 'Official Admin Pix QR Code (if passenger pays via Pix)',
+  checkout_qr_admin_platform: 'Official Platform Pix QR Code (Admin)',
+  checkout_copy_pix: 'Copy Pix',
+  checkout_copied_pix: 'Copied',
+  checkout_pix_sent_btn: 'Passenger paid via Pix QR (Notify Admin)',
+  checkout_cash_received_prefix: 'Received Cash:',
+  checkout_report_unpaid: 'Problem collecting payment (Report unpaid)',
+  perm_granted: 'Allowed',
+  perm_denied: 'Blocked',
+  perm_pending: 'Pending',
+  perm_activate_all: 'Allow All Now',
+  perm_next: 'Next',
+  perm_finish_enter: 'Finish Setup & Enter',
 };
 
 const ES: TranslationKeys = {
@@ -461,6 +695,86 @@ const ES: TranslationKeys = {
   passenger_role_badge: 'Pasajero',
   cookies_notice_title: 'Cookies y Almacenamiento Local',
   accept_cookies_btn: 'Aceptar y Continuar',
+  cookies_notice_body:
+    'Usamos cookies esenciales y almacenamiento local para mantener tu sesión, el mapa en tiempo real y tus preferencias de idioma, tema y notificaciones.',
+  cookies_essential_btn: 'Solo esenciales',
+  validating_admin: 'Validando credenciales de Súper Administrador...',
+  auth_hero_title: 'Movilidad rápida para pasajeros, ganancias reales para conductores.',
+  auth_hero_subtitle:
+    'Pide autos, motos o entregas en segundos con rastreo GPS en vivo y abordaje protegido por PIN de 4 dígitos.',
+  auth_feature_map_title: 'Mapa urbano con GPS en vivo y caché sin conexión',
+  auth_feature_map_desc:
+    'OpenStreetMap interactivo y navegación directa con Google Maps para el conductor.',
+  auth_feature_sec_title: 'Seguridad con PIN, Pix oficial y licencia verificada',
+  auth_feature_sec_desc:
+    'Conductores y repartidores pasan por validación de documentos antes de conectarse.',
+  auth_footer_platforms: 'Movilidad · Web App, PWA y Android Capacitor',
+  auth_tab_login: 'Iniciar sesión',
+  auth_tab_register: 'Crear cuenta',
+  auth_email_label: 'Correo electrónico',
+  auth_email_placeholder: 'tu@correo.com',
+  auth_password_label: 'Contraseña',
+  auth_password_placeholder: 'Ingresa tu contraseña',
+  auth_show_password: 'Mostrar contraseña',
+  auth_login_btn: 'Ingresar',
+  auth_logging_in: 'Ingresando...',
+  auth_no_account: '¿Aún no tienes cuenta?',
+  auth_create_now: 'Crear cuenta ahora',
+  auth_account_goal_q: '¿Cuál es el objetivo de tu cuenta?',
+  auth_goal_passenger_desc: 'Quiero Viajar / Pedir Entregas (acceso inmediato)',
+  auth_goal_driver_desc: 'Quiero Conducir / Hacer Entregas (revisión)',
+  auth_full_name_label: 'Nombre completo',
+  auth_full_name_placeholder: 'Ej: Lucas Pérez',
+  auth_phone_label: 'Teléfono / WhatsApp',
+  auth_doc_id_label: 'Documento / CPF',
+  auth_password_min_placeholder: 'Mínimo 6 caracteres',
+  auth_driver_docs_title: 'Documentación del Conductor y Vehículo',
+  auth_vehicle_car: 'Auto',
+  auth_vehicle_moto: 'Moto',
+  auth_vehicle_delivery: 'Repartidor',
+  auth_vehicle_model_ph: 'Modelo (Ej: Onix 1.0)',
+  auth_vehicle_plate_ph: 'Placa (ABC-1D23)',
+  auth_vehicle_color_ph: 'Color (Ej: Blanco)',
+  auth_driver_pix_label: 'Tu clave Pix para recibir pagos del Admin',
+  auth_driver_pix_ph: 'CPF, correo, teléfono o clave aleatoria',
+  auth_cnh_photo: 'Foto de Licencia',
+  auth_crlv_doc: 'Documento Vehículo',
+  auth_tap_upload: 'Toca para subir',
+  auth_terms_prefix: 'He leído y acepto los',
+  auth_terms_link: 'Términos de Uso',
+  auth_security_link: 'Política de Seguridad y PIN',
+  auth_privacy_link: 'Política de Privacidad',
+  auth_open_full_terms: 'Abrir documento completo y aceptar',
+  auth_creating_account: 'Creando cuenta...',
+  auth_submit_driver: 'Enviar documentos para revisión',
+  auth_submit_passenger: 'Completar registro y viajar',
+  auth_err_login: 'Error al iniciar sesión.',
+  auth_err_image: 'No se pudo procesar la imagen seleccionada.',
+  auth_err_terms: 'Lee y acepta los Términos de Uso, Seguridad y Privacidad.',
+  auth_err_driver_docs: 'Sube fotos de tu licencia y documento del vehículo.',
+  auth_err_register: 'Error al registrar cuenta.',
+  auth_email_confirm_notice:
+    '¡Registro completado! Confirma el enlace en tu correo e inicia sesión.',
+  checkout_pix_waiting_title: 'Esperando Confirmación Pix (Admin)',
+  checkout_payment_title: 'Verificación de Pago',
+  checkout_pix_confirmed_admin: 'Pix Confirmado por Admin',
+  checkout_payment_success: '¡Pago recibido con éxito!',
+  checkout_waiting_admin_headline: 'Esperando confirmación del Pix por el Administrador',
+  checkout_waiting_admin_desc:
+    'En cuanto el Admin confirme la recepción del Pix, tu panel se desbloquea automáticamente y el saldo se acredita.',
+  checkout_qr_cash_option: 'QR Code Pix Oficial del Admin (si el cliente paga por Pix)',
+  checkout_qr_admin_platform: 'Código QR Pix Oficial (Admin)',
+  checkout_copy_pix: 'Copiar Pix',
+  checkout_copied_pix: 'Copiado',
+  checkout_pix_sent_btn: 'Cliente pagó por QR Pix (Enviar a Admin)',
+  checkout_cash_received_prefix: 'Recibí en Efectivo:',
+  checkout_report_unpaid: 'Problemas al cobrar (Reportar impago)',
+  perm_granted: 'Permitido',
+  perm_denied: 'Bloqueado',
+  perm_pending: 'Pendiente',
+  perm_activate_all: 'Activar Todas Ahora',
+  perm_next: 'Siguiente',
+  perm_finish_enter: 'Finalizar y Entrar',
 };
 
 const DICTIONARIES: Record<string, TranslationKeys> = {
@@ -522,6 +836,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'Chauffeur',
     deliverer_role_badge: 'Livreur',
     passenger_role_badge: 'Passager',
+    auth_hero_title: 'Mobilité rapide pour les passagers, vrais revenus pour les chauffeurs.',
+    auth_hero_subtitle: 'Commandez voiture, moto ou livraison en quelques secondes avec suivi GPS et code PIN à 4 chiffres.',
+    auth_tab_login: 'Se connecter',
+    auth_tab_register: 'Créer un compte',
+    auth_email_label: 'E-mail',
+    auth_password_label: 'Mot de passe',
+    auth_password_placeholder: 'Entrez votre mot de passe',
+    auth_login_btn: 'Connexion',
+    auth_logging_in: 'Connexion...',
+    auth_no_account: 'Pas encore de compte ?',
+    auth_create_now: 'Créer un compte',
+    auth_account_goal_q: 'Quel est le type de votre compte ?',
+    auth_goal_passenger_desc: 'Je veux voyager / commander (accès immédiat)',
+    auth_goal_driver_desc: 'Je veux conduire / livrer (validation documents)',
+    auth_full_name_label: 'Nom complet',
+    auth_phone_label: 'Téléphone / WhatsApp',
+    auth_submit_driver: 'Envoyer pour validation',
+    auth_submit_passenger: 'Terminer et voyager',
+    cookies_notice_title: 'Cookies & Stockage Local',
+    accept_cookies_btn: 'Accepter et Continuer',
+    cookies_essential_btn: 'Essentiels',
+    checkout_payment_success: 'Paiement reçu avec succès !',
   },
   ru: {
     ...EN,
@@ -571,6 +907,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'Водитель',
     deliverer_role_badge: 'Курьер',
     passenger_role_badge: 'Пассажир',
+    auth_hero_title: 'Быстрые поездки для пассажиров и реальный доход для водителей.',
+    auth_hero_subtitle: 'Вызывайте авто, мото или доставку за секунды с GPS-трекингом и защитой PIN-кодом.',
+    auth_tab_login: 'Войти',
+    auth_tab_register: 'Регистрация',
+    auth_email_label: 'Эл. почта',
+    auth_password_label: 'Пароль',
+    auth_password_placeholder: 'Введите пароль',
+    auth_login_btn: 'Войти',
+    auth_logging_in: 'Вход...',
+    auth_no_account: 'Ещё нет аккаунта?',
+    auth_create_now: 'Создать аккаунт',
+    auth_account_goal_q: 'Выберите тип аккаунта',
+    auth_goal_passenger_desc: 'Поездки и заказы (быстрый доступ)',
+    auth_goal_driver_desc: 'Водитель / Курьер (проверка документов)',
+    auth_full_name_label: 'Полное имя',
+    auth_phone_label: 'Телефон / WhatsApp',
+    auth_submit_driver: 'Отправить документы',
+    auth_submit_passenger: 'Завершить регистрацию',
+    cookies_notice_title: 'Файлы cookie и хранилище',
+    accept_cookies_btn: 'Принять и продолжить',
+    cookies_essential_btn: 'Только важные',
+    checkout_payment_success: 'Оплата успешно получена!',
   },
   it: {
     ...EN,
@@ -620,6 +978,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'Autista',
     deliverer_role_badge: 'Corriere',
     passenger_role_badge: 'Passeggero',
+    auth_hero_title: 'Mobilità veloce per passeggeri, guadagni reali per autisti.',
+    auth_hero_subtitle: 'Richiedi auto, moto o consegne in pochi secondi con GPS dal vivo e PIN di sicurezza.',
+    auth_tab_login: 'Accedi',
+    auth_tab_register: 'Registrati',
+    auth_email_label: 'Email',
+    auth_password_label: 'Password',
+    auth_password_placeholder: 'Inserisci password',
+    auth_login_btn: 'Accedi',
+    auth_logging_in: 'Accesso...',
+    auth_no_account: 'Non hai un account?',
+    auth_create_now: 'Crea account ora',
+    auth_account_goal_q: 'Qual è il tuo obiettivo?',
+    auth_goal_passenger_desc: 'Voglio viaggiare / ordinare (accesso immediato)',
+    auth_goal_driver_desc: 'Voglio guidare / consegnare (verifica documenti)',
+    auth_full_name_label: 'Nome completo',
+    auth_phone_label: 'Telefono / WhatsApp',
+    auth_submit_driver: 'Invia documenti',
+    auth_submit_passenger: 'Completa e viaggia',
+    cookies_notice_title: 'Cookie e Archiviazione Locale',
+    accept_cookies_btn: 'Accetta e Continua',
+    cookies_essential_btn: 'Essenziali',
+    checkout_payment_success: 'Pagamento ricevuto con successo!',
   },
   de: {
     ...EN,
@@ -669,6 +1049,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'Fahrer',
     deliverer_role_badge: 'Kurier',
     passenger_role_badge: 'Fahrgast',
+    auth_hero_title: 'Schnelle Mobilität für Fahrgäste, echte Einnahmen für Fahrer.',
+    auth_hero_subtitle: 'Autos, Motorräder oder Lieferungen in Sekunden mit Live-GPS und 4-stelligem PIN.',
+    auth_tab_login: 'Anmelden',
+    auth_tab_register: 'Konto erstellen',
+    auth_email_label: 'E-Mail',
+    auth_password_label: 'Passwort',
+    auth_password_placeholder: 'Passwort eingeben',
+    auth_login_btn: 'Anmelden',
+    auth_logging_in: 'Anmeldung...',
+    auth_no_account: 'Noch kein Konto?',
+    auth_create_now: 'Jetzt registrieren',
+    auth_account_goal_q: 'Was ist das Ziel Ihres Kontos?',
+    auth_goal_passenger_desc: 'Ich möchte mitfahren / bestellen',
+    auth_goal_driver_desc: 'Ich möchte fahren / liefern (Prüfung)',
+    auth_full_name_label: 'Vollständiger Name',
+    auth_phone_label: 'Telefon / WhatsApp',
+    auth_submit_driver: 'Dokumente senden',
+    auth_submit_passenger: 'Registrieren & fahren',
+    cookies_notice_title: 'Cookies & Lokaler Speicher',
+    accept_cookies_btn: 'Akzeptieren & Weiter',
+    cookies_essential_btn: 'Nur notwendige',
+    checkout_payment_success: 'Zahlung erfolgreich erhalten!',
   },
   zh: {
     ...EN,
@@ -718,6 +1120,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: '司机',
     deliverer_role_badge: '骑手',
     passenger_role_badge: '乘客',
+    auth_hero_title: '乘客快速出行，司机真实创收。',
+    auth_hero_subtitle: '实时GPS追踪与4位数安全PIN码，几秒钟内呼叫汽车、摩托或配送。',
+    auth_tab_login: '登录账号',
+    auth_tab_register: '注册账号',
+    auth_email_label: '电子邮箱',
+    auth_password_label: '密码',
+    auth_password_placeholder: '请输入密码',
+    auth_login_btn: '登录',
+    auth_logging_in: '正在登录...',
+    auth_no_account: '还没有账号？',
+    auth_create_now: '立即注册',
+    auth_account_goal_q: '请选择账号类型',
+    auth_goal_passenger_desc: '我要打车 / 下单配送（即时开通）',
+    auth_goal_driver_desc: '我要接单开车 / 配送（需审核）',
+    auth_full_name_label: '姓名',
+    auth_phone_label: '电话 / WhatsApp',
+    auth_submit_driver: '提交资料审核',
+    auth_submit_passenger: '完成注册并出行',
+    cookies_notice_title: 'Cookie 与本地存储',
+    accept_cookies_btn: '同意并继续',
+    cookies_essential_btn: '仅必要',
+    checkout_payment_success: '收款成功！',
   },
   ja: {
     ...EN,
@@ -767,6 +1191,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'ドライバー',
     deliverer_role_badge: '配達員',
     passenger_role_badge: '乗客',
+    auth_hero_title: '乗客には快適な移動を、ドライバーには確かな収入を。',
+    auth_hero_subtitle: 'リアルタイムGPS追跡と4桁PIN認証で車・バイク・配達を数秒で手配。',
+    auth_tab_login: 'ログイン',
+    auth_tab_register: '新規登録',
+    auth_email_label: 'メールアドレス',
+    auth_password_label: 'パスワード',
+    auth_password_placeholder: 'パスワードを入力',
+    auth_login_btn: 'ログイン',
+    auth_logging_in: 'ログイン中...',
+    auth_no_account: 'アカウントをお持ちでないですか？',
+    auth_create_now: '今すぐ登録する',
+    auth_account_goal_q: 'アカウントの種類を選択',
+    auth_goal_passenger_desc: '乗車・配達を依頼する（即時利用）',
+    auth_goal_driver_desc: '運転・配達をする（書類審査あり）',
+    auth_full_name_label: '氏名',
+    auth_phone_label: '電話番号 / WhatsApp',
+    auth_submit_driver: '書類を送信して審査',
+    auth_submit_passenger: '登録して乗車する',
+    cookies_notice_title: 'Cookieとローカルストレージ',
+    accept_cookies_btn: '同意して続行',
+    cookies_essential_btn: '必須のみ',
+    checkout_payment_success: 'お支払いが完了しました！',
   },
   ko: {
     ...EN,
@@ -816,6 +1262,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: '기사',
     deliverer_role_badge: '배달원',
     passenger_role_badge: '승객',
+    auth_hero_title: '승객에게는 빠른 이동을, 기사에게는 확실한 수익을.',
+    auth_hero_subtitle: '실시간 GPS와 4자리 PIN 보안으로 차량, 오토바이, 배달을 몇 초 만에 호출하세요.',
+    auth_tab_login: '로그인',
+    auth_tab_register: '회원가입',
+    auth_email_label: '이메일',
+    auth_password_label: '비밀번호',
+    auth_password_placeholder: '비밀번호 입력',
+    auth_login_btn: '로그인',
+    auth_logging_in: '로그인 중...',
+    auth_no_account: '계정이 없으신가요?',
+    auth_create_now: '지금 가입하기',
+    auth_account_goal_q: '계정 유형을 선택하세요',
+    auth_goal_passenger_desc: '차량 호출 / 배달 이용 (즉시 이용)',
+    auth_goal_driver_desc: '운행 / 배달 파트너 (서류 심사)',
+    auth_full_name_label: '이름',
+    auth_phone_label: '전화번호 / WhatsApp',
+    auth_submit_driver: '심사 서류 제출',
+    auth_submit_passenger: '가입 완료 및 시작',
+    cookies_notice_title: '쿠키 및 로컬 저장소',
+    accept_cookies_btn: '동의 및 계속',
+    cookies_essential_btn: '필수만',
+    checkout_payment_success: '결제가 완료되었습니다!',
   },
   ar: {
     ...EN,
@@ -865,6 +1333,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'سائق',
     deliverer_role_badge: 'مندوب توصيل',
     passenger_role_badge: 'راكب',
+    auth_hero_title: 'تنقّل سريع للركاب وأرباح حقيقية للسائقين.',
+    auth_hero_subtitle: 'اطلب سيارة أو دراجة أو توصيل خلال ثوانٍ مع تتبع GPS مباشر وحماية برمز PIN.',
+    auth_tab_login: 'تسجيل الدخول',
+    auth_tab_register: 'إنشاء حساب',
+    auth_email_label: 'البريد الإلكتروني',
+    auth_password_label: 'كلمة المرور',
+    auth_password_placeholder: 'أدخل كلمة المرور',
+    auth_login_btn: 'دخول',
+    auth_logging_in: 'جارٍ الدخول...',
+    auth_no_account: 'ليس لديك حساب؟',
+    auth_create_now: 'أنشئ حساباً الآن',
+    auth_account_goal_q: 'ما هو نوع حسابك؟',
+    auth_goal_passenger_desc: 'أريد التنقّل أو طلب توصيل (تفعيل فوري)',
+    auth_goal_driver_desc: 'أريد القيادة أو التوصيل (مراجعة المستندات)',
+    auth_full_name_label: 'الاسم الكامل',
+    auth_phone_label: 'الهاتف / واتساب',
+    auth_submit_driver: 'إرسال المستندات للمراجعة',
+    auth_submit_passenger: 'إكمال التسجيل والبدء',
+    cookies_notice_title: 'ملفات تعريف الارتباط والتخزين المحلي',
+    accept_cookies_btn: 'موافقة ومتابعة',
+    cookies_essential_btn: 'الأساسية فقط',
+    checkout_payment_success: 'تم استلام الدفع بنجاح!',
   },
   hi: {
     ...EN,
@@ -914,6 +1404,28 @@ const DICTIONARIES: Record<string, TranslationKeys> = {
     driver_role_badge: 'ड्राइवर',
     deliverer_role_badge: 'डिलीवरी पार्टनर',
     passenger_role_badge: 'यात्री',
+    auth_hero_title: 'यात्रियों के लिए तेज़ सफ़र, ड्राइवरों के लिए असली कमाई।',
+    auth_hero_subtitle: 'लाइव GPS और 4-अंकीय PIN सुरक्षा के साथ सेकंडों में कार, बाइक या डिलीवरी बुक करें।',
+    auth_tab_login: 'साइन इन',
+    auth_tab_register: 'खाता बनाएं',
+    auth_email_label: 'ईमेल',
+    auth_password_label: 'पासवर्ड',
+    auth_password_placeholder: 'अपना पासवर्ड दर्ज करें',
+    auth_login_btn: 'साइन इन करें',
+    auth_logging_in: 'साइन इन हो रहा है...',
+    auth_no_account: 'खाता नहीं है?',
+    auth_create_now: 'अभी खाता बनाएं',
+    auth_account_goal_q: 'आपके खाते का उद्देश्य क्या है?',
+    auth_goal_passenger_desc: 'मैं यात्रा या डिलीवरी बुक करना चाहता हूँ',
+    auth_goal_driver_desc: 'मैं ड्राइव या डिलीवरी करना चाहता हूँ',
+    auth_full_name_label: 'पूरा नाम',
+    auth_phone_label: 'फ़ोन / WhatsApp',
+    auth_submit_driver: 'समीक्षा के लिए दस्तावेज़ भेजें',
+    auth_submit_passenger: 'पंजीकरण पूरा करें और यात्रा करें',
+    cookies_notice_title: 'कुकीज़ और लोकल स्टोरेज',
+    accept_cookies_btn: 'स्वीकार करें और आगे बढ़ें',
+    cookies_essential_btn: 'केवल आवश्यक',
+    checkout_payment_success: 'भुगतान सफलतापूर्वक प्राप्त हुआ!',
   },
 };
 

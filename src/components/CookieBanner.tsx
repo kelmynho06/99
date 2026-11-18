@@ -37,8 +37,7 @@ export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobil
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
               </p>
               <p className="mt-0.5">
-                Usamos cookies essenciais e armazenamento local para manter sua sessão, mapa em tempo
-                real e preferências de idioma, tema e notificações no site e no aplicativo Android.{' '}
+                {t.cookies_notice_body}{' '}
                 <button
                   type="button"
                   onClick={() => setShowDocs(true)}
@@ -59,7 +58,7 @@ export const CookieBanner: React.FC<CookieBannerProps> = ({ siteName = '66 Mobil
               }}
               className="min-h-[40px] rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs font-bold text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700"
             >
-              Essenciais
+              {t.cookies_essential_btn}
             </button>
             <button
               type="button"

@@ -60,6 +60,10 @@ import {
   payCompletedRideWithWallet,
   switchCompletedRidePaymentMethod,
 } from '../lib/mobilityApi';
+import {
+  loadOfflineActiveRideCache,
+  saveOfflineActiveRideCache,
+} from '../lib/offlineNavigation';
 import { playRideAcceptedChime, unlockAudioContext } from '../lib/sound';
 import type {
   GeoPoint,
@@ -483,6 +487,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
     if (stage === 'A' && activeRide.status === 'searching') {
       fetchedRideRouteStageRef.current = `${activeRide.id}:searching`;
+      const cachedSearch = loadOfflineActiveRideCache(activeRide.id, 'searching');
+      if (cachedSearch) {
+        setRouteCoords(cachedSearch.routeCoords);
+        setDistanceKm(cachedSearch.distanceKm);
+        setDurationMin(cachedSearch.durationMin);
+      }
       let cancelled = false;
       fetchRouteGeometry(
         activeRide.origin_lat,
@@ -491,9 +501,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         activeRide.destination_lng
       ).then((res) => {
         if (cancelled) return;
+        if (cachedSearch && cachedSearch.routeCoords.length > 2 && res.coords.length <= 2) return;
         setRouteCoords(res.coords);
         setDistanceKm(res.distanceKm);
         setDurationMin(res.durationMin);
+        saveOfflineActiveRideCache({
+          rideId: activeRide.id,
+          stage: 'searching',
+          routeCoords: res.coords,
+          routeSteps: res.steps,
+          distanceKm: res.distanceKm,
+          durationMin: res.durationMin,
+          updatedAt: Date.now(),
+        });
       });
       return () => {
         cancelled = true;
@@ -510,12 +530,28 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     }
 
     fetchedRideRouteStageRef.current = stageKey;
+    const cachedStage = loadOfflineActiveRideCache(activeRide.id, stage);
+    if (cachedStage) {
+      setRouteCoords(cachedStage.routeCoords);
+      setDistanceKm(cachedStage.distanceKm);
+      setDurationMin(cachedStage.durationMin);
+    }
     let cancelled = false;
     fetchRouteGeometry(startLat, startLng, targetLat, targetLng).then((res) => {
       if (cancelled) return;
+      if (cachedStage && cachedStage.routeCoords.length > 2 && res.coords.length <= 2) return;
       setRouteCoords(res.coords);
       setDistanceKm(res.distanceKm);
       setDurationMin(res.durationMin);
+      saveOfflineActiveRideCache({
+        rideId: activeRide.id,
+        stage,
+        routeCoords: res.coords,
+        routeSteps: res.steps,
+        distanceKm: res.distanceKm,
+        durationMin: res.durationMin,
+        updatedAt: Date.now(),
+      });
     });
     return () => {
       cancelled = true;

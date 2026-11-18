@@ -30,7 +30,16 @@ export function useRealtimeMobility(
 ) {
   const [platformConfig, setPlatformConfig] = useState<PlatformConfig>(DEFAULT_PLATFORM_CONFIG);
   const [platformEvents, setPlatformEvents] = useState<PlatformEvent[]>([]);
-  const [rides, setRides] = useState<Ride[]>([]);
+  const RIDES_CACHE_PREFIX = 'velo99_cached_rides_';
+  const [rides, setRides] = useState<Ride[]>(() => {
+    if (!currentUser?.id) return [];
+    try {
+      const raw = localStorage.getItem(`${RIDES_CACHE_PREFIX}${currentUser.id}`);
+      return raw ? (JSON.parse(raw) as Ride[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [pricing, setPricing] = useState<PricingSetting[]>(DEFAULT_PRICING_LIST);
   const [onlineDrivers, setOnlineDrivers] = useState<UserProfile[]>([]);
   const [messagesByRide, setMessagesByRide] = useState<Record<string, RideMessage[]>>({});
@@ -40,6 +49,15 @@ export function useRealtimeMobility(
 
   const ridesRef = useRef<Ride[]>([]);
   ridesRef.current = rides;
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    try {
+      localStorage.setItem(`${RIDES_CACHE_PREFIX}${currentUser.id}`, JSON.stringify(rides.slice(0, 30)));
+    } catch {
+      // Ignore storage quota restrictions
+    }
+  }, [currentUser?.id, rides]);
 
   useEffect(() => {
     syncPlatformSounds(platformConfig);
@@ -76,6 +94,9 @@ export function useRealtimeMobility(
   }, []);
 
   const refreshAll = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return;
+    }
     try {
       const [cfg, evs, pr, rd, drvs] = await Promise.all([
         fetchPlatformConfig(),
@@ -88,7 +109,9 @@ export function useRealtimeMobility(
       syncPlatformSounds(cfg);
       setPlatformEvents(evs);
       setPricing(pr);
-      if (userRef.current) setRides(rd);
+      if (userRef.current && (rd.length > 0 || navigator.onLine !== false)) {
+        setRides((prev) => (rd.length === 0 && prev.some((r) => ['searching', 'accepted', 'arrived', 'in_progress'].includes(r.status)) && navigator.onLine === false ? prev : rd));
+      }
       setOnlineDrivers(drvs);
     } catch {
       // Ignore transient network hiccup
@@ -437,10 +460,17 @@ export function useRealtimeMobility(
       )
       .subscribe();
 
-    // Gentle mobile-network backup poll every 8s when logged in
+    // Gentle mobile-network backup poll every 8s when logged in & online
     const poll = setInterval(() => {
-      if (active && userRef.current) {
-        fetchEnrichedRides().then((rd) => active && setRides(rd)).catch(() => {});
+      if (active && userRef.current && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+        fetchEnrichedRides()
+          .then((rd) => {
+            if (!active) return;
+            if (rd.length > 0 || navigator.onLine !== false) {
+              setRides(rd);
+            }
+          })
+          .catch(() => {});
         fetchOnlineDriversPublic().then((d) => active && setOnlineDrivers(d)).catch(() => {});
       }
     }, 8000);

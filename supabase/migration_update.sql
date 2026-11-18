@@ -109,23 +109,12 @@ CREATE POLICY "Inserir transações na carteira"
   ON public.wallet_transactions FOR INSERT
   WITH CHECK (user_id = auth.uid() OR public.is_admin());
 
--- 7. Regra automática de Super Admin (driver@admin.com) + criação de perfil via Trigger
-CREATE OR REPLACE FUNCTION public.enforce_super_admin_email()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF LOWER(TRIM(NEW.email)) = 'driver@admin.com' THEN
-    NEW.role := 'admin';
-    NEW.status := 'active';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- 7. Criação segura de perfil via Trigger (sem e-mail de admin hardcoded)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
 
 DROP TRIGGER IF EXISTS trg_enforce_super_admin_email ON public.profiles;
-CREATE TRIGGER trg_enforce_super_admin_email
-  BEFORE INSERT OR UPDATE ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.enforce_super_admin_email();
+DROP FUNCTION IF EXISTS public.enforce_super_admin_email();
 
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
@@ -133,37 +122,32 @@ DECLARE
   v_role TEXT;
   v_status TEXT;
 BEGIN
-  IF LOWER(TRIM(COALESCE(NEW.email, ''))) = 'driver@admin.com' THEN
-    v_role := 'admin';
-    v_status := 'active';
-  ELSE
-    v_role := COALESCE(NULLIF(NEW.raw_user_meta_data->>'role', ''), 'passenger');
-    IF v_role NOT IN ('passenger', 'driver', 'admin') THEN
-      v_role := 'passenger';
-    END IF;
-    v_status := CASE WHEN v_role = 'driver' THEN 'pending' ELSE 'active' END;
+  v_role := COALESCE(NULLIF(NEW.raw_user_meta_data->>'role', ''), 'passenger');
+  IF v_role NOT IN ('passenger', 'driver') THEN
+    v_role := 'passenger';
   END IF;
+  v_status := CASE WHEN v_role = 'driver' THEN 'pending' ELSE 'active' END;
 
   INSERT INTO public.profiles (
-    id, role, status, full_name, phone, email, cpf, preferred_payment
+    id, role, is_admin, status, full_name, phone, email, cpf, preferred_payment
   )
   VALUES (
     NEW.id,
     v_role,
+    FALSE,
     v_status,
     COALESCE(NULLIF(NEW.raw_user_meta_data->>'full_name', ''), split_part(COALESCE(NEW.email, 'Usuário'), '@', 1)),
     COALESCE(NULLIF(NEW.raw_user_meta_data->>'phone', ''), ''),
-    COALESCE(NEW.email, ''),
+    LOWER(COALESCE(NEW.email, '')),
     COALESCE(NULLIF(NEW.raw_user_meta_data->>'cpf', ''), ''),
     'pix'
   )
   ON CONFLICT (id) DO UPDATE SET
-    role = EXCLUDED.role,
     email = EXCLUDED.email;
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created

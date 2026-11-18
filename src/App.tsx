@@ -8,6 +8,7 @@ import { PassengerView } from './components/PassengerView';
 import { PermissionsPromptModal } from './components/PermissionsPromptModal';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { useAppConfig } from './context/AppConfigContext';
+import { useAdminAuth } from './hooks/useAdminAuth';
 import { useRealtimeMobility } from './hooks/useRealtimeMobility';
 import { logAuditEvent } from './lib/audit';
 import { resolveBrandLogo } from './lib/brandAssets';
@@ -15,7 +16,7 @@ import {
   syncNativeFloatingBubbleActiveRide,
   syncNativeFloatingBubbleEnabled,
 } from './lib/floatingBubble';
-import { logoutUser, restoreSessionUser } from './lib/mobilityApi';
+import { logoutUser, restoreSessionUser, updateUserLanguagePref } from './lib/mobilityApi';
 import { useTranslation } from './lib/i18n';
 import {
   checkAndApplyWebAutoUpdate,
@@ -26,6 +27,7 @@ import { unlockAudioContext } from './lib/sound';
 import { supabase } from './lib/supabase';
 import {
   applyThemeToDocument,
+  consumeExplicitLanguageChoice,
   getUserPreferences,
   hasSeenPermissionsPrompt,
   saveUserPreferences,
@@ -110,13 +112,16 @@ export default function App() {
       setCurrentUser(updated);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 
-      if (
-        updated.preferred_language &&
-        syncedLangUserIdRef.current !== updated.id
-      ) {
+      if (syncedLangUserIdRef.current !== updated.id) {
         syncedLangUserIdRef.current = updated.id;
         const localPrefs = getUserPreferences();
-        if (localPrefs.language !== updated.preferred_language) {
+        const choseBeforeLogin = consumeExplicitLanguageChoice();
+        if (choseBeforeLogin && localPrefs.language && localPrefs.language !== updated.preferred_language) {
+          void updateUserLanguagePref(updated.id, localPrefs.language);
+        } else if (
+          updated.preferred_language &&
+          localPrefs.language !== updated.preferred_language
+        ) {
           saveUserPreferences({ language: updated.preferred_language });
         }
       }
@@ -180,6 +185,8 @@ export default function App() {
       authSub.subscription.unsubscribe();
     };
   }, [handleUserUpdated, recordSessionAudit]);
+
+  const { isVerifiedAdmin, verifyingAdmin } = useAdminAuth(currentUser);
 
   const {
     platformConfig,
@@ -297,7 +304,23 @@ export default function App() {
           onAuthenticated={handleAuthenticated}
           platformConfig={effectivePlatformConfig}
         />
-      ) : currentUser.role === 'admin' ? (
+      ) : (currentUser.is_admin || currentUser.role === 'admin') && verifyingAdmin ? (
+        <div
+          className="flex h-screen w-screen items-center justify-center dark:bg-neutral-950"
+          style={{ backgroundColor: effectivePlatformConfig.primary_color || '#FFD100' }}
+        >
+          <div className="text-center px-6">
+            <img
+              src={resolveBrandLogo(effectivePlatformConfig)}
+              alt={effectivePlatformConfig.site_name || '66 Mobilidade'}
+              className="mx-auto h-14 w-14 rounded-2xl object-cover border-2 border-neutral-950 shadow-lg"
+            />
+            <p className="mt-3 text-sm font-extrabold text-neutral-950 dark:text-white">
+              {t.validating_admin}
+            </p>
+          </div>
+        </div>
+      ) : isVerifiedAdmin ? (
         <AdminDashboard
           currentUser={currentUser}
           initialPlatformConfig={effectivePlatformConfig}

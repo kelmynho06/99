@@ -1,9 +1,28 @@
 import type { MapLayerMode, ThemeMode, UserPreferences } from '../types/mobility';
 
 const PREFS_KEY = 'velo99_user_prefs_v1';
+const LANG_EXPLICIT_KEY = 'velo99_lang_explicit_v1';
 const COOKIE_KEY = 'velo99_cookie_consent_v1';
 const PERMS_SEEN_KEY = 'velo99_perms_prompt_seen_v1';
 const PREFS_EVENT = 'velo99:prefs-changed';
+
+export function markExplicitLanguageChoice(): void {
+  try {
+    sessionStorage.setItem(LANG_EXPLICIT_KEY, '1');
+  } catch {
+    // Ignore storage restriction
+  }
+}
+
+export function consumeExplicitLanguageChoice(): boolean {
+  try {
+    const has = sessionStorage.getItem(LANG_EXPLICIT_KEY) === '1';
+    sessionStorage.removeItem(LANG_EXPLICIT_KEY);
+    return has;
+  } catch {
+    return false;
+  }
+}
 
 export const DEFAULT_USER_PREFS: UserPreferences = {
   voice_enabled: true,

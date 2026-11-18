@@ -5,7 +5,6 @@ import {
   Marker,
   Polyline,
   Popup,
-  TileLayer,
   useMap,
   useMapEvents,
 } from 'react-leaflet';
@@ -15,8 +14,14 @@ import {
   Map as MapIcon,
   Minus,
   Plus,
+  WifiOff,
 } from 'lucide-react';
+import { useOnlineStatus } from '../hooks/usePWAInstall';
 import { useTranslation } from '../lib/i18n';
+import {
+  createOfflineCachedTileLayer,
+  prefetchRouteCorridorTiles,
+} from '../lib/offlineNavigation';
 import { getUserPreferences, saveUserPreferences, subscribeUserPreferences } from '../lib/userPrefs';
 import type { GeoPoint, MapLayerMode, UserProfile } from '../types/mobility';
 
@@ -151,6 +156,31 @@ function MapController({
   return null;
 }
 
+function OfflineTileLayerController({
+  routeCoords,
+  isOnline,
+}: {
+  routeCoords?: [number, number][];
+  isOnline: boolean;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    const layer = createOfflineCachedTileLayer();
+    layer.addTo(map);
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (!isOnline || !routeCoords || routeCoords.length < 2) return;
+    void prefetchRouteCorridorTiles(routeCoords, [14, 15, 16]);
+  }, [isOnline, routeCoords]);
+
+  return null;
+}
+
 export const LiveMap: React.FC<LiveMapProps> = ({
   center,
   origin,
@@ -167,6 +197,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   showSpeedometer = false,
 }) => {
   const { t } = useTranslation();
+  const isOnline = useOnlineStatus();
   const [hudCompassEnabled, setHudCompassEnabled] = useState<boolean>(
     () => getUserPreferences().hud_compass_enabled ?? true
   );
@@ -322,13 +353,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           zoomControl={false}
           className="h-full w-full"
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxNativeZoom={19}
-            maxZoom={21}
-            detectRetina={true}
-          />
+          <OfflineTileLayerController routeCoords={routeCoords} isOnline={isOnline} />
 
           <MapController
             center={center}
@@ -499,12 +524,19 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         </div>
       )}
 
-      {/* Subtle Urban Mode Badge Top Left */}
-      {!showSpeedometer && (
-        <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 dark:bg-neutral-900/95 px-2.5 py-1 text-[10px] font-bold text-neutral-700 dark:text-neutral-200 shadow border border-neutral-200 dark:border-neutral-700">
-          <MapIcon className="h-3 w-3 text-blue-600" />
-          <span>{t.urban_mode}</span>
+      {/* Subtle Urban / Offline Mode Badge Top Left */}
+      {!isOnline ? (
+        <div className="pointer-events-none absolute left-3 top-20 z-[450] flex items-center gap-1.5 rounded-full bg-neutral-950/90 px-3 py-1.5 text-[10px] font-extrabold text-[#FFD100] shadow-lg border border-[#FFD100]/40">
+          <WifiOff className="h-3 w-3 shrink-0" />
+          <span>Navegação Offline · Mapa em Cache</span>
         </div>
+      ) : (
+        !showSpeedometer && (
+          <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 dark:bg-neutral-900/95 px-2.5 py-1 text-[10px] font-bold text-neutral-700 dark:text-neutral-200 shadow border border-neutral-200 dark:border-neutral-700">
+            <MapIcon className="h-3 w-3 text-blue-600" />
+            <span>{t.urban_mode}</span>
+          </div>
+        )
       )}
     </div>
   );
