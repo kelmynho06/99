@@ -348,7 +348,7 @@ BEGIN
     v_from,
     -v_amount,
     'transfer_out',
-    COALESCE(NULLIF(TRIM(p_observacao), ''), 'Transferência 66 Pay enviada para ' || v_to_name)
+    'Enviado para ' || v_to_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '')
   );
 
   INSERT INTO public.wallet_transactions (user_id, amount, type, description)
@@ -356,7 +356,7 @@ BEGIN
     v_to,
     v_amount,
     'transfer_in',
-    COALESCE(NULLIF(TRIM(p_observacao), ''), 'Transferência 66 Pay recebida de ' || v_from_name)
+    'Recebido de ' || v_from_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '')
   );
 
   RETURN jsonb_build_object(
@@ -364,6 +364,7 @@ BEGIN
     'amount', v_amount,
     'recipient_id', v_to,
     'recipient_name', v_to_name,
+    'from_name', v_from_name,
     'new_balance', ROUND((v_from_bal - v_amount)::NUMERIC, 2)
   );
 END;
@@ -1053,6 +1054,122 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.wallet_transactions;
   END IF;
 END $$;
+
+-- 6. Cancelamento com tolerância de 20s e taxa dinâmica (R$ 4,00 até 90% da corrida ao motorista)
+CREATE OR REPLACE FUNCTION public.cancel_ride_with_fee(
+  p_ride_id UUID,
+  p_fee_amount NUMERIC DEFAULT 0
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_ride public.rides%ROWTYPE;
+  v_fare NUMERIC(10,2);
+  v_elapsed_sec NUMERIC;
+  v_max_fee NUMERIC(10,2);
+  v_fee NUMERIC(10,2) := 0;
+  v_refund NUMERIC(10,2) := 0;
+  v_pax_bal NUMERIC(10,2) := 0;
+  v_debit_now NUMERIC(10,2) := 0;
+  v_debt_add NUMERIC(10,2) := 0;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Usuário não autenticado.'; END IF;
+
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Corrida não encontrada.'; END IF;
+
+  IF v_ride.passenger_id <> v_uid AND v_ride.driver_id <> v_uid AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão para cancelar esta corrida.';
+  END IF;
+
+  IF v_ride.status = 'cancelled' THEN
+    RETURN jsonb_build_object('ok', TRUE, 'fee', 0, 'refund', 0);
+  END IF;
+
+  IF v_ride.status = 'completed' THEN
+    RAISE EXCEPTION 'Corrida já concluída.';
+  END IF;
+
+  IF v_ride.status = 'in_progress' AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Não é possível cancelar após o embarque iniciado.';
+  END IF;
+
+  v_fare := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, 0)::NUMERIC, 2);
+
+  IF v_uid = v_ride.passenger_id AND v_ride.driver_id IS NOT NULL AND v_ride.accepted_at IS NOT NULL THEN
+    v_elapsed_sec := EXTRACT(EPOCH FROM (NOW() - v_ride.accepted_at));
+    IF v_elapsed_sec > 20 THEN
+      v_max_fee := ROUND((v_fare * 0.90)::NUMERIC, 2);
+      v_fee := LEAST(v_max_fee, GREATEST(LEAST(4.00, v_max_fee), ROUND(COALESCE(p_fee_amount, 4.00)::NUMERIC, 2)));
+    END IF;
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.rides
+  SET status = 'cancelled'
+  WHERE id = p_ride_id;
+
+  IF v_ride.payment_method = 'wallet' AND v_ride.payment_status = 'paid_wallet' THEN
+    v_refund := GREATEST(0, ROUND((v_fare - v_fee)::NUMERIC, 2));
+    IF v_refund > 0 THEN
+      UPDATE public.profiles
+      SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_refund)::NUMERIC, 2), updated_at = NOW()
+      WHERE id = v_ride.passenger_id;
+
+      INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+      VALUES (
+        v_ride.passenger_id,
+        p_ride_id,
+        v_refund,
+        'ride_refund',
+        CASE WHEN v_fee > 0
+          THEN 'Estorno parcial após taxa de cancelamento #' || RIGHT(p_ride_id::TEXT, 4)
+          ELSE 'Estorno automático de corrida cancelada #' || RIGHT(p_ride_id::TEXT, 4)
+        END
+      );
+    END IF;
+  ELSIF v_fee > 0 THEN
+    SELECT COALESCE(wallet_balance, 0) INTO v_pax_bal FROM public.profiles WHERE id = v_ride.passenger_id FOR UPDATE;
+    v_debit_now := LEAST(v_pax_bal, v_fee);
+    v_debt_add := ROUND((v_fee - v_debit_now)::NUMERIC, 2);
+
+    IF v_debit_now > 0 THEN
+      UPDATE public.profiles
+      SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) - v_debit_now)::NUMERIC, 2), updated_at = NOW()
+      WHERE id = v_ride.passenger_id;
+
+      INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+      VALUES (v_ride.passenger_id, p_ride_id, -v_debit_now, 'ride_debit', 'Taxa de cancelamento #' || RIGHT(p_ride_id::TEXT, 4));
+    END IF;
+
+    IF v_debt_add > 0 THEN
+      UPDATE public.profiles
+      SET pending_debt_amount = ROUND((COALESCE(pending_debt_amount, 0) + v_debt_add)::NUMERIC, 2),
+          pending_debt_note = 'Taxa de cancelamento corrida #' || RIGHT(p_ride_id::TEXT, 4),
+          updated_at = NOW()
+      WHERE id = v_ride.passenger_id;
+    END IF;
+  END IF;
+
+  IF v_fee > 0 AND v_ride.driver_id IS NOT NULL THEN
+    UPDATE public.profiles
+    SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_fee)::NUMERIC, 2), updated_at = NOW()
+    WHERE id = v_ride.driver_id;
+
+    INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+    VALUES (
+      v_ride.driver_id,
+      p_ride_id,
+      v_fee,
+      'ride_earning',
+      'Taxa de cancelamento recebida #' || RIGHT(p_ride_id::TEXT, 4)
+    );
+  END IF;
+
+  RETURN jsonb_build_object('ok', TRUE, 'fee', v_fee, 'refund', v_refund);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ============================================================================
 -- GARANTIA DO SUPER ADMINISTRADOR PRINCIPAL (MESMO E-MAIL E MESMA SENHA DO AUTH)

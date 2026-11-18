@@ -66,6 +66,7 @@ import { AvatarImage } from './AvatarImage';
 import { LegalDocsModal } from './LegalDocsModal';
 import { OtaUpdateModal } from './OtaUpdateModal';
 import { PermissionsPromptModal } from './PermissionsPromptModal';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface AccountSettingsModalProps {
   currentUser: UserProfile;
@@ -542,7 +543,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 >
                   <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
                     <Volume2 className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-                    {t.voice_sounds_btn}
+                    Acessibilidade · Voz, Sons & Notificações
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>
@@ -577,6 +578,51 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </button>
               </div>
 
+              {/* Quick Accessibility 1-tap Mute/Unmute */}
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 px-4 py-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {userPrefs.voice_enabled || userPrefs.sounds_enabled ? (
+                    <Volume2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <VolumeX className="h-4 w-4 text-neutral-400 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate">
+                      Acessibilidade Rápida
+                    </p>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                      {userPrefs.voice_enabled || userPrefs.sounds_enabled || userPrefs.notifications_enabled
+                        ? 'Voz, sons e alertas ativos'
+                        : 'Todos os áudios e alertas silenciados'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const anyOn =
+                      userPrefs.voice_enabled ||
+                      userPrefs.sounds_enabled ||
+                      userPrefs.notifications_enabled;
+                    const next = saveUserPreferences({
+                      voice_enabled: !anyOn,
+                      sounds_enabled: !anyOn,
+                      notifications_enabled: !anyOn,
+                    });
+                    setUserPrefs(next);
+                  }}
+                  className={`min-h-[36px] shrink-0 rounded-xl px-3 text-xs font-extrabold transition ${
+                    userPrefs.voice_enabled || userPrefs.sounds_enabled
+                      ? 'bg-neutral-950 text-[#FFD100] dark:bg-neutral-700 dark:text-white'
+                      : 'bg-emerald-600 text-white'
+                  }`}
+                >
+                  {userPrefs.voice_enabled || userPrefs.sounds_enabled
+                    ? 'Silenciar Tudo'
+                    : 'Reativar Tudo'}
+                </button>
+              </div>
+
               {/* App Version & OTA Check Card */}
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 px-4 py-3">
                 <div>
@@ -597,6 +643,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   {checkingOta ? 'Verificando...' : t.check_updates}
                 </button>
               </div>
+
+              {/* Install Android APK & iOS PWA Section */}
+              <PWAInstallButton
+                variant="settings"
+                apkUrl={platformConfig?.ota_apk_url}
+                siteName={platformConfig?.site_name || '66 Mobilidade'}
+              />
             </div>
           )}
 
@@ -963,6 +1016,46 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
           {section === 'prefs' && (
             <div className="space-y-3">
+              {/* Accessibility 1-Tap Master Switch */}
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#FFD100]/40 bg-[#FFD100]/10 p-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
+                    Acessibilidade · Controle Geral
+                  </p>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                    Silencie ou reative guia por voz, toques sonoros e notificações com 1 toque.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const anyOn =
+                      userPrefs.voice_enabled ||
+                      userPrefs.sounds_enabled ||
+                      userPrefs.notifications_enabled;
+                    const next = saveUserPreferences({
+                      voice_enabled: !anyOn,
+                      sounds_enabled: !anyOn,
+                      notifications_enabled: !anyOn,
+                    });
+                    setUserPrefs(next);
+                  }}
+                  className={`min-h-[40px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
+                    userPrefs.voice_enabled ||
+                    userPrefs.sounds_enabled ||
+                    userPrefs.notifications_enabled
+                      ? 'bg-neutral-950 text-[#FFD100]'
+                      : 'bg-emerald-600 text-white'
+                  }`}
+                >
+                  {userPrefs.voice_enabled ||
+                  userPrefs.sounds_enabled ||
+                  userPrefs.notifications_enabled
+                    ? 'Silenciar Tudo'
+                    : 'Reativar Tudo'}
+                </button>
+              </div>
+
               {/* Language Selector Grid */}
               <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 space-y-2.5">
                 <p className="flex items-center gap-2 text-sm font-extrabold text-neutral-950 dark:text-white">

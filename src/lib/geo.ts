@@ -267,6 +267,284 @@ function classifyOverpassType(tags: NonNullable<OverpassElement['tags']>): strin
   return 'Local';
 }
 
+interface LocalGeoIndexItem {
+  name: string;
+  street?: string;
+  hood?: string;
+  city?: string;
+  categoryLabel: string;
+  isPoi: boolean;
+  lat: number;
+  lng: number;
+  searchNorm: string;
+}
+
+const LOCAL_INDEX_STORAGE_PREFIX = 'mobilidade66_geo_idx_v1_';
+const localGeoIndexMap = new Map<string, LocalGeoIndexItem[]>();
+const localGeoIndexInFlight = new Map<string, Promise<LocalGeoIndexItem[]>>();
+
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+
+function normGeoText(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bii\b/g, '2')
+    .replace(/\biii\b/g, '3')
+    .replace(/\biv\b/g, '4')
+    .replace(/\bav\.?\b/g, 'avenida')
+    .replace(/\br\.?\b/g, 'rua')
+    .replace(/\bres\.?\b/g, 'residencial')
+    .replace(/\bjd\.?\b/g, 'jardim')
+    .replace(/\bpq\.?\b/g, 'parque')
+    .replace(/\btv\.?\b/g, 'travessa')
+    .replace(/\bp[cç]\.?\b/g, 'praca')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function queryOverpassJson(
+  overpassQuery: string,
+  signal?: AbortSignal
+): Promise<{ elements?: OverpassElement[] } | null> {
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 5500);
+      const onParentAbort = () => controller.abort();
+      signal?.addEventListener('abort', onParentAbort, { once: true });
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        body: `data=${encodeURIComponent(overpassQuery)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      window.clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onParentAbort);
+      if (res.ok) {
+        return (await res.json()) as { elements?: OverpassElement[] };
+      }
+    } catch {
+      if (signal?.aborted) return null;
+      // Try next Overpass mirror
+    }
+  }
+  return null;
+}
+
+export async function preloadLocalGeoIndex(
+  lat: number,
+  lng: number
+): Promise<void> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  if (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01) return;
+
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  if (localGeoIndexMap.has(key)) return;
+
+  // Hydrate from localStorage immediately if fresh (< 24h)
+  try {
+    const raw = localStorage.getItem(`${LOCAL_INDEX_STORAGE_PREFIX}${key}`);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { ts?: number; items?: LocalGeoIndexItem[] };
+      if (
+        parsed.ts &&
+        Date.now() - parsed.ts < 86_400_000 &&
+        Array.isArray(parsed.items) &&
+        parsed.items.length > 0
+      ) {
+        localGeoIndexMap.set(key, parsed.items);
+        return;
+      }
+    }
+  } catch {
+    // Ignore storage read failure
+  }
+
+  if (localGeoIndexInFlight.has(key)) {
+    await localGeoIndexInFlight.get(key);
+    return;
+  }
+
+  const job = (async (): Promise<LocalGeoIndexItem[]> => {
+    const localCity = await resolveCachedLocalCity(lat, lng).catch(() => '');
+    const overpassQuery = `[out:json][timeout:8];(
+      node(around:8500,${lat},${lng})["name"]["shop"];
+      way(around:8500,${lat},${lng})["name"]["shop"];
+      node(around:8500,${lat},${lng})["name"]["amenity"];
+      way(around:8500,${lat},${lng})["name"]["amenity"];
+      node(around:8500,${lat},${lng})["name"]["place"];
+      way(around:8500,${lat},${lng})["name"]["landuse"="residential"];
+      way(around:8500,${lat},${lng})["name"]["building"~"apartments|residential|commercial|retail|supermarket"];
+      node(around:8500,${lat},${lng})["name"]["leisure"];
+      way(around:8500,${lat},${lng})["name"]["leisure"];
+      way(around:6500,${lat},${lng})["highway"]["name"];
+    );out center 450;`;
+
+    const data = await queryOverpassJson(overpassQuery);
+    if (!data?.elements?.length) return [];
+
+    const dedup = new Set<string>();
+    const items: LocalGeoIndexItem[] = [];
+
+    for (const el of data.elements) {
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      const rawName = el.tags?.name?.trim();
+      if (!rawName || typeof elLat !== 'number' || typeof elLng !== 'number') continue;
+
+      const tags = el.tags || {};
+      const street = tags['addr:street']
+        ? `${tags['addr:street']}${tags['addr:housenumber'] ? `, ${tags['addr:housenumber']}` : ''}`
+        : '';
+      const hood = tags['addr:suburb'] || '';
+      const city = tags['addr:city'] || localCity;
+
+      const dedupeKey = `${rawName.toLowerCase()}|${elLat.toFixed(3)}|${elLng.toFixed(3)}`;
+      if (dedup.has(dedupeKey)) continue;
+      dedup.add(dedupeKey);
+
+      const tagsRec = tags as Record<string, string | undefined>;
+      const isRoad = Boolean(tagsRec.highway && !tags.shop && !tags.amenity && !tags.leisure);
+      const isNeighborhood = Boolean(tagsRec.place || tagsRec.landuse === 'residential');
+      const categoryLabel = isRoad
+        ? 'Rua / Av.'
+        : isNeighborhood
+        ? 'Bairro / Cond.'
+        : classifyOverpassType(tags);
+      const isPoi = !isRoad;
+
+      items.push({
+        name: rawName,
+        street: street || undefined,
+        hood: hood || undefined,
+        city: city || undefined,
+        categoryLabel,
+        isPoi,
+        lat: elLat,
+        lng: elLng,
+        searchNorm: normGeoText([rawName, street, hood, city].filter(Boolean).join(' ')),
+      });
+    }
+
+    if (items.length > 0) {
+      localGeoIndexMap.set(key, items);
+      try {
+        localStorage.setItem(
+          `${LOCAL_INDEX_STORAGE_PREFIX}${key}`,
+          JSON.stringify({ ts: Date.now(), items: items.slice(0, 450) })
+        );
+      } catch {
+        // Ignore storage quota
+      }
+    }
+    return items;
+  })();
+
+  localGeoIndexInFlight.set(key, job);
+  try {
+    await job;
+  } finally {
+    localGeoIndexInFlight.delete(key);
+  }
+}
+
+export function searchLocalGeoIndex(
+  query: string,
+  nearLat?: number,
+  nearLng?: number
+): AddressSuggestion[] {
+  const raw = query.trim();
+  if (!raw) return [];
+
+  const hasLocalCoords =
+    typeof nearLat === 'number' &&
+    typeof nearLng === 'number' &&
+    Number.isFinite(nearLat) &&
+    Number.isFinite(nearLng) &&
+    !(Math.abs(nearLat) < 0.01 && Math.abs(nearLng) < 0.01);
+
+  const { compact, houseNumber } = normalizeSearchQuery(raw);
+  const queryNorm = normGeoText(compact || raw);
+  if (!queryNorm) return [];
+
+  const queryTokens = queryNorm
+    .split(/\s+/)
+    .filter((t) => t.length >= 1 && !['rua', 'avenida', 'bairro', 'de', 'da', 'do'].includes(t));
+
+  const pool: Array<{ item: LocalGeoIndexItem; score: number; distKm: number }> = [];
+
+  for (const list of localGeoIndexMap.values()) {
+    for (const item of list) {
+      const nameNorm = normGeoText(item.name);
+      let score = 0;
+
+      if (queryNorm.length === 1) {
+        const startsName = nameNorm.startsWith(queryNorm);
+        const startsWord = nameNorm.split(' ').some((w) => w.startsWith(queryNorm));
+        if (!startsName && !startsWord) continue;
+        score += startsName ? 55 : 35;
+      } else {
+        if (nameNorm.startsWith(queryNorm)) score += 72;
+        else if (nameNorm.includes(queryNorm)) score += 54;
+        else if (item.searchNorm.includes(queryNorm)) score += 40;
+
+        let matched = 0;
+        for (const tok of queryTokens) {
+          if (item.searchNorm.includes(tok)) {
+            matched += 1;
+            score += nameNorm.includes(tok) ? 20 : 12;
+          }
+        }
+        if (score === 0 && matched === 0) continue;
+        if (queryTokens.length > 0 && matched === queryTokens.length) score += 28;
+      }
+
+      if (item.isPoi) score += 16;
+      const distKm = hasLocalCoords ? haversineKm(nearLat, nearLng, item.lat, item.lng) : 0;
+      score -= Math.min(35, distKm * 1.4);
+
+      pool.push({ item, score, distKm });
+    }
+  }
+
+  pool.sort((a, b) => b.score - a.score || a.distKm - b.distKm);
+
+  const seen = new Set<string>();
+  const out: AddressSuggestion[] = [];
+  for (const { item, distKm } of pool) {
+    const primaryLabel =
+      houseNumber && !item.isPoi && !item.name.includes(houseNumber)
+        ? `${item.name}, ${houseNumber}`
+        : item.name;
+    const fullAddress = [primaryLabel, item.street, item.hood, item.city]
+      .filter(Boolean)
+      .join(' · ');
+    const dedupe = fullAddress.toLowerCase();
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+
+    out.push({
+      address: fullAddress,
+      subtitle: [item.hood, item.city, hasLocalCoords ? `${distKm.toFixed(1)} km` : '']
+        .filter(Boolean)
+        .join(' · '),
+      categoryLabel: item.categoryLabel,
+      lat: item.lat,
+      lng: item.lng,
+    });
+    if (out.length >= 10) break;
+  }
+
+  return out;
+}
+
 const nearbyPlacesCache = new Map<string, AddressSuggestion[]>();
 
 export async function fetchNearbyPopularPlaces(
@@ -279,16 +557,12 @@ export async function fetchNearbyPopularPlaces(
   if (cached) return cached;
 
   try {
+    void preloadLocalGeoIndex(lat, lng);
     const localCity = await resolveCachedLocalCity(lat, lng);
-    const overpassQuery = `[out:json][timeout:6];(node(around:4500,${lat},${lng})[name]["amenity"~"hospital|clinic|pharmacy|school|university|marketplace|bank|bus_station|fuel"];node(around:4500,${lat},${lng})[name]["shop"~"supermarket|mall|bakery|convenience|department_store"];node(around:4500,${lat},${lng})[name]["leisure"~"park|square|garden"];way(around:4500,${lat},${lng})[name]["shop"~"supermarket|mall|department_store"];way(around:4500,${lat},${lng})[name]["leisure"~"park|square"];);out center 18;`;
+    const overpassQuery = `[out:json][timeout:6];(node(around:4500,${lat},${lng})[name]["amenity"~"hospital|clinic|pharmacy|school|university|marketplace|bank|bus_station|fuel"];node(around:4500,${lat},${lng})[name]["shop"~"supermarket|mall|bakery|convenience|department_store"];node(around:4500,${lat},${lng})[name]["leisure"~"park|square|garden"];way(around:4500,${lat},${lng})[name]["shop"~"supermarket|mall|department_store"];way(around:4500,${lat},${lng})[name]["leisure"~"park|square"];);out center 20;`;
 
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: `data=${encodeURIComponent(overpassQuery)}`,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { elements?: OverpassElement[] };
+    const data = await queryOverpassJson(overpassQuery);
+    if (!data) return [];
 
     const seen = new Set<string>();
     const items: Array<{ s: AddressSuggestion; dist: number }> = [];
@@ -340,10 +614,10 @@ export async function searchAddresses(
   signal?: AbortSignal
 ): Promise<AddressSuggestion[]> {
   const raw = query.trim();
-  if (raw.length < 2) return [];
+  if (raw.length < 1) return [];
 
   const { compact, houseNumber } = normalizeSearchQuery(raw);
-  const effectiveQuery = compact.length >= 2 ? compact : raw;
+  const effectiveQuery = compact.length >= 1 ? compact : raw;
 
   const hasLocalCoords =
     typeof nearLat === 'number' &&
@@ -356,11 +630,12 @@ export async function searchAddresses(
   const biasLng = hasLocalCoords ? nearLng : 0;
   const MAX_LOCAL_RADIUS_KM = 95;
 
+  if (hasLocalCoords) {
+    void preloadLocalGeoIndex(biasLat, biasLng);
+  }
+
   const localCity = hasLocalCoords ? await resolveCachedLocalCity(biasLat, biasLng) : '';
-  const queryNorm = effectiveQuery
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  const queryNorm = normGeoText(effectiveQuery);
   const queryTokens = normalizeTokens(effectiveQuery).filter(
     (t) => t !== 'rua' && t !== 'avenida' && t !== 'bairro'
   );
@@ -380,20 +655,21 @@ export async function searchAddresses(
     lat: number,
     lng: number,
     isCommercialPoi: boolean,
-    hasExactNumber: boolean
+    hasExactNumber: boolean,
+    sourceBoost = 0
   ) => {
     const dedupeKey = `${entry.address.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
     if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
 
     const distKm = hasLocalCoords ? haversineKm(biasLat, biasLng, lat, lng) : 0;
-    const haystack = `${entry.address} ${entry.subtitle}`
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+    const primaryNorm = normGeoText(entry.address.split('·')[0] || entry.address);
+    const haystack = normGeoText(`${entry.address} ${entry.subtitle}`);
 
-    let score = 0;
-    if (haystack.includes(queryNorm)) score += 48;
+    let score = sourceBoost;
+    if (primaryNorm.startsWith(queryNorm)) score += 62;
+    else if (haystack.includes(queryNorm)) score += 48;
+
     let matchedTokens = 0;
     for (const tok of queryTokens) {
       if (haystack.includes(tok)) {
@@ -404,16 +680,13 @@ export async function searchAddresses(
     if (queryTokens.length > 0 && matchedTokens === queryTokens.length) {
       score += 28;
     }
-    if (isCommercialPoi) score += 22;
+    if (isCommercialPoi) score += 24;
     if (houseNumber && (hasExactNumber || haystack.includes(houseNumber))) score += 22;
-    if (
-      localCity &&
-      haystack.includes(localCity.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
-    ) {
+    if (localCity && haystack.includes(normGeoText(localCity))) {
       score += 36;
     }
     if (hasLocalCoords) {
-      score -= Math.min(45, distKm * 0.95);
+      score -= Math.min(50, distKm * 1.25);
     }
 
     const ranked: RankedSuggestion = { entry, distKm, score };
@@ -424,17 +697,23 @@ export async function searchAddresses(
     }
   };
 
+  // Seed instantly with local OSM pre-indexed results
+  for (const localMatch of searchLocalGeoIndex(effectiveQuery, nearLat, nearLng)) {
+    const isPoi = !['Rua / Av.', 'Local'].includes(localMatch.categoryLabel);
+    pushCandidate(localMatch, localMatch.lat, localMatch.lng, isPoi, Boolean(houseNumber), 12);
+  }
+
   const runPhoton = async (qText: string, useStrictBbox: boolean) => {
     const params = new URLSearchParams({
       q: qText,
-      limit: '15',
+      limit: '20',
     });
     if (hasLocalCoords) {
       params.set('lat', String(biasLat));
       params.set('lon', String(biasLng));
-      params.set('location_bias_scale', useStrictBbox ? '0.12' : '0.25');
+      params.set('location_bias_scale', useStrictBbox ? '0.08' : '0.22');
       if (useStrictBbox) {
-        const delta = 0.6;
+        const delta = 0.45;
         params.set(
           'bbox',
           `${biasLng - delta},${biasLat - delta},${biasLng + delta},${biasLat + delta}`
@@ -493,13 +772,13 @@ export async function searchAddresses(
       addressdetails: '1',
       namedetails: '1',
       extratags: '1',
-      limit: '12',
+      limit: '15',
       countrycodes: 'br',
       'accept-language': 'pt-BR',
     });
 
     if (hasLocalCoords) {
-      const delta = bounded ? 0.55 : 1.0;
+      const delta = bounded ? 0.38 : 0.9;
       params.set(
         'viewbox',
         `${biasLng - delta},${biasLat + delta},${biasLng + delta},${biasLat - delta}`
@@ -562,20 +841,14 @@ export async function searchAddresses(
       .replace(/[^a-zA-Z0-9À-ÿ\s]/g, ' ')
       .trim()
       .split(/\s+/)
-      .filter((w) => w.length >= 3)
+      .filter((w) => w.length >= 2)
       .slice(0, 3)
       .join('.*');
-    if (!safeToken || safeToken.length < 3) return;
+    if (!safeToken || safeToken.length < 2) return;
 
-    const overpassQuery = `[out:json][timeout:6];(node(around:22000,${biasLat},${biasLng})["name"~"${safeToken}",i];way(around:22000,${biasLat},${biasLng})["name"~"${safeToken}",i];);out center 12;`;
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      signal,
-      body: `data=${encodeURIComponent(overpassQuery)}`,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-    if (!res.ok) return;
-    const data = (await res.json()) as { elements?: OverpassElement[] };
+    const overpassQuery = `[out:json][timeout:6];(node(around:20000,${biasLat},${biasLng})["name"~"${safeToken}",i];way(around:20000,${biasLat},${biasLng})["name"~"${safeToken}",i];);out center 18;`;
+    const data = await queryOverpassJson(overpassQuery, signal);
+    if (!data) return;
 
     for (const el of data.elements || []) {
       const lat = el.lat ?? el.center?.lat;
@@ -603,15 +876,13 @@ export async function searchAddresses(
         lat,
         lng,
         true,
-        Boolean(el.tags?.['addr:housenumber'])
+        Boolean(el.tags?.['addr:housenumber']),
+        10
       );
     }
   };
 
-  const cityNorm = localCity
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  const cityNorm = normGeoText(localCity);
   const includesLocalCity = Boolean(cityNorm && queryNorm.includes(cityNorm));
   const cityBoostQuery =
     localCity && !includesLocalCity ? `${effectiveQuery} ${localCity}` : effectiveQuery;
@@ -621,7 +892,7 @@ export async function searchAddresses(
     runPhoton(cityBoostQuery, false),
   ];
 
-  if (effectiveQuery.length >= 3) {
+  if (effectiveQuery.length >= 2) {
     tasks.push(runNominatim(effectiveQuery, hasLocalCoords));
     if (hasLocalCoords) {
       tasks.push(runOverpassLocalPois(effectiveQuery));
@@ -641,7 +912,7 @@ export async function searchAddresses(
   const finalPool = localPool.length > 0 ? localPool : widePool;
   finalPool.sort((a, b) => b.score - a.score || a.distKm - b.distKm);
 
-  return finalPool.slice(0, 10).map((item) => item.entry);
+  return finalPool.slice(0, 12).map((item) => item.entry);
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

@@ -49,12 +49,15 @@ import {
   fetchRouteGeometry,
   formatBRL,
   haversineKm,
+  preloadLocalGeoIndex,
   reverseGeocode,
   searchAddresses,
+  searchLocalGeoIndex,
 } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
 import {
-  cancelRide,
+  cancelRideWithPolicy,
+  computeCancellationFeeEstimate,
   createRideRequest,
   fetchUserProfileById,
   payCompletedRideWithWallet,
@@ -187,6 +190,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [legalDocsOpen, setLegalDocsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelNowMs, setCancelNowMs] = useState<number>(() => Date.now());
 
   const [chatOpen, setChatOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
@@ -381,6 +387,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     setOrigin({ lat: pos.lat, lng: pos.lng, address: addr });
     setOriginQuery(addr);
     if (w) setWeather(w);
+    void preloadLocalGeoIndex(pos.lat, pos.lng);
     void loadNearbyForCoords(pos.lat, pos.lng);
   }, [loadNearbyForCoords]);
 
@@ -402,24 +409,42 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   useEffect(() => {
     if (!addressScreenOpen || activeSearchField !== 'origin') return;
+    const trimmed = originQuery.trim();
+    if (
+      trimmed.length < 1 ||
+      originQuery === t.current_location ||
+      originQuery === origin.address
+    ) {
+      setOriginSuggestions([]);
+      setSearchingAddress(false);
+      return;
+    }
+
+    const immediateLocal = searchLocalGeoIndex(trimmed, origin.lat, origin.lng);
+    if (immediateLocal.length > 0) {
+      setOriginSuggestions(immediateLocal);
+    }
+
     const controller = new AbortController();
+    setSearchingAddress(true);
     const timer = setTimeout(async () => {
-      if (
-        originQuery.trim().length < 2 ||
-        originQuery === t.current_location ||
-        originQuery === origin.address
-      ) {
-        setOriginSuggestions([]);
-        setSearchingAddress(false);
-        return;
-      }
-      setSearchingAddress(true);
-      const res = await searchAddresses(originQuery, origin.lat, origin.lng, controller.signal);
+      const res = await searchAddresses(trimmed, origin.lat, origin.lng, controller.signal);
       if (!controller.signal.aborted) {
-        setOriginSuggestions(res);
+        const merged = [...immediateLocal];
+        const seenKeys = new Set(
+          merged.map((m) => `${m.address.toLowerCase()}|${m.lat.toFixed(4)}|${m.lng.toFixed(4)}`)
+        );
+        for (const r of res) {
+          const k = `${r.address.toLowerCase()}|${r.lat.toFixed(4)}|${r.lng.toFixed(4)}`;
+          if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            merged.push(r);
+          }
+        }
+        setOriginSuggestions(merged.slice(0, 12));
         setSearchingAddress(false);
       }
-    }, 300);
+    }, 120);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -428,20 +453,38 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   useEffect(() => {
     if (!addressScreenOpen || activeSearchField !== 'destination') return;
+    const trimmed = destQuery.trim();
+    if (trimmed.length < 1 || (destination && destQuery === destination.address)) {
+      setDestSuggestions([]);
+      setSearchingAddress(false);
+      return;
+    }
+
+    const immediateLocal = searchLocalGeoIndex(trimmed, origin.lat, origin.lng);
+    if (immediateLocal.length > 0) {
+      setDestSuggestions(immediateLocal);
+    }
+
     const controller = new AbortController();
+    setSearchingAddress(true);
     const timer = setTimeout(async () => {
-      if (destQuery.trim().length < 2 || (destination && destQuery === destination.address)) {
-        setDestSuggestions([]);
-        setSearchingAddress(false);
-        return;
-      }
-      setSearchingAddress(true);
-      const res = await searchAddresses(destQuery, origin.lat, origin.lng, controller.signal);
+      const res = await searchAddresses(trimmed, origin.lat, origin.lng, controller.signal);
       if (!controller.signal.aborted) {
-        setDestSuggestions(res);
+        const merged = [...immediateLocal];
+        const seenKeys = new Set(
+          merged.map((m) => `${m.address.toLowerCase()}|${m.lat.toFixed(4)}|${m.lng.toFixed(4)}`)
+        );
+        for (const r of res) {
+          const k = `${r.address.toLowerCase()}|${r.lat.toFixed(4)}|${r.lng.toFixed(4)}`;
+          if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            merged.push(r);
+          }
+        }
+        setDestSuggestions(merged.slice(0, 12));
         setSearchingAddress(false);
       }
-    }, 300);
+    }, 120);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -676,23 +719,51 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     }
   };
 
-  const handleCancelRide = async () => {
-    if (!activeRide) return;
+  const executeCancelRide = async () => {
+    if (!activeRide || cancelBusy) return;
+    if (activeRide.status === 'in_progress') {
+      setErrorMsg('Não é possível cancelar após o início do embarque.');
+      return;
+    }
+    setCancelBusy(true);
     try {
-      const updated = await cancelRide(activeRide.id);
+      const drvCoords: [number, number] | null =
+        activeRide.driver?.driver?.current_lat && activeRide.driver?.driver?.current_lng
+          ? [activeRide.driver.driver.current_lat, activeRide.driver.driver.current_lng]
+          : null;
+      const estimate = computeCancellationFeeEstimate(activeRide, drvCoords);
+      const updated = await cancelRideWithPolicy(activeRide, drvCoords);
       if (updated) onRideUpsert(updated);
+      setCancelConfirmOpen(false);
       void logAuditEvent({
         user: currentUser,
         event_type: 'ride_cancelled',
-        description: `Passageiro cancelou solicitação (${CATEGORY_LABELS[activeRide.category]})`,
-        metadata: { ride_id: activeRide.id },
+        description:
+          estimate.feeAmount > 0
+            ? `Passageiro cancelou (${CATEGORY_LABELS[activeRide.category]}) · Taxa ${formatBRL(estimate.feeAmount)} ao motorista`
+            : `Passageiro cancelou solicitação gratuitamente (${CATEGORY_LABELS[activeRide.category]})`,
+        metadata: { ride_id: activeRide.id, fee_amount: estimate.feeAmount },
       });
-      if (activeRide.payment_method === 'wallet') {
-        fetchUserProfileById(currentUser.id).then((u) => u && onUserUpdated(u)).catch(() => {});
-      }
+      fetchUserProfileById(currentUser.id).then((u) => u && onUserUpdated(u)).catch(() => {});
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Erro ao cancelar corrida.');
+    } finally {
+      setCancelBusy(false);
     }
+  };
+
+  const handleCancelRide = async () => {
+    if (!activeRide) return;
+    if (activeRide.status === 'in_progress') {
+      setErrorMsg('Não é possível cancelar depois que a viagem já começou.');
+      return;
+    }
+    if (activeRide.status === 'searching') {
+      await executeCancelRide();
+      return;
+    }
+    setCancelNowMs(Date.now());
+    setCancelConfirmOpen(true);
   };
 
   const handlePayCompletedWithWallet = async (ride: Ride) => {
@@ -775,6 +846,25 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           label: `${activeRide.driver.full_name} · ${activeRide.driver.driver.vehicle_plate}`,
         }
       : null;
+
+  useEffect(() => {
+    if (!activeRide || !['accepted', 'arrived'].includes(activeRide.status)) {
+      setCancelConfirmOpen(false);
+      return;
+    }
+    setCancelNowMs(Date.now());
+    const timer = window.setInterval(() => setCancelNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeRide?.id, activeRide?.status]);
+
+  const cancelEstimate = useMemo(() => {
+    void cancelNowMs;
+    if (!activeRide) return null;
+    const coords: [number, number] | null = activeDriverPos
+      ? [activeDriverPos.lat, activeDriverPos.lng]
+      : null;
+    return computeCancellationFeeEstimate(activeRide, coords);
+  }, [activeRide, activeDriverPos, cancelNowMs]);
 
   useEffect(() => {
     if (!activeDriverPos || !activeRide || activeRide.status === 'searching') {
@@ -918,7 +1008,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 )}
               </button>
             )}
-            <PWAInstallButton />
           </div>
         </div>
 
@@ -1970,9 +2059,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   <button
                     type="button"
                     onClick={handleCancelRide}
-                    className="min-h-[48px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                    className={`min-h-[48px] rounded-2xl border px-3.5 text-xs font-extrabold transition ${
+                      cancelEstimate && !cancelEstimate.isFreeGrace
+                        ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+                        : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+                    }`}
                   >
-                    {t.cancel}
+                    {cancelEstimate?.isFreeGrace
+                      ? `${t.cancel} (${cancelEstimate.remainingFreeSec}s grátis)`
+                      : cancelEstimate
+                      ? `${t.cancel} (${formatBRL(cancelEstimate.feeAmount)})`
+                      : t.cancel}
                   </button>
                 )}
               </div>
@@ -2485,7 +2582,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
 
               <div className="pt-2">
-                <PWAInstallButton variant="menu" />
+                <PWAInstallButton
+                  variant="menu"
+                  apkUrl={platformConfig.ota_apk_url}
+                  siteName={siteName}
+                />
               </div>
             </div>
 
@@ -2749,6 +2850,88 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           }}
           onSkip={() => markRatingHandled(pendingRatingRide.id)}
         />
+      )}
+
+      {cancelConfirmOpen && activeRide && cancelEstimate && activeRide.status !== 'in_progress' && (
+        <div className="fixed inset-0 z-[1250] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
+          <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-4 border border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400">
+                  Política de Cancelamento
+                </p>
+                <h3 className="mt-1 font-display text-lg font-extrabold text-neutral-950 dark:text-white">
+                  {cancelEstimate.isFreeGrace
+                    ? `Cancelar sem custo (${cancelEstimate.remainingFreeSec}s)`
+                    : `Taxa de cancelamento: ${formatBRL(cancelEstimate.feeAmount)}`}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancelConfirmOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div
+              className={`rounded-2xl border p-4 text-xs leading-relaxed ${
+                cancelEstimate.isFreeGrace
+                  ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200'
+                  : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-200'
+              }`}
+            >
+              {cancelEstimate.isFreeGrace ? (
+                <p>
+                  Você ainda está dentro dos <strong>20 segundos gratuitos</strong> após o aceite do
+                  parceiro. Restam <strong className="font-mono-num">{cancelEstimate.remainingFreeSec}s</strong>{' '}
+                  para cancelar sem nenhuma cobrança.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p>{cancelEstimate.reasonLabel}</p>
+                  <p>
+                    Após 20s do aceite, a taxa inicia em <strong>R$ 4,00</strong> e aumenta conforme a
+                    aproximação e o tempo de deslocamento até <strong>90%</strong> da corrida (máx.{' '}
+                    <strong className="font-mono-num">{formatBRL(cancelEstimate.maxFeeCap)}</strong>).
+                  </p>
+                  <p className="font-extrabold">
+                    Valor repassado integralmente ao motorista/entregador:{' '}
+                    <span className="font-mono-num">{formatBRL(cancelEstimate.feeAmount)}</span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                disabled={cancelBusy}
+                onClick={executeCancelRide}
+                className={`min-h-[48px] w-full rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition disabled:opacity-50 ${
+                  cancelEstimate.isFreeGrace
+                    ? 'bg-neutral-950 dark:bg-white text-white dark:text-neutral-950'
+                    : 'bg-red-600 text-white'
+                }`}
+              >
+                {cancelBusy
+                  ? 'Cancelando...'
+                  : cancelEstimate.isFreeGrace
+                  ? 'Confirmar Cancelamento Gratuito'
+                  : `Confirmar Cancelamento (${formatBRL(cancelEstimate.feeAmount)})`}
+              </button>
+              <button
+                type="button"
+                disabled={cancelBusy}
+                onClick={() => setCancelConfirmOpen(false)}
+                className="min-h-[44px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 text-xs font-bold text-neutral-700 dark:text-neutral-300"
+              >
+                Manter Solicitação
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

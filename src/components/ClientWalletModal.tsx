@@ -910,11 +910,12 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 />
               </div>
 
-              <div className="flex items-start gap-2 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 px-3.5 py-2.5 text-[11px] text-amber-950 dark:text-amber-200">
+              <div className="flex items-start gap-2 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 px-3.5 py-2.5 text-[11px] text-amber-950 dark:text-amber-200 leading-relaxed">
                 <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
                 <span>
-                  Após fazer o Pix no app do seu banco, clique abaixo. O Administrador confere o
-                  recebimento e libera o saldo na sua 66 Pay.
+                  Você tem <strong>até 1 dia útil</strong> para receber o seu valor na conta, mas{' '}
+                  <strong>assim que o Administrador confirmar no banco, cai na hora</strong> na sua
+                  carteira 66 Pay.
                 </span>
               </div>
 

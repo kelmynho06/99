@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BellRing, X } from 'lucide-react';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieBanner } from './components/CookieBanner';
@@ -55,9 +56,15 @@ export default function App() {
   );
   const [otaUpdateInfo, setOtaUpdateInfo] = useState<OtaUpdateInfo | null>(null);
   const [dismissedOtaVersion, setDismissedOtaVersion] = useState<string | null>(null);
+  const [walletToast, setWalletToast] = useState<{
+    id: number;
+    title: string;
+    message: string;
+  } | null>(null);
 
   const syncedLangUserIdRef = useRef<string | null>(null);
   const loggedSessionUserIdRef = useRef<string | null>(null);
+  const shownOtaVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
     applyThemeToDocument();
@@ -88,6 +95,28 @@ export default function App() {
     return () => {
       window.removeEventListener('pointerdown', handleUnlock);
       window.removeEventListener('touchstart', handleUnlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    let hideTimer: number | null = null;
+    const handleWalletToast = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ title?: string; message?: string }>).detail;
+      if (!detail?.message) return;
+      setWalletToast({
+        id: Date.now(),
+        title: detail.title || '66 Pay · Transferência',
+        message: detail.message,
+      });
+      if (hideTimer) window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        setWalletToast(null);
+      }, 7500);
+    };
+    window.addEventListener('mobilidade66:wallet-toast', handleWalletToast);
+    return () => {
+      window.removeEventListener('mobilidade66:wallet-toast', handleWalletToast);
+      if (hideTimer) window.clearTimeout(hideTimer);
     };
   }, []);
 
@@ -240,8 +269,11 @@ export default function App() {
       void checkAndApplyWebAutoUpdate();
       checkForOtaUpdate(effectivePlatformConfig)
         .then((info) => {
-          if (info.hasUpdate) {
-            setOtaUpdateInfo(info);
+          if (info.hasUpdate && info.isNativePlatform) {
+            if (shownOtaVersionRef.current !== info.latestVersion) {
+              shownOtaVersionRef.current = info.latestVersion;
+              setOtaUpdateInfo(info);
+            }
           } else {
             setOtaUpdateInfo(null);
           }
@@ -365,10 +397,38 @@ export default function App() {
         />
       )}
 
+      {walletToast && (
+        <div
+          key={walletToast.id}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[calc(100%-24px)] max-w-md rounded-2xl border-2 border-[#FFD100] bg-neutral-950 text-white px-4 py-3 shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-3 duration-200"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950">
+            <BellRing className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[#FFD100]">
+              {walletToast.title}
+            </p>
+            <p className="mt-0.5 text-sm font-bold text-white leading-snug">
+              {walletToast.message}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWalletToast(null)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-neutral-300"
+            aria-label={t.close}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {showOtaModal && otaUpdateInfo && (
         <OtaUpdateModal
           updateInfo={otaUpdateInfo}
           siteName={effectivePlatformConfig.site_name}
+          mandatory={otaUpdateInfo.isNativePlatform}
           onClose={() => setDismissedOtaVersion(otaUpdateInfo.latestVersion)}
         />
       )}

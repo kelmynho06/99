@@ -1,3 +1,4 @@
+import { haversineKm } from './geo';
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
 import type {
   DirectMessage,
@@ -1178,6 +1179,129 @@ export async function cancelRide(rideId: string): Promise<Ride | null> {
   }
 
   return fetchRideByIdEnriched(rideId);
+}
+
+export interface CancellationFeeEstimate {
+  canCancel: boolean;
+  isFreeGrace: boolean;
+  remainingFreeSec: number;
+  elapsedSinceAcceptSec: number;
+  feeAmount: number;
+  maxFeeCap: number;
+  reasonLabel: string;
+}
+
+export function computeCancellationFeeEstimate(
+  ride: Ride,
+  driverCoords?: [number, number] | null
+): CancellationFeeEstimate {
+  if (
+    ride.status === 'in_progress' ||
+    ride.status === 'completed' ||
+    ride.status === 'cancelled'
+  ) {
+    return {
+      canCancel: false,
+      isFreeGrace: false,
+      remainingFreeSec: 0,
+      elapsedSinceAcceptSec: 0,
+      feeAmount: 0,
+      maxFeeCap: 0,
+      reasonLabel:
+        ride.status === 'in_progress'
+          ? 'Não é possível cancelar após o embarque iniciado.'
+          : 'Solicitação já encerrada.',
+    };
+  }
+
+  if (ride.status === 'searching' || !ride.accepted_at) {
+    return {
+      canCancel: true,
+      isFreeGrace: true,
+      remainingFreeSec: 20,
+      elapsedSinceAcceptSec: 0,
+      feeAmount: 0,
+      maxFeeCap: 0,
+      reasonLabel: 'Cancelamento gratuito antes do motorista aceitar.',
+    };
+  }
+
+  const acceptedMs = new Date(ride.accepted_at).getTime();
+  const elapsedSec = Number.isFinite(acceptedMs)
+    ? Math.max(0, Math.floor((Date.now() - acceptedMs) / 1000))
+    : 0;
+
+  if (elapsedSec <= 20) {
+    return {
+      canCancel: true,
+      isFreeGrace: true,
+      remainingFreeSec: 20 - elapsedSec,
+      elapsedSinceAcceptSec: elapsedSec,
+      feeAmount: 0,
+      maxFeeCap: 0,
+      reasonLabel: `Cancelamento gratuito por mais ${20 - elapsedSec}s após o aceite.`,
+    };
+  }
+
+  const fare = Number((ride.final_fare ?? ride.estimated_fare ?? 0).toFixed(2));
+  const cap = Number(Math.max(0, fare * 0.9).toFixed(2));
+  const minBase = Number(Math.min(4.0, cap > 0 ? Math.max(4.0, cap) : 4.0).toFixed(2));
+  const effectiveCap = Number(Math.max(minBase, cap).toFixed(2));
+
+  const extraMinAfterGrace = (elapsedSec - 20) / 60;
+  const timeEscalation = extraMinAfterGrace * 1.25;
+
+  let proximityFactor = ride.status === 'arrived' ? 1.0 : 0;
+  if (
+    ride.status !== 'arrived' &&
+    driverCoords &&
+    Number.isFinite(driverCoords[0]) &&
+    Number.isFinite(driverCoords[1])
+  ) {
+    const distKm = haversineKm(driverCoords[0], driverCoords[1], ride.origin_lat, ride.origin_lng);
+    if (distKm <= 2.5) {
+      proximityFactor = Math.max(0, Math.min(1, (2.5 - distKm) / 2.5));
+    }
+  }
+
+  const proximityEscalation = proximityFactor * Math.max(0, effectiveCap - minBase) * 0.55;
+  const computed = Math.min(effectiveCap, Math.max(minBase, minBase + timeEscalation + proximityEscalation));
+  const feeAmount = Number(computed.toFixed(2));
+
+  return {
+    canCancel: true,
+    isFreeGrace: false,
+    remainingFreeSec: 0,
+    elapsedSinceAcceptSec: elapsedSec,
+    feeAmount,
+    maxFeeCap: effectiveCap,
+    reasonLabel:
+      ride.status === 'arrived'
+        ? 'Parceiro já no embarque · Taxa repassada integralmente ao motorista/entregador.'
+        : 'Prazo gratuito de 20s encerrado · Taxa dinâmica repassada ao motorista/entregador.',
+  };
+}
+
+export async function cancelRideWithPolicy(
+  ride: Ride,
+  driverCoords?: [number, number] | null
+): Promise<Ride | null> {
+  if (ride.status === 'in_progress') {
+    throw new Error('Não é possível cancelar uma corrida ou entrega depois que o embarque já foi iniciado.');
+  }
+
+  const estimate = computeCancellationFeeEstimate(ride, driverCoords);
+  const { error: rpcErr } = await supabase.rpc('cancel_ride_with_fee', {
+    p_ride_id: ride.id,
+    p_fee_amount: estimate.feeAmount,
+  });
+
+  if (!rpcErr) {
+    return fetchRideByIdEnriched(ride.id);
+  }
+
+  // Fallback to legacy cancellation if incremental RPC is not yet installed in Supabase
+  return cancelRide(ride.id);
 }
 
 export async function toggleDriverOnlineStatus(

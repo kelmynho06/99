@@ -7,12 +7,14 @@ import type { OtaUpdateInfo } from '../lib/otaUpdate';
 interface OtaUpdateModalProps {
   updateInfo: OtaUpdateInfo;
   siteName?: string;
+  mandatory?: boolean;
   onClose: () => void;
 }
 
 export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
   updateInfo,
   siteName = '66 Mobilidade',
+  mandatory = false,
   onClose,
 }) => {
   const { t } = useTranslation();
@@ -24,8 +26,13 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
     updateInfo.apkUrl.startsWith('https://') ||
     updateInfo.apkUrl.toLowerCase().includes('.apk');
 
-  const handleDownloadApk = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    const handledNative = await openExternalDownloadUrl(updateInfo.apkUrl);
+  const primarySiteOrApkUrl = (hasWebUpdate ? updateInfo.webUrl : updateInfo.apkUrl) || updateInfo.apkUrl;
+
+  const handleOpenExternalUrl = async (
+    url: string,
+    e: React.MouseEvent<HTMLAnchorElement>
+  ) => {
+    const handledNative = await openExternalDownloadUrl(url);
     if (handledNative) {
       e.preventDefault();
     }
@@ -37,7 +44,10 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
       setApplyingWeb(true);
       try {
         const applied = await applyNativeWebUpdate(updateInfo.webUrl);
-        if (applied) return;
+        if (applied) {
+          onClose();
+          return;
+        }
       } finally {
         setApplyingWeb(false);
       }
@@ -58,23 +68,34 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                 <Sparkles className="h-3 w-3" /> {siteName}
               </span>
               <h3 className="mt-1 font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                {t.ota_new_update}
+                {mandatory ? 'Atualização Obrigatória Disponível' : t.ota_new_update}
               </h3>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
-            aria-label={t.close}
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {!mandatory && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+              aria-label={t.close}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
-          Uma nova versão do <strong>{siteName}</strong> está pronta para você. Atualize para
-          aproveitar as melhorias mais recentes.
+          {mandatory ? (
+            <>
+              Uma nova versão do <strong>{siteName}</strong> foi publicada. Para continuar com segurança
+              e acesso completo, baixe e instale a atualização mais recente pelo nosso site oficial.
+            </>
+          ) : (
+            <>
+              Uma nova versão do <strong>{siteName}</strong> está pronta para você. Atualize para
+              aproveitar as melhorias mais recentes.
+            </>
+          )}
         </p>
 
         <div className="grid grid-cols-2 gap-2.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 p-3.5 border border-neutral-200 dark:border-neutral-700">
@@ -108,50 +129,93 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
         )}
 
         <div className="flex flex-col gap-2 pt-1">
-          {hasWebUpdate && (
-            <button
-              type="button"
-              disabled={applyingWeb}
-              onClick={handleApplyLiveWeb}
-              className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
-            >
-              <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
-              <span>{t.ota_apply_web}</span>
-            </button>
+          {mandatory ? (
+            <>
+              {primarySiteOrApkUrl ? (
+                <a
+                  href={primarySiteOrApkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => handleOpenExternalUrl(primarySiteOrApkUrl, e)}
+                  className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                >
+                  <DownloadCloud className="h-5 w-5" />
+                  <span>Atualizar Agora (Baixar APK no Site)</span>
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled={applyingWeb}
+                  onClick={handleApplyLiveWeb}
+                  className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                >
+                  <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
+                  <span>{t.ota_apply_web}</span>
+                </button>
+              )}
+              {hasWebUpdate && isDirectApk && updateInfo.apkUrl !== updateInfo.webUrl && (
+                <a
+                  href={updateInfo.apkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => handleOpenExternalUrl(updateInfo.apkUrl, e)}
+                  className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-extrabold text-neutral-900 dark:text-white active:scale-[0.98] transition"
+                >
+                  <DownloadCloud className="h-4 w-4" />
+                  <span>Baixar APK Direto (.apk)</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </>
+          ) : (
+            <>
+              {hasWebUpdate && (
+                <button
+                  type="button"
+                  disabled={applyingWeb}
+                  onClick={handleApplyLiveWeb}
+                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                >
+                  <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
+                  <span>{t.ota_apply_web}</span>
+                </button>
+              )}
+              {isDirectApk ? (
+                <a
+                  href={updateInfo.apkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => handleOpenExternalUrl(updateInfo.apkUrl, e)}
+                  className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition ${
+                    hasWebUpdate
+                      ? 'border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white'
+                      : 'bg-[#FFD100] text-neutral-950'
+                  }`}
+                >
+                  <DownloadCloud className="h-5 w-5" />
+                  <span>{t.ota_download_now}</span>
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              ) : !hasWebUpdate ? (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                  <span>{t.ota_apply_web}</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-h-[42px] w-full rounded-xl text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+              >
+                {t.ota_later}
+              </button>
+            </>
           )}
-          {isDirectApk ? (
-            <a
-              href={updateInfo.apkUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={handleDownloadApk}
-              className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition ${
-                hasWebUpdate
-                  ? 'border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white'
-                  : 'bg-[#FFD100] text-neutral-950'
-              }`}
-            >
-              <DownloadCloud className="h-5 w-5" />
-              <span>{t.ota_download_now}</span>
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          ) : !hasWebUpdate ? (
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
-            >
-              <RefreshCw className="h-5 w-5" />
-              <span>{t.ota_apply_web}</span>
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-[42px] w-full rounded-xl text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
-          >
-            {t.ota_later}
-          </button>
         </div>
       </div>
     </div>

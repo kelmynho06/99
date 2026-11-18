@@ -13,6 +13,7 @@ import {
   fetchUserProfileById,
   pushDriverLocation,
 } from '../lib/mobilityApi';
+import { formatBRL } from '../lib/geo';
 import { playSoundCue, speakPtBr, syncPlatformSounds } from '../lib/sound';
 import { supabase } from '../lib/supabase';
 import type {
@@ -202,12 +203,12 @@ export function useRealtimeMobility(
                     void playSoundCue('accepted');
                     speakPtBr(
                       isDelivery
-                        ? `O entregador ${driverFirstName} aceitou seu pedido e está a caminho da coleta.`
-                        : `O motorista ${driverFirstName} aceitou sua corrida e está a caminho.`
+                        ? `O entregador ${driverFirstName} aceitou a sua entrega.`
+                        : `O motorista ${driverFirstName} aceitou a sua corrida.`
                     );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entregador aceitou seu pedido!' : 'Motorista a caminho!',
-                      body: `${enriched.driver?.full_name || 'Parceiro'} está indo até você.`,
+                      body: `${enriched.driver?.full_name || 'Parceiro'} aceitou sua solicitação.`,
                       playSound: false,
                     });
                   } else if (enriched.status === 'arrived') {
@@ -254,12 +255,37 @@ export function useRealtimeMobility(
                     });
                   } else if (enriched.status === 'cancelled') {
                     void playSoundCue('cancel');
+                    speakPtBr(
+                      isDelivery ? 'Sua entrega foi cancelada.' : 'Sua corrida foi cancelada.'
+                    );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entrega cancelada' : 'Corrida cancelada',
                       body: 'A solicitação foi encerrada.',
                       playSound: false,
                     });
                   }
+                }
+
+                // Driver receives immediate alert if passenger cancels before boarding
+                if (
+                  u.role === 'driver' &&
+                  enriched.driver_id === u.id &&
+                  prevStatus !== 'cancelled' &&
+                  enriched.status === 'cancelled'
+                ) {
+                  void playSoundCue('cancel');
+                  const passengerFirstName =
+                    enriched.passenger?.full_name?.split(' ')[0] || 'cliente';
+                  speakPtBr(
+                    isDelivery
+                      ? `O cliente ${passengerFirstName} cancelou a entrega.`
+                      : `O passageiro ${passengerFirstName} cancelou a corrida.`
+                  );
+                  triggerLocalNotification({
+                    title: isDelivery ? 'Entrega cancelada pelo cliente' : 'Corrida cancelada',
+                    body: `${enriched.passenger?.full_name || 'Cliente'} cancelou antes do embarque.`,
+                    playSound: false,
+                  });
                 }
               }
             }
@@ -429,11 +455,63 @@ export function useRealtimeMobility(
         { event: 'INSERT', schema: 'public', table: 'wallet_transactions' },
         async (payload) => {
           if (!active) return;
-          const row = payload.new as { user_id?: string } | undefined;
+          const row = payload.new as {
+            user_id?: string;
+            type?: string;
+            amount?: number;
+            description?: string;
+          } | undefined;
           const u = userRef.current;
           if (u && row?.user_id === u.id) {
             const refreshed = await fetchUserProfileById(u.id);
             if (refreshed && active) onCurrentUserUpdated(refreshed);
+
+            const txType = String(row.type || '');
+            const absAmt = Math.abs(Number(row.amount || 0));
+            const formattedAmt = formatBRL(absAmt);
+            const desc = String(row.description || '');
+
+            if (txType === 'transfer_in' && absAmt > 0) {
+              const senderMatch = desc.match(/(?:Recebido de|Transferência 66 Pay recebida de)\s+([^·]+)/i);
+              const senderName = senderMatch?.[1]?.trim() || 'Um usuário 66 Pay';
+              const msg = `${senderName} enviou uma transferência de ${formattedAmt} para você.`;
+              void playSoundCue('accepted');
+              speakPtBr(
+                `${senderName} enviou uma transferência de ${absAmt.toFixed(2).replace('.', ',')} reais para você.`
+              );
+              triggerLocalNotification({
+                title: 'Transferência 66 Pay Recebida!',
+                body: msg,
+                playSound: false,
+              });
+              window.dispatchEvent(
+                new CustomEvent('mobilidade66:wallet-toast', {
+                  detail: {
+                    title: '66 Pay · Transferência Recebida!',
+                    message: msg,
+                  },
+                })
+              );
+            } else if (txType === 'transfer_out' && absAmt > 0) {
+              const recipientMatch = desc.match(/(?:Enviado para|Transferência 66 Pay enviada para)\s+([^·]+)/i);
+              const recipientName = recipientMatch?.[1]?.trim() || '';
+              const msg = recipientName
+                ? `Você enviou uma transferência de ${formattedAmt} para ${recipientName}.`
+                : `Transferência de ${formattedAmt} enviada com sucesso.`;
+              triggerLocalNotification({
+                title: 'Transferência 66 Pay Enviada!',
+                body: msg,
+                playSound: false,
+              });
+              window.dispatchEvent(
+                new CustomEvent('mobilidade66:wallet-toast', {
+                  detail: {
+                    title: '66 Pay · Transferência Enviada!',
+                    message: msg,
+                  },
+                })
+              );
+            }
           }
         }
       )

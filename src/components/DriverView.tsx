@@ -189,7 +189,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const speedDecayRef = useRef<number | null>(null);
   const fetchedRouteStageRef = useRef<string | null>(null);
   const lastSpokenStepRef = useRef<string>('');
+  const prioritySpeechUntilRef = useRef<number>(0);
+  const spokenMilestonesRef = useRef<Set<string>>(new Set());
+  const autoArrivedRideIdsRef = useRef<Set<string>>(new Set());
   const pinHiddenInputRef = useRef<HTMLInputElement | null>(null);
+
+  const announcePrioritySpeech = useCallback((text: string) => {
+    prioritySpeechUntilRef.current = Date.now() + 8500;
+    speakPtBr(text, true);
+  }, []);
 
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [routeSteps, setRouteSteps] = useState<RouteStep[]>([]);
@@ -863,7 +871,108 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return routeSteps[0];
   }, [routeSteps]);
 
-  // Spoken Portuguese turn-by-turn guidance when navigation step changes
+  // Contextual lifecycle voice assistant: trip start, pickup arrival/PIN, 350m reminder & destination arrival
+  useEffect(() => {
+    if (!activeRide) return;
+    const isDel = isDeliveryCategory(activeRide.category);
+
+    if (activeRide.status === 'in_progress') {
+      const startKey = `${activeRide.id}:in_progress_announced`;
+      if (!spokenMilestonesRef.current.has(startKey)) {
+        spokenMilestonesRef.current.add(startKey);
+        const approxMin = Math.max(
+          2,
+          routeDurationMin || Math.round((activeRide.distance_km || 1) * 2.5)
+        );
+        const kmStr = (routeDistanceKm || activeRide.distance_km || 1)
+          .toFixed(1)
+          .replace('.', ',');
+        announcePrioritySpeech(
+          isDel
+            ? `Iniciando entrega. Seu trajeto é de mais ou menos ${approxMin} minutos e ${kmStr} quilômetros.`
+            : `Iniciando corrida. Seu trajeto é de mais ou menos ${approxMin} minutos e ${kmStr} quilômetros.`
+        );
+      }
+    }
+  }, [activeRide, routeDurationMin, routeDistanceKm, announcePrioritySpeech]);
+
+  useEffect(() => {
+    if (!activeRide) return;
+    const isDel = isDeliveryCategory(activeRide.category);
+
+    if (activeRide.status === 'accepted') {
+      const distPickupKm = haversineKm(
+        driverCoords[0],
+        driverCoords[1],
+        activeRide.origin_lat,
+        activeRide.origin_lng
+      );
+      if (distPickupKm <= 0.06 && !autoArrivedRideIdsRef.current.has(activeRide.id)) {
+        autoArrivedRideIdsRef.current.add(activeRide.id);
+        markRideArrived(activeRide.id)
+          .then((updated) => onRideUpsert(updated))
+          .catch(() => {});
+
+        if (isDel && activeRide.require_pin !== false) {
+          announcePrioritySpeech(
+            'Você chegou ao destino de retirada do pedido. Peça ao remetente o código para confirmar a entrega.'
+          );
+        } else if (!isDel) {
+          announcePrioritySpeech(
+            'Você chegou ao local de embarque. Peça ao passageiro o código PIN para iniciar a corrida.'
+          );
+        } else {
+          announcePrioritySpeech('Você chegou ao local de retirada do pedido.');
+        }
+      }
+      return;
+    }
+
+    if (activeRide.status === 'in_progress') {
+      const distDestKm = haversineKm(
+        driverCoords[0],
+        driverCoords[1],
+        activeRide.destination_lat,
+        activeRide.destination_lng
+      );
+
+      if (
+        distDestKm <= 0.35 &&
+        !spokenMilestonesRef.current.has(`${activeRide.id}:near_dest`)
+      ) {
+        spokenMilestonesRef.current.add(`${activeRide.id}:near_dest`);
+        if (isDel) {
+          announcePrioritySpeech(
+            'Você está quase chegando ao destino da entrega. Prepare o pacote para o destinatário.'
+          );
+        } else if (activeRide.category === 'moto') {
+          announcePrioritySpeech(
+            'Você está quase chegando ao seu destino. Lembre o passageiro de pegar seus objetos pessoais antes de sair da moto.'
+          );
+        } else {
+          announcePrioritySpeech(
+            'Você está quase chegando ao seu destino. Lembre o passageiro de pegar seus objetos pessoais antes de desembarcar do carro.'
+          );
+        }
+      }
+
+      if (
+        distDestKm <= 0.06 &&
+        !spokenMilestonesRef.current.has(`${activeRide.id}:arrived_dest`)
+      ) {
+        spokenMilestonesRef.current.add(`${activeRide.id}:arrived_dest`);
+        if (isDel && activeRide.require_pin !== false) {
+          announcePrioritySpeech(
+            'Você chegou ao seu destino. Peça ao solicitante ou destinatário o código de finalização da entrega.'
+          );
+        } else {
+          announcePrioritySpeech('Você chegou ao seu destino.');
+        }
+      }
+    }
+  }, [activeRide, driverCoords, onRideUpsert, announcePrioritySpeech]);
+
+  // Spoken Portuguese turn-by-turn guidance when navigation step changes (respecting priority milestone window)
   useEffect(() => {
     if (!activeRide || !currentNavStep) {
       if (!activeRide) lastSpokenStepRef.current = '';
@@ -876,7 +985,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
       currentNavStep.distanceMeters >= 1000
         ? `${(currentNavStep.distanceMeters / 1000).toFixed(1).replace('.', ',')} quilômetros`
         : `${Math.max(20, Math.round(currentNavStep.distanceMeters / 10) * 10)} metros`;
-    speakPtBr(`${currentNavStep.instruction} em ${distLabel}.`);
+    const shouldInterrupt = Date.now() > prioritySpeechUntilRef.current;
+    speakPtBr(`${currentNavStep.instruction} em ${distLabel}.`, shouldInterrupt);
   }, [activeRide, currentNavStep]);
 
   const formatTimerClock = (totalSec: number) => {
@@ -2260,7 +2370,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </div>
 
               <div className="pt-2">
-                <PWAInstallButton variant="menu" />
+                <PWAInstallButton
+                  variant="menu"
+                  apkUrl={platformConfig.ota_apk_url}
+                  siteName={platformConfig.site_name || '66 Mobilidade'}
+                />
               </div>
             </div>
 

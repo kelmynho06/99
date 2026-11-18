@@ -206,7 +206,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   </option>
                 ))}
               </select>
-              <PWAInstallButton />
+              <PWAInstallButton
+                variant="compact"
+                apkUrl={platformConfig?.ota_apk_url}
+                siteName={siteName}
+              />
             </div>
           </div>
 

@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Ban,
+  BellRing,
   Bike,
   Car,
   Check,
@@ -34,6 +35,7 @@ import {
   Trash2,
   Users,
   Volume2,
+  VolumeX,
   Wallet,
   X,
 } from 'lucide-react';
@@ -69,8 +71,13 @@ import {
 } from '../lib/mobilityApi';
 import { CURRENT_APP_VERSION } from '../lib/otaUpdate';
 import { isDateInPeriod } from '../lib/periodFilter';
-import { playSoundCue, syncPlatformSounds } from '../lib/sound';
+import { playSoundCue, speakPtBr, stopSpeech, syncPlatformSounds } from '../lib/sound';
 import { supabase } from '../lib/supabase';
+import {
+  getUserPreferences,
+  saveUserPreferences,
+  subscribeUserPreferences,
+} from '../lib/userPrefs';
 import type {
   AuditLogEntry,
   PeriodFilter,
@@ -179,6 +186,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [savingPlatform, setSavingPlatform] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [adminPrefs, setAdminPrefs] = useState(() => getUserPreferences());
+  const [supportAlerts, setSupportAlerts] = useState<
+    Array<{
+      userId: string;
+      senderName: string;
+      senderRole: string;
+      content: string;
+      createdAt: string;
+    }>
+  >([]);
+  const announcedAlertIdsRef = useRef<Set<string>>(new Set());
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -224,7 +242,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, []);
 
   useEffect(() => {
+    return subscribeUserPreferences((prefs) => setAdminPrefs(prefs));
+  }, []);
+
+  useEffect(() => {
     loadOverview();
+
+    // Load recent incoming support messages (last 12 hours) so Admin sees active support alerts
+    const sinceIso = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+    supabase
+      .from('direct_messages')
+      .select('user_id, sender_id, sender_name, sender_role, content, created_at')
+      .neq('sender_role', 'admin')
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const map = new Map<
+          string,
+          {
+            userId: string;
+            senderName: string;
+            senderRole: string;
+            content: string;
+            createdAt: string;
+          }
+        >();
+        for (const row of data) {
+          const uid = String(row.user_id || '');
+          if (!uid || map.has(uid)) continue;
+          map.set(uid, {
+            userId: uid,
+            senderName: String(row.sender_name || 'Usuário'),
+            senderRole: String(row.sender_role || 'passenger'),
+            content: String(row.content || ''),
+            createdAt: String(row.created_at || ''),
+          });
+        }
+        setSupportAlerts(Array.from(map.values()));
+      })
+      .then(undefined, () => undefined);
 
     const channel = supabase
       .channel('admin-live-overview')
@@ -261,6 +319,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { event: '*', schema: 'public', table: 'profiles' },
         () => {
           loadOverview();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'direct_messages' },
+        (payload) => {
+          const m = payload.new as Record<string, unknown> | undefined;
+          if (!m || String(m.sender_role || '') === 'admin') return;
+          const uid = String(m.user_id || '');
+          if (!uid) return;
+          const alertItem = {
+            userId: uid,
+            senderName: String(m.sender_name || 'Usuário'),
+            senderRole: String(m.sender_role || 'passenger'),
+            content: String(m.content || ''),
+            createdAt: String(m.created_at || new Date().toISOString()),
+          };
+          setSupportAlerts((prev) => [
+            alertItem,
+            ...prev.filter((p) => p.userId !== uid),
+          ]);
+          void playSoundCue('chat');
         }
       )
       .subscribe();
@@ -384,6 +464,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     () => withdrawals.filter((w) => w.status !== 'pending').slice(0, 15),
     [withdrawals]
   );
+
+  // Automatic Admin Voice Assistant for newly arrived pending Pix rides, deposits, withdrawals & support calls
+  useEffect(() => {
+    const queueMessages: string[] = [];
+
+    for (const r of awaitingPixRides) {
+      const k = `pix_ride:${r.id}`;
+      if (!announcedAlertIdsRef.current.has(k)) {
+        announcedAlertIdsRef.current.add(k);
+        const drvName = r.driver?.full_name || 'o motorista';
+        const val = Number(r.final_fare ?? r.estimated_fare ?? 0).toFixed(2).replace('.', ',');
+        queueMessages.push(
+          `${drvName} está esperando confirmação Pix da corrida de ${val} reais.`
+        );
+      }
+    }
+
+    for (const dep of pendingDeposits) {
+      const k = `deposit:${dep.id}`;
+      if (!announcedAlertIdsRef.current.has(k)) {
+        announcedAlertIdsRef.current.add(k);
+        const cliName = dep.user?.full_name || 'um cliente';
+        const val = Number(dep.amount || 0).toFixed(2).replace('.', ',');
+        queueMessages.push(
+          `${cliName} está esperando confirmação de depósito Pix no valor de ${val} reais.`
+        );
+      }
+    }
+
+    for (const w of pendingWithdrawals) {
+      const k = `withdraw:${w.id}`;
+      if (!announcedAlertIdsRef.current.has(k)) {
+        announcedAlertIdsRef.current.add(k);
+        const uName = w.user?.full_name || 'um parceiro';
+        const val = Number(w.amount || 0).toFixed(2).replace('.', ',');
+        queueMessages.push(
+          `${uName} solicitou saque Pix de ${val} reais.`
+        );
+      }
+    }
+
+    for (const s of supportAlerts) {
+      const k = `support:${s.userId}:${s.createdAt}`;
+      if (!announcedAlertIdsRef.current.has(k)) {
+        announcedAlertIdsRef.current.add(k);
+        queueMessages.push(`${s.senderName} enviou uma mensagem no suporte.`);
+      }
+    }
+
+    if (queueMessages.length > 0 && adminPrefs.voice_enabled) {
+      void playSoundCue('offer');
+      speakPtBr(queueMessages.slice(0, 3).join(' '), true);
+    }
+  }, [awaitingPixRides, pendingDeposits, pendingWithdrawals, supportAlerts, adminPrefs.voice_enabled]);
+
+  // Gentle periodic voice reminder (~35s) while unresolved Admin alerts remain
+  useEffect(() => {
+    const totalPending =
+      awaitingPixRides.length +
+      pendingDeposits.length +
+      pendingWithdrawals.length +
+      supportAlerts.length;
+    if (totalPending === 0 || !adminPrefs.voice_enabled) return;
+
+    const timer = window.setInterval(() => {
+      const parts: string[] = [];
+      if (awaitingPixRides.length > 0) parts.push(`${awaitingPixRides.length} corrida Pix`);
+      if (pendingDeposits.length > 0) parts.push(`${pendingDeposits.length} depósito`);
+      if (pendingWithdrawals.length > 0) parts.push(`${pendingWithdrawals.length} saque`);
+      if (supportAlerts.length > 0) parts.push(`${supportAlerts.length} chamado de suporte`);
+      if (parts.length > 0) {
+        speakPtBr(`Atenção administrador: ${parts.join(', ')} aguardando confirmação.`, false);
+      }
+    }, 35_000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    awaitingPixRides.length,
+    pendingDeposits.length,
+    pendingWithdrawals.length,
+    supportAlerts.length,
+    adminPrefs.voice_enabled,
+  ]);
 
   const filteredRides = useMemo(() => {
     if (rideFilter === 'active') {
@@ -1104,6 +1267,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              onClick={() => {
+                const nextAllOn = !(adminPrefs.voice_enabled || adminPrefs.sounds_enabled);
+                const next = saveUserPreferences({
+                  voice_enabled: nextAllOn,
+                  sounds_enabled: nextAllOn,
+                  notifications_enabled: nextAllOn,
+                });
+                setAdminPrefs(next);
+                if (!nextAllOn) stopSpeech();
+                else speakPtBr('Voz e sons do administrador ativados.', true);
+              }}
+              className={`flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold transition ${
+                adminPrefs.voice_enabled || adminPrefs.sounds_enabled
+                  ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                  : 'border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'
+              }`}
+              title="Acessibilidade: Silenciar ou Ativar Voz e Sons do Admin"
+            >
+              {adminPrefs.voice_enabled || adminPrefs.sounds_enabled ? (
+                <Volume2 className="h-4 w-4" />
+              ) : (
+                <VolumeX className="h-4 w-4" />
+              )}
+              <span className="hidden md:inline">
+                {adminPrefs.voice_enabled || adminPrefs.sounds_enabled ? 'Voz & Som' : 'Silenciado'}
+              </span>
+            </button>
+            <button
+              type="button"
               disabled={loadingData}
               onClick={loadOverview}
               className="flex min-h-[42px] items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700"
@@ -1189,7 +1381,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               })}
             </nav>
 
-            <div className="border-t border-neutral-200 dark:border-neutral-800 p-3">
+            <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2.5">
+              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-3 space-y-2">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  Acessibilidade (Voz &amp; Alertas)
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = saveUserPreferences({
+                        voice_enabled: !adminPrefs.voice_enabled,
+                      });
+                      setAdminPrefs(next);
+                      if (!next.voice_enabled) stopSpeech();
+                    }}
+                    className={`min-h-[36px] rounded-xl text-[11px] font-extrabold ${
+                      adminPrefs.voice_enabled
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                    }`}
+                  >
+                    {adminPrefs.voice_enabled ? 'Voz: Ligada' : 'Voz: Mudo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = saveUserPreferences({
+                        sounds_enabled: !adminPrefs.sounds_enabled,
+                      });
+                      setAdminPrefs(next);
+                    }}
+                    className={`min-h-[36px] rounded-xl text-[11px] font-extrabold ${
+                      adminPrefs.sounds_enabled
+                        ? 'bg-neutral-950 text-[#FFD100]'
+                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                    }`}
+                  >
+                    {adminPrefs.sounds_enabled ? 'Sons: Ligados' : 'Sons: Mudos'}
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={onLogout}
@@ -1254,53 +1486,117 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {(awaitingPixRides.length > 0 || pendingDeposits.length > 0 || pendingWithdrawals.length > 0) && (
-          <div className="no-print mb-5 rounded-3xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
-                <Clock className="h-5 w-5" />
+        {(awaitingPixRides.length > 0 ||
+          pendingDeposits.length > 0 ||
+          pendingWithdrawals.length > 0 ||
+          supportAlerts.length > 0) && (
+          <div className="no-print mb-5 rounded-3xl border-2 border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/40 p-4 shadow-lg ring-2 ring-amber-400/40 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 animate-pulse shadow">
+                  <BellRing className="h-5 w-5" />
+                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600" />
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                    <span>ATENÇÃO ADMIN · PENDÊNCIAS EM TEMPO REAL</span>
+                  </p>
+                  <p className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                    {awaitingPixRides.length > 0 && `${awaitingPixRides.length} corrida(s) Pix`}
+                    {awaitingPixRides.length > 0 &&
+                      (pendingDeposits.length > 0 ||
+                        pendingWithdrawals.length > 0 ||
+                        supportAlerts.length > 0) &&
+                      ' · '}
+                    {pendingDeposits.length > 0 && `${pendingDeposits.length} depósito(s) 66 Pay`}
+                    {pendingDeposits.length > 0 &&
+                      (pendingWithdrawals.length > 0 || supportAlerts.length > 0) &&
+                      ' · '}
+                    {pendingWithdrawals.length > 0 &&
+                      `${pendingWithdrawals.length} saque(s) Pix`}
+                    {pendingWithdrawals.length > 0 && supportAlerts.length > 0 && ' · '}
+                    {supportAlerts.length > 0 && `${supportAlerts.length} chamado(s) no suporte`}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-extrabold text-amber-950 dark:text-amber-200">
-                  {awaitingPixRides.length > 0 && (
-                    <>
-                      {awaitingPixRides.length}{' '}
-                      {awaitingPixRides.length === 1 ? 'corrida Pix' : 'corridas Pix'}
-                    </>
-                  )}
-                  {awaitingPixRides.length > 0 && (pendingDeposits.length > 0 || pendingWithdrawals.length > 0) && ' · '}
-                  {pendingDeposits.length > 0 && (
-                    <>
-                      {pendingDeposits.length}{' '}
-                      {pendingDeposits.length === 1
-                        ? 'depósito de saldo'
-                        : 'depósitos de saldo'}
-                    </>
-                  )}
-                  {pendingDeposits.length > 0 && pendingWithdrawals.length > 0 && ' · '}
-                  {pendingWithdrawals.length > 0 && (
-                    <>
-                      {pendingWithdrawals.length}{' '}
-                      {pendingWithdrawals.length === 1
-                        ? 'saque Pix solicitado'
-                        : 'saques Pix solicitados'}
-                    </>
-                  )}{' '}
-                  aguardando conferência
-                </p>
-                <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                  Confira seu extrato bancário e confirme depósitos, corridas e saques na aba Pagamentos &amp;
-                  Saldos.
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setTab('payments')}
+                className="min-h-[42px] shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950 shadow-sm"
+              >
+                Conferir &amp; Confirmar
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setTab('payments')}
-              className="min-h-[42px] shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
-            >
-              Conferir &amp; Confirmar
-            </button>
+
+            <div className="flex flex-wrap gap-2">
+              {awaitingPixRides.slice(0, 4).map((r) => (
+                <button
+                  key={`alert-pix-${r.id}`}
+                  type="button"
+                  onClick={() => setTab('payments')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 px-3 py-1.5 text-[11px] font-extrabold text-amber-950 dark:text-amber-100 animate-pulse"
+                >
+                  <QrCode className="h-3.5 w-3.5" />
+                  Pix Corrida · {r.driver?.full_name?.split(' ')[0] || 'Motorista'} ·{' '}
+                  {formatBRL(r.final_fare ?? r.estimated_fare)}
+                </button>
+              ))}
+              {pendingDeposits.slice(0, 4).map((dep) => (
+                <button
+                  key={`alert-dep-${dep.id}`}
+                  type="button"
+                  onClick={() => setTab('payments')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 px-3 py-1.5 text-[11px] font-extrabold text-emerald-950 dark:text-emerald-100 animate-pulse"
+                >
+                  <Wallet className="h-3.5 w-3.5" />
+                  Depósito · {dep.user?.full_name?.split(' ')[0] || 'Cliente'} ·{' '}
+                  {formatBRL(dep.amount)}
+                </button>
+              ))}
+              {pendingWithdrawals.slice(0, 4).map((w) => (
+                <button
+                  key={`alert-wd-${w.id}`}
+                  type="button"
+                  onClick={() => setTab('payments')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-500/20 border border-blue-500/40 px-3 py-1.5 text-[11px] font-extrabold text-blue-950 dark:text-blue-100 animate-pulse"
+                >
+                  <DollarSign className="h-3.5 w-3.5" />
+                  Saque · {w.user?.full_name?.split(' ')[0] || 'Parceiro'} · {formatBRL(w.amount)}
+                </button>
+              ))}
+              {supportAlerts.slice(0, 4).map((s) => (
+                <button
+                  key={`alert-sup-${s.userId}`}
+                  type="button"
+                  onClick={() => {
+                    const matched = users.find((u) => u.id === s.userId);
+                    setChatTargetUser(
+                      matched || {
+                        id: s.userId,
+                        full_name: s.senderName,
+                        role: s.senderRole === 'driver' ? 'driver' : 'passenger',
+                        status: 'active',
+                        phone: '',
+                        email: '',
+                        cpf: '',
+                        rating_avg: 5,
+                        rating_count: 0,
+                        wallet_balance: 0,
+                        created_at: s.createdAt,
+                      }
+                    );
+                    setSupportAlerts((prev) => prev.filter((item) => item.userId !== s.userId));
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-red-600/20 border border-red-500/50 px-3 py-1.5 text-[11px] font-extrabold text-red-950 dark:text-red-100 animate-pulse"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Suporte · {s.senderName.split(' ')[0]}: &ldquo;{s.content.slice(0, 26)}&rdquo;
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

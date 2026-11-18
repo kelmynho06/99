@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import type { PlatformConfig } from '../types/mobility';
-import { applyNativeWebUpdate, getInstalledNativeVersion } from './floatingBubble';
+import { getInstalledNativeVersion } from './floatingBubble';
 
 export const CURRENT_APP_VERSION = '1.2.2';
 const WEB_RELOAD_GUARD_KEY = 'mobilidade66_web_auto_reloaded_v';
@@ -143,28 +143,6 @@ export async function checkForOtaUpdate(
   const hasValidWebLink = webUrl.startsWith('https://') || webUrl.startsWith('http://');
   const hasValidApkLink = apkUrl.startsWith('http://') || apkUrl.startsWith('https://');
   const isNewer = compareSemver(latestVersion, runningVersion) > 0;
-
-  // Auto-apply live WebView update inside APK if newer hosted web URL is configured
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  if (
-    hasValidWebLink &&
-    isNewer &&
-    currentOrigin !== new URL(webUrl).origin
-  ) {
-    const applied = await applyNativeWebUpdate(webUrl);
-    if (applied) {
-      return {
-        currentVersion: runningVersion,
-        latestVersion,
-        hasUpdate: false,
-        apkUrl,
-        webUrl,
-        releaseNotes,
-        publishedAt,
-        isNativePlatform: true,
-      };
-    }
-  }
 
   const hasUpdate = isNewer && (hasValidWebLink || hasValidApkLink);
 
