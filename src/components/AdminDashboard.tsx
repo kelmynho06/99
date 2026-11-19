@@ -3077,17 +3077,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             >
               <div className="flex items-center gap-2 text-neutral-950 font-extrabold text-sm">
                 <Bell className="h-5 w-5 text-amber-600" />
-                <span>Enviar Notificação ao Vivo</span>
+                <span>Disparar Notificação no Celular</span>
               </div>
               <p className="text-xs text-neutral-600">
-                Dispare avisos, comunicados 66pay ou mensagens individuais diretamente para o sino de
-                notificações no site e APK.
+                Envie alertas com título e descrição direto para a barra de notificações do celular e
+                para o sino do aplicativo (APK Android, PWA e Site) em tempo real.
               </p>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Modelos rápidos */}
+              <div className="space-y-1.5">
+                <span className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+                  Modelos Rápidos
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotifCategory('payment');
+                      setNotifTitle('Pendência identificada na conta');
+                      setNotifMessage(
+                        'Verificamos uma pendência financeira em sua conta. Acesse sua carteira 66pay ou entre em contato com o suporte para regularizar.'
+                      );
+                    }}
+                    className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-100"
+                  >
+                    Cobrança / Pendência
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotifCategory('general');
+                      setNotifTitle('Comunicado da Equipe 66 Mobilidade');
+                      setNotifMessage(
+                        'Informamos uma atualização importante no atendimento da sua região. Conte com a nossa equipe!'
+                      );
+                    }}
+                    className="rounded-xl border border-neutral-200 bg-neutral-100 px-2.5 py-1.5 text-[11px] font-bold text-neutral-800 hover:bg-neutral-200"
+                  >
+                    Aviso da Equipe
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotifCategory('wallet');
+                      setNotifTitle('Novidade na Carteira 66pay');
+                      setNotifMessage(
+                        'Seu saldo 66pay permite pagar corridas com QR Code e fazer transferências instantâneas sem sair do app!'
+                      );
+                    }}
+                    className="rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-900 hover:bg-amber-100"
+                  >
+                    Comunicado 66pay
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 mb-1">
-                    Destinatário
+                    Enviar para quem?
                   </label>
                   <select
                     value={notifTargetScope}
@@ -3096,10 +3144,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }
                     className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
                   >
-                    <option value="all">Todos os usuários</option>
-                    <option value="passengers">Apenas Passageiros</option>
-                    <option value="drivers">Apenas Motoristas/Entregadores</option>
-                    <option value="user">Usuário específico</option>
+                    <option value="all">Ambos (Motoristas e Passageiros)</option>
+                    <option value="passengers">Somente Passageiros</option>
+                    <option value="drivers">Somente Motoristas / Entregadores</option>
+                    <option value="user">Usuário específico (1 pessoa)</option>
                   </select>
                 </div>
 
@@ -3115,8 +3163,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
                   >
                     <option value="general">Aviso Geral</option>
+                    <option value="payment">Pagamento / Cobrança</option>
                     <option value="wallet">66pay / Carteira</option>
-                    <option value="payment">Pagamento</option>
                     <option value="coupon">Cupom</option>
                     <option value="event">Evento / Bônus</option>
                   </select>
@@ -3126,7 +3174,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {notifTargetScope === 'user' && (
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 mb-1">
-                    Selecionar Usuário
+                    Selecionar Passageiro ou Motorista
                   </label>
                   <select
                     required
@@ -3148,25 +3196,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Título</label>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Título da Notificação
+                </label>
                 <input
                   type="text"
                   required
                   value={notifTitle}
                   onChange={(e) => setNotifTitle(e.target.value)}
-                  placeholder="Ex: Nova promoção de fim de semana!"
+                  placeholder="Ex: Verificamos uma pendência em sua conta"
                   className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Mensagem</label>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Descrição / Mensagem
+                </label>
                 <textarea
                   rows={3}
                   required
                   value={notifMessage}
                   onChange={(e) => setNotifMessage(e.target.value)}
-                  placeholder="Escreva a mensagem completa que aparecerá na central de notificações..."
+                  placeholder="Escreva a explicação detalhada que chegará no celular do usuário..."
                   className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
                 />
               </div>

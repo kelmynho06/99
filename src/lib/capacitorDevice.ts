@@ -99,9 +99,19 @@ export async function triggerLocalNotification(input: {
 
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
     try {
-      new Notification(title, { body });
+      new Notification(title, { body, icon: '/icon-192.png' });
     } catch {
-      // Ignore if browser blocks Notification constructor in SW-only contexts
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+          .then((reg) =>
+            reg.showNotification(title, {
+              body,
+              icon: '/icon-192.png',
+              badge: '/icon-192.png',
+            })
+          )
+          .catch(() => {});
+      }
     }
   }
 }
