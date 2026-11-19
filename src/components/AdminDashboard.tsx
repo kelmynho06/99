@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   Ban,
+  Bell,
   BellRing,
   Bike,
   Car,
@@ -14,6 +15,7 @@ import {
   DownloadCloud,
   Eye,
   FileText,
+  Gift,
   Image as ImageIcon,
   LogOut,
   MapPin,
@@ -48,16 +50,23 @@ import {
   adminApproveWalletDeposit,
   adminAssignClientDebt,
   adminConfirmPixRide,
+  adminCreateCoupon,
   adminCreatePlatformEvent,
+  adminDeleteCoupon,
   adminDeletePlatformEvent,
   adminDeleteUserAccount,
+  adminFetchCouponsOverview,
+  adminFetchSentNotifications,
+  adminGrantCouponToUsers,
   adminPayDriverPix,
   adminProcessWalletWithdrawal,
   adminRejectWalletDeposit,
   adminReviewDriver,
   adminSavePlatformConfig,
   adminSavePricing,
+  adminSendNotification,
   adminSettleDispute,
+  adminToggleCoupon,
   adminTogglePlatformEvent,
   adminUpdateUserStatus,
   adminUpdateUserWalletBalance,
@@ -79,12 +88,17 @@ import {
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
+  AppNotification,
   AuditLogEntry,
+  Coupon,
+  NotificationCategory,
+  NotificationTargetScope,
   PeriodFilter,
   PlatformConfig,
   PlatformEvent,
   PricingSetting,
   Ride,
+  UserCoupon,
   UserProfile,
   WalletDeposit,
   WalletTransaction,
@@ -112,6 +126,8 @@ type AdminTab =
   | 'rides'
   | 'payments'
   | 'events'
+  | 'notifications'
+  | 'coupons'
   | 'pricing'
   | 'audit'
   | 'infra';
@@ -180,7 +196,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [eventDesc, setEventDesc] = useState('');
   const [eventBonus, setEventBonus] = useState('15.00');
   const [eventTargetRole, setEventTargetRole] = useState<PlatformEvent['target_role']>('all');
+  const [notifyDriversOnEventCreate, setNotifyDriversOnEventCreate] = useState(true);
+  const [notifyingEventId, setNotifyingEventId] = useState<string | null>(null);
   const [savingEvent, setSavingEvent] = useState(false);
+
+  const [sentNotifications, setSentNotifications] = useState<AppNotification[]>([]);
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifCategory, setNotifCategory] = useState<NotificationCategory>('general');
+  const [notifTargetScope, setNotifTargetScope] = useState<NotificationTargetScope>('all');
+  const [notifTargetUserId, setNotifTargetUserId] = useState('');
+  const [sendingNotif, setSendingNotif] = useState(false);
+
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponGrants, setCouponGrants] = useState<UserCoupon[]>([]);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponTitle, setCouponTitle] = useState('');
+  const [couponDesc, setCouponDesc] = useState('');
+  const [couponType, setCouponType] = useState<'percent' | 'fixed'>('percent');
+  const [couponValue, setCouponValue] = useState('15');
+  const [couponMaxDiscount, setCouponMaxDiscount] = useState('15.00');
+  const [couponMinFare, setCouponMinFare] = useState('0');
+  const [savingCoupon, setSavingCoupon] = useState(false);
+  const [couponGrantUserId, setCouponGrantUserId] = useState('');
+  const [couponGrantWithNotif, setCouponGrantWithNotif] = useState(true);
+  const [grantingCouponId, setGrantingCouponId] = useState<string | null>(null);
 
   const [savingPricing, setSavingPricing] = useState(false);
   const [savingPlatform, setSavingPlatform] = useState(false);
@@ -206,10 +246,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const loadOverview = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [data, events, logs] = await Promise.all([
+      const [data, events, logs, notifs, couponsRes] = await Promise.all([
         fetchAdminOverview(),
         fetchPlatformEvents(),
         fetchAuditLogsFromSupabase(300).catch(() => []),
+        adminFetchSentNotifications().catch(() => []),
+        adminFetchCouponsOverview().catch(() => ({ coupons: [], grants: [] })),
       ]);
       setPlatformConfig(data.platformConfig);
       syncPlatformSounds(data.platformConfig);
@@ -221,6 +263,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setWithdrawals(data.withdrawals || []);
       setPlatformEvents(events);
       setAuditLogs(logs);
+      setSentNotifications(notifs);
+      setCoupons(couponsRes.coupons);
+      setCouponGrants(couponsRes.grants);
 
       const firstOnlineWithGps = data.users.find(
         (u) => u.role === 'driver' && u.driver?.is_online && u.driver.current_lat && u.driver.current_lng
@@ -909,17 +954,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!eventTitle.trim() || !eventDesc.trim()) return;
     setSavingEvent(true);
     try {
+      const titleSnap = eventTitle.trim();
+      const descSnap = eventDesc.trim();
+      const bonusNum = parseFloat(eventBonus.replace(',', '.')) || 0;
       await adminCreatePlatformEvent({
-        title: eventTitle,
-        description: eventDesc,
-        bonus_amount: parseFloat(eventBonus.replace(',', '.')) || 0,
+        title: titleSnap,
+        description: descSnap,
+        bonus_amount: bonusNum,
         target_role: eventTargetRole,
       });
+      if (notifyDriversOnEventCreate) {
+        await adminSendNotification({
+          title: `Novo Evento: ${titleSnap}`,
+          message:
+            bonusNum > 0
+              ? `${descSnap} (Bônus: +${formatBRL(bonusNum)})`
+              : descSnap,
+          category: 'event',
+          target_scope: 'drivers',
+          action_tab: 'events',
+          created_by: currentUser.id,
+        }).catch(() => undefined);
+      }
       setEventTitle('');
       setEventDesc('');
       setEventBonus('15.00');
       await loadOverview();
-      showToast('Evento / Campanha publicado para os parceiros!');
+      showToast(
+        notifyDriversOnEventCreate
+          ? 'Evento publicado e motoristas/entregadores notificados!'
+          : 'Evento / Campanha publicado para os parceiros!'
+      );
     } catch (err) {
       showToast(
         err instanceof Error
@@ -928,6 +993,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
     } finally {
       setSavingEvent(false);
+    }
+  };
+
+  const handleNotifyDriversForEvent = async (ev: PlatformEvent) => {
+    setNotifyingEventId(ev.id);
+    try {
+      await adminSendNotification({
+        title: `Evento Ativo: ${ev.title}`,
+        message:
+          ev.bonus_amount > 0
+            ? `${ev.description} (Bônus: +${formatBRL(ev.bonus_amount)})`
+            : ev.description,
+        category: 'event',
+        target_scope: 'drivers',
+        action_tab: 'events',
+        created_by: currentUser.id,
+      });
+      await loadOverview();
+      showToast('Notificação enviada apenas aos motoristas e entregadores!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao notificar motoristas.');
+    } finally {
+      setNotifyingEventId(null);
     }
   };
 
@@ -948,6 +1036,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showToast('Evento removido.');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao remover evento.');
+    }
+  };
+
+  const handleSendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle.trim() || !notifMessage.trim()) return;
+    if (notifTargetScope === 'user' && !notifTargetUserId) {
+      showToast('Selecione o usuário de destino.');
+      return;
+    }
+    setSendingNotif(true);
+    try {
+      await adminSendNotification({
+        title: notifTitle,
+        message: notifMessage,
+        category: notifCategory,
+        target_scope: notifTargetScope,
+        target_user_id: notifTargetScope === 'user' ? notifTargetUserId : null,
+        created_by: currentUser.id,
+      });
+      setNotifTitle('');
+      setNotifMessage('');
+      await loadOverview();
+      showToast('Notificação enviada em tempo real!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao enviar notificação.');
+    } finally {
+      setSendingNotif(false);
+    }
+  };
+
+  const handleCreateCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!couponCode.trim() || !couponTitle.trim()) return;
+    setSavingCoupon(true);
+    try {
+      await adminCreateCoupon({
+        code: couponCode,
+        title: couponTitle,
+        description: couponDesc || `Desconto promocional ${couponCode.toUpperCase()}`,
+        discount_type: couponType,
+        discount_value: parseFloat(couponValue.replace(',', '.')) || 0,
+        max_discount: parseFloat(couponMaxDiscount.replace(',', '.')) || null,
+        min_ride_fare: parseFloat(couponMinFare.replace(',', '.')) || 0,
+      });
+      setCouponCode('');
+      setCouponTitle('');
+      setCouponDesc('');
+      await loadOverview();
+      showToast('Cupom criado! Agora você pode liberá-lo aos passageiros.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao criar cupom.');
+    } finally {
+      setSavingCoupon(false);
+    }
+  };
+
+  const handleToggleCoupon = async (coupon: Coupon) => {
+    try {
+      await adminToggleCoupon(coupon.id, !coupon.active);
+      await loadOverview();
+      showToast(coupon.active ? 'Cupom pausado.' : 'Cupom reativado!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar cupom.');
+    }
+  };
+
+  const handleDeleteCoupon = async (couponId: string) => {
+    try {
+      await adminDeleteCoupon(couponId);
+      await loadOverview();
+      showToast('Cupom excluído.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao excluir cupom.');
+    }
+  };
+
+  const handleGrantCoupon = async (couponId: string, targetUserId: string | null) => {
+    if (targetUserId === '') {
+      showToast('Selecione um passageiro para liberar este cupom.');
+      return;
+    }
+    setGrantingCouponId(couponId);
+    try {
+      const count = await adminGrantCouponToUsers(couponId, targetUserId, couponGrantWithNotif);
+      await loadOverview();
+      showToast(
+        targetUserId
+          ? `Cupom liberado para o passageiro selecionado!`
+          : `Cupom liberado para ${count} passageiro(s)!`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao liberar cupom.');
+    } finally {
+      setGrantingCouponId(null);
     }
   };
 
@@ -1211,6 +1394,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       id: 'events',
       label: `Eventos Motoboys (${platformEvents.filter((e) => e.active).length})`,
       icon: Sparkles,
+    },
+    {
+      id: 'notifications',
+      label: `Notificações (${sentNotifications.length})`,
+      icon: Bell,
+    },
+    {
+      id: 'coupons',
+      label: `Cupons (${coupons.filter((c) => c.active).length})`,
+      icon: Gift,
     },
     {
       id: 'pricing',
@@ -2772,6 +2965,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
+              <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyDriversOnEventCreate}
+                  onChange={(e) => setNotifyDriversOnEventCreate(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-neutral-950"
+                />
+                <div className="text-xs">
+                  <span className="font-extrabold text-neutral-950 block">
+                    Notificar motoristas e entregadores
+                  </span>
+                  <span className="text-[11px] text-neutral-600">
+                    Envia push/alerta na central apenas para motoristas e motoboys (passageiros nunca
+                    recebem alertas de eventos).
+                  </span>
+                </div>
+              </label>
+
               <button
                 type="submit"
                 disabled={savingEvent}
@@ -2817,7 +3028,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                         <p className="text-xs text-neutral-600">{ev.description}</p>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          disabled={notifyingEventId === ev.id}
+                          onClick={() => handleNotifyDriversForEvent(ev)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100"
+                          title="Enviar notificação apenas para motoristas/entregadores"
+                        >
+                          <Bell className="h-3.5 w-3.5" />
+                          {notifyingEventId === ev.id ? '...' : 'Notificar Motoristas'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleToggleEvent(ev)}
@@ -2841,6 +3062,455 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* TAB 5C: CENTRAL DE NOTIFICAÇÕES */}
+        {tab === 'notifications' && (
+          <section className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <form
+              onSubmit={handleSendNotification}
+              className="lg:col-span-5 rounded-3xl border border-neutral-200 bg-white p-5 space-y-4 h-fit"
+            >
+              <div className="flex items-center gap-2 text-neutral-950 font-extrabold text-sm">
+                <Bell className="h-5 w-5 text-amber-600" />
+                <span>Enviar Notificação ao Vivo</span>
+              </div>
+              <p className="text-xs text-neutral-600">
+                Dispare avisos, comunicados 66pay ou mensagens individuais diretamente para o sino de
+                notificações no site e APK.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Destinatário
+                  </label>
+                  <select
+                    value={notifTargetScope}
+                    onChange={(e) =>
+                      setNotifTargetScope(e.target.value as NotificationTargetScope)
+                    }
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
+                  >
+                    <option value="all">Todos os usuários</option>
+                    <option value="passengers">Apenas Passageiros</option>
+                    <option value="drivers">Apenas Motoristas/Entregadores</option>
+                    <option value="user">Usuário específico</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Categoria
+                  </label>
+                  <select
+                    value={notifCategory}
+                    onChange={(e) =>
+                      setNotifCategory(e.target.value as NotificationCategory)
+                    }
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
+                  >
+                    <option value="general">Aviso Geral</option>
+                    <option value="wallet">66pay / Carteira</option>
+                    <option value="payment">Pagamento</option>
+                    <option value="coupon">Cupom</option>
+                    <option value="event">Evento / Bônus</option>
+                  </select>
+                </div>
+              </div>
+
+              {notifTargetScope === 'user' && (
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Selecionar Usuário
+                  </label>
+                  <select
+                    required
+                    value={notifTargetUserId}
+                    onChange={(e) => setNotifTargetUserId(e.target.value)}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
+                  >
+                    <option value="">Escolha um usuário...</option>
+                    {users
+                      .filter((u) => u.role !== 'admin')
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.full_name} ({u.role === 'driver' ? 'Motorista' : 'Passageiro'}) ·{' '}
+                          {u.email}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">Título</label>
+                <input
+                  type="text"
+                  required
+                  value={notifTitle}
+                  onChange={(e) => setNotifTitle(e.target.value)}
+                  placeholder="Ex: Nova promoção de fim de semana!"
+                  className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">Mensagem</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={notifMessage}
+                  onChange={(e) => setNotifMessage(e.target.value)}
+                  placeholder="Escreva a mensagem completa que aparecerá na central de notificações..."
+                  className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-neutral-950"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={sendingNotif}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+              >
+                <Bell className="h-4 w-4" />
+                {sendingNotif ? 'Enviando...' : 'Enviar Notificação'}
+              </button>
+            </form>
+
+            <div className="lg:col-span-7 space-y-3">
+              <h2 className="font-display text-xl font-extrabold text-neutral-950">
+                Histórico de Notificações Enviadas ({sentNotifications.length})
+              </h2>
+              {sentNotifications.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
+                  Nenhuma notificação enviada ainda.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[620px] overflow-y-auto pr-1">
+                  {sentNotifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className="rounded-2xl border border-neutral-200 bg-white p-4 space-y-1.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="rounded-lg bg-neutral-950 px-2 py-0.5 text-[10px] font-extrabold text-[#FFD100] uppercase">
+                            {n.category}
+                          </span>
+                          <span className="rounded-lg bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
+                            {n.target_scope === 'all'
+                              ? 'Todos'
+                              : n.target_scope === 'passengers'
+                              ? 'Passageiros'
+                              : n.target_scope === 'drivers'
+                              ? 'Motoristas/Entregadores'
+                              : 'Usuário específico'}
+                          </span>
+                        </div>
+                        <span className="font-mono-num text-[11px] text-neutral-400">
+                          {new Date(n.created_at).toLocaleString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-extrabold text-neutral-950">{n.title}</h3>
+                      <p className="text-xs text-neutral-600">{n.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* TAB 5D: CUPONS DE DESCONTO */}
+        {tab === 'coupons' && (
+          <section className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <form
+              onSubmit={handleCreateCoupon}
+              className="lg:col-span-5 rounded-3xl border border-neutral-200 bg-white p-5 space-y-4 h-fit"
+            >
+              <div className="flex items-center gap-2 text-neutral-950 font-extrabold text-sm">
+                <Gift className="h-5 w-5 text-emerald-600" />
+                <span>Criar Cupom de Desconto</span>
+              </div>
+              <p className="text-xs text-neutral-600">
+                Passageiros só veem a opção de cupom no pedido quando possuem um cupom liberado para
+                eles pelo Admin.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Código (ex: MEIA20)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    placeholder="MEIA15"
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-extrabold uppercase outline-none focus:border-neutral-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">
+                    Tipo de Desconto
+                  </label>
+                  <select
+                    value={couponType}
+                    onChange={(e) => setCouponType(e.target.value as 'percent' | 'fixed')}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold outline-none focus:border-neutral-950"
+                  >
+                    <option value="percent">Percentual (%)</option>
+                    <option value="fixed">Valor Fixo (R$)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Título do Cupom
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={couponTitle}
+                  onChange={(e) => setCouponTitle(e.target.value)}
+                  placeholder="Ex: 15% OFF na sua corrida"
+                  className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm font-semibold outline-none focus:border-neutral-950"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">Descrição</label>
+                <input
+                  type="text"
+                  value={couponDesc}
+                  onChange={(e) => setCouponDesc(e.target.value)}
+                  placeholder="Ex: Válido para corridas urbanas em toda a cidade"
+                  className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-950"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                    {couponType === 'percent' ? 'Desconto (%)' : 'Desconto (R$)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    required
+                    value={couponValue}
+                    onChange={(e) => setCouponValue(e.target.value)}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                    Teto Máx (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={couponMaxDiscount}
+                    onChange={(e) => setCouponMaxDiscount(e.target.value)}
+                    placeholder="Opcional"
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                    Pedido Mín (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={couponMinFare}
+                    onChange={(e) => setCouponMinFare(e.target.value)}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingCoupon}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                {savingCoupon ? 'Criando...' : 'Criar Cupom'}
+              </button>
+            </form>
+
+            <div className="lg:col-span-7 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-display text-xl font-extrabold text-neutral-950">
+                  Cupons Cadastrados ({coupons.length})
+                </h2>
+                <label className="flex items-center gap-2 text-xs font-bold text-neutral-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={couponGrantWithNotif}
+                    onChange={(e) => setCouponGrantWithNotif(e.target.checked)}
+                    className="h-4 w-4 accent-neutral-950"
+                  />
+                  Enviar notificação ao liberar cupom
+                </label>
+              </div>
+
+              {coupons.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
+                  Nenhum cupom criado ainda. Crie o primeiro cupom ao lado e libere aos passageiros.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {coupons.map((c) => {
+                    const grantsForCoupon = couponGrants.filter((g) => g.coupon_id === c.id);
+                    const usedCount = grantsForCoupon.filter((g) => g.status === 'used').length;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`rounded-2xl border p-4 bg-white space-y-3 ${
+                          c.active ? 'border-emerald-300' : 'border-neutral-200 opacity-75'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-lg bg-neutral-950 px-2.5 py-1 font-mono-num text-xs font-extrabold text-[#FFD100]">
+                                {c.code}
+                              </span>
+                              <span className="rounded-lg bg-emerald-100 px-2 py-0.5 font-mono-num text-xs font-extrabold text-emerald-800">
+                                {c.discount_type === 'percent'
+                                  ? `${c.discount_value}% OFF`
+                                  : `-${formatBRL(c.discount_value)}`}
+                              </span>
+                              {c.max_discount && (
+                                <span className="text-[11px] font-semibold text-neutral-500">
+                                  Teto: {formatBRL(c.max_discount)}
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="text-sm font-extrabold text-neutral-950">{c.title}</h3>
+                            <p className="text-xs text-neutral-600">{c.description}</p>
+                            <p className="text-[11px] font-semibold text-neutral-500 font-mono-num">
+                              Liberados: {grantsForCoupon.length} · Usados: {usedCount}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCoupon(c)}
+                              className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-bold ${
+                                c.active
+                                  ? 'border border-neutral-200 bg-neutral-100 text-neutral-800'
+                                  : 'bg-emerald-600 text-white'
+                              }`}
+                            >
+                              <Power className="h-3.5 w-3.5" />
+                              {c.active ? 'Pausar' : 'Ativar'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCoupon(c.id)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700"
+                              title="Excluir cupom"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
+                          <button
+                            type="button"
+                            disabled={!c.active || grantingCouponId === c.id}
+                            onClick={() => handleGrantCoupon(c.id, null)}
+                            className="min-h-[38px] rounded-xl bg-emerald-600 px-3 text-xs font-extrabold text-white disabled:opacity-40"
+                          >
+                            {grantingCouponId === c.id
+                              ? 'Liberando...'
+                              : 'Liberar p/ Todos Passageiros'}
+                          </button>
+
+                          <div className="flex flex-1 min-w-[220px] items-center gap-1.5">
+                            <select
+                              value={couponGrantUserId}
+                              onChange={(e) => setCouponGrantUserId(e.target.value)}
+                              className="min-h-[38px] flex-1 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 text-xs font-semibold outline-none"
+                            >
+                              <option value="">Selecionar passageiro...</option>
+                              {clients.map((cli) => (
+                                <option key={cli.id} value={cli.id}>
+                                  {cli.full_name} ({cli.phone})
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={!c.active || !couponGrantUserId || grantingCouponId === c.id}
+                              onClick={() => handleGrantCoupon(c.id, couponGrantUserId)}
+                              className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-xs font-extrabold text-[#FFD100] disabled:opacity-40"
+                            >
+                              Liberar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {couponGrants.length > 0 && (
+                <div className="rounded-2xl border border-neutral-200 bg-white p-4 space-y-2">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500">
+                    Últimas Liberações ({couponGrants.length})
+                  </h3>
+                  <div className="max-h-48 overflow-y-auto divide-y divide-neutral-100 text-xs">
+                    {couponGrants.slice(0, 12).map((g) => {
+                      const targetUsr = users.find((u) => u.id === g.user_id);
+                      return (
+                        <div
+                          key={g.id}
+                          className="flex items-center justify-between gap-2 py-2"
+                        >
+                          <span className="font-semibold text-neutral-900 truncate">
+                            {targetUsr?.full_name || g.user_id.slice(0, 8)} ·{' '}
+                            <strong className="font-mono-num">{g.coupon?.code || 'Cupom'}</strong>
+                          </span>
+                          <span
+                            className={`rounded-lg px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                              g.status === 'used'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : g.status === 'available'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-neutral-100 text-neutral-600'
+                            }`}
+                          >
+                            {g.status === 'used'
+                              ? 'Usado'
+                              : g.status === 'available'
+                              ? 'Disponível'
+                              : 'Revogado'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -3133,6 +3803,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   Personalize o logotipo da plataforma e os ícones de Moto, Pop e Entregas exibidos
                   para passageiros e motoristas.
                 </p>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-3.5 py-2.5 text-[11px] font-semibold text-emerald-900 leading-relaxed">
+                  <strong>Sincronização ao vivo (Web, PWA &amp; APK):</strong> Alterações de nome,
+                  logos, cores, fotos dos veículos e áudios são aplicadas dinamicamente via Supabase
+                  em todos os aparelhos conectados sem precisar recompilar ou baixar um novo APK.
+                </div>
 
                 <div className="space-y-3">
                   {/* Logo */}
@@ -3493,7 +4168,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Incremental — Apenas Alterações e Tabelas Novas
                   </h3>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Contém somente o que foi adicionado/alterado (<span className="font-mono-num">platform_pix_qr_url</span>, <span className="font-mono-num">company_address</span>, <span className="font-mono-num">ota_web_url</span>, tabela <span className="font-mono-num">wallet_withdrawals</span>, trava de segurança de saldo 66 Pay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem recriar tabelas antigas.
+                    Contém somente o que foi adicionado/alterado (Seções 1–8: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, status <span className="font-mono-num">'paid'</span>, trava de segurança 66pay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem apagar saldos ou recriar tabelas antigas.
                   </p>
                 </div>
                 <button

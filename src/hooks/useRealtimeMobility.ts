@@ -23,6 +23,7 @@ import type {
   Ride,
   RideMessage,
   UserProfile,
+  WalletTransaction,
 } from '../types/mobility';
 
 export function useRealtimeMobility(
@@ -456,10 +457,12 @@ export function useRealtimeMobility(
         async (payload) => {
           if (!active) return;
           const row = payload.new as {
+            id?: string;
             user_id?: string;
             type?: string;
             amount?: number;
             description?: string;
+            created_at?: string;
           } | undefined;
           const u = userRef.current;
           if (u && row?.user_id === u.id) {
@@ -470,6 +473,16 @@ export function useRealtimeMobility(
             const absAmt = Math.abs(Number(row.amount || 0));
             const formattedAmt = formatBRL(absAmt);
             const desc = String(row.description || '');
+            const receiptTx: WalletTransaction | undefined = row.id
+              ? {
+                  id: String(row.id),
+                  user_id: String(row.user_id),
+                  amount: Number(row.amount || 0),
+                  type: (txType as WalletTransaction['type']) || 'transfer_in',
+                  description: desc,
+                  created_at: String(row.created_at || new Date().toISOString()),
+                }
+              : undefined;
 
             if (txType === 'transfer_in' && absAmt > 0) {
               const senderMatch = desc.match(/(?:Recebido de|Transferência 66 Pay recebida de)\s+([^·]+)/i);
@@ -489,6 +502,7 @@ export function useRealtimeMobility(
                   detail: {
                     title: '66 Pay · Transferência Recebida!',
                     message: msg,
+                    receiptTx,
                   },
                 })
               );
@@ -508,11 +522,79 @@ export function useRealtimeMobility(
                   detail: {
                     title: '66 Pay · Transferência Enviada!',
                     message: msg,
+                    receiptTx,
                   },
                 })
               );
             }
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'app_notifications' },
+        (payload) => {
+          if (!active) return;
+          const n = payload.new as {
+            id?: string;
+            title?: string;
+            message?: string;
+            category?: string;
+            target_scope?: string;
+            target_user_id?: string | null;
+            metadata?: { source?: string; tx?: WalletTransaction } | null;
+          } | undefined;
+          const u = userRef.current;
+          if (!u || !n?.id) return;
+
+          const scope = String(n.target_scope || 'all');
+          const appliesToMe =
+            scope === 'all' ||
+            (scope === 'user' && n.target_user_id === u.id) ||
+            (scope === 'passengers' && u.role === 'passenger') ||
+            (scope === 'drivers' && u.role === 'driver');
+
+          if (!appliesToMe) return;
+
+          window.dispatchEvent(new CustomEvent('mobilidade66:notifications-updated'));
+
+          if (n.metadata?.source !== 'p2p_transfer') {
+            void playSoundCue('accepted');
+            triggerLocalNotification({
+              title: n.title || 'Nova Notificação',
+              body: n.message || '',
+              playSound: false,
+            });
+            window.dispatchEvent(
+              new CustomEvent('mobilidade66:wallet-toast', {
+                detail: {
+                  title: n.title || 'Notificação 66 Mobilidade',
+                  message: n.message || '',
+                  receiptTx: n.metadata?.tx,
+                },
+              })
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_coupons' },
+        (payload) => {
+          if (!active) return;
+          const row = payload.new as { user_id?: string } | undefined;
+          const u = userRef.current;
+          if (!u || !row?.user_id || row.user_id === u.id) {
+            window.dispatchEvent(new CustomEvent('mobilidade66:coupons-updated'));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'coupons' },
+        () => {
+          if (!active) return;
+          window.dispatchEvent(new CustomEvent('mobilidade66:coupons-updated'));
         }
       )
       .on(

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BellRing, X } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import { AdminDashboard } from './components/AdminDashboard';
+import { AnimatedSplashScreen } from './components/AnimatedSplashScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieBanner } from './components/CookieBanner';
 import { DriverView } from './components/DriverView';
@@ -8,6 +10,7 @@ import { OtaUpdateModal } from './components/OtaUpdateModal';
 import { PassengerView } from './components/PassengerView';
 import { PermissionsPromptModal } from './components/PermissionsPromptModal';
 import { OfflineIndicator } from './components/PWAInstallButton';
+import { Receipt66PayModal } from './components/Receipt66PayModal';
 import { useAppConfig } from './context/AppConfigContext';
 import { useAdminAuth } from './hooks/useAdminAuth';
 import { useRealtimeMobility } from './hooks/useRealtimeMobility';
@@ -34,7 +37,7 @@ import {
   saveUserPreferences,
   subscribeUserPreferences,
 } from './lib/userPrefs';
-import type { UserProfile } from './types/mobility';
+import type { UserProfile, WalletTransaction } from './types/mobility';
 
 const STORAGE_KEY = 'velo99_session_user';
 
@@ -50,6 +53,7 @@ export default function App() {
     }
   });
   const [booting, setBooting] = useState(true);
+  const [splashMinDone, setSplashMinDone] = useState(false);
   const [showPermsModal, setShowPermsModal] = useState<boolean>(() => !hasSeenPermissionsPrompt());
   const [floatingBubbleEnabled, setFloatingBubbleEnabled] = useState<boolean>(
     () => getUserPreferences().floating_bubble_enabled ?? true
@@ -60,7 +64,9 @@ export default function App() {
     id: number;
     title: string;
     message: string;
+    receiptTx?: WalletTransaction;
   } | null>(null);
+  const [activeReceiptTx, setActiveReceiptTx] = useState<WalletTransaction | null>(null);
 
   const syncedLangUserIdRef = useRef<string | null>(null);
   const loggedSessionUserIdRef = useRef<string | null>(null);
@@ -87,6 +93,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const splashTimer = window.setTimeout(() => {
+      setSplashMinDone(true);
+    }, 1550);
+    return () => window.clearTimeout(splashTimer);
+  }, []);
+
+  useEffect(() => {
     const handleUnlock = () => {
       unlockAudioContext();
     };
@@ -101,12 +114,19 @@ export default function App() {
   useEffect(() => {
     let hideTimer: number | null = null;
     const handleWalletToast = (evt: Event) => {
-      const detail = (evt as CustomEvent<{ title?: string; message?: string }>).detail;
+      const detail = (
+        evt as CustomEvent<{
+          title?: string;
+          message?: string;
+          receiptTx?: WalletTransaction;
+        }>
+      ).detail;
       if (!detail?.message) return;
       setWalletToast({
         id: Date.now(),
         title: detail.title || '66 Pay · Transferência',
         message: detail.message,
+        receiptTx: detail.receiptTx,
       });
       if (hideTimer) window.clearTimeout(hideTimer);
       hideTimer = window.setTimeout(() => {
@@ -139,7 +159,11 @@ export default function App() {
   const handleUserUpdated = useCallback(
     (updated: UserProfile) => {
       setCurrentUser(updated);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore storage quota / private mode restrictions
+      }
 
       if (syncedLangUserIdRef.current !== updated.id) {
         syncedLangUserIdRef.current = updated.id;
@@ -171,7 +195,11 @@ export default function App() {
     syncedLangUserIdRef.current = null;
     loggedSessionUserIdRef.current = null;
     setCurrentUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore
+    }
     if (prevUser) {
       void logAuditEvent({
         user: prevUser,
@@ -192,7 +220,11 @@ export default function App() {
           recordSessionAudit(user, 'session_restore');
         } else {
           setCurrentUser(null);
-          localStorage.removeItem(STORAGE_KEY);
+          try {
+            localStorage.removeItem(STORAGE_KEY);
+          } catch {
+            // Ignore
+          }
         }
       })
       .catch(() => {})
@@ -205,7 +237,11 @@ export default function App() {
         syncedLangUserIdRef.current = null;
         loggedSessionUserIdRef.current = null;
         setCurrentUser(null);
-        localStorage.removeItem(STORAGE_KEY);
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // Ignore
+        }
       }
     });
 
@@ -302,25 +338,7 @@ export default function App() {
     effectivePlatformConfig.ota_release_notes,
   ]);
 
-  if (booting && !currentUser) {
-    return (
-      <div
-        className="flex h-screen w-screen items-center justify-center dark:bg-neutral-950"
-        style={{ backgroundColor: effectivePlatformConfig.primary_color || '#FFD100' }}
-      >
-        <div className="text-center">
-          <img
-            src={resolveBrandLogo(effectivePlatformConfig)}
-            alt={effectivePlatformConfig.site_name || '66 Mobilidade'}
-            className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-neutral-950 shadow-lg"
-          />
-          <p className="mt-3 text-sm font-extrabold text-neutral-950">
-            {t.connecting_to} {effectivePlatformConfig.site_name || '66 Mobilidade'}...
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const showSplash = !splashMinDone || (booting && !currentUser);
 
   const showOtaModal = Boolean(
     otaUpdateInfo?.hasUpdate &&
@@ -330,6 +348,9 @@ export default function App() {
 
   return (
     <>
+      <AnimatePresence>
+        {showSplash && <AnimatedSplashScreen platformConfig={effectivePlatformConfig} />}
+      </AnimatePresence>
       <OfflineIndicator />
       {!currentUser ? (
         <AuthScreen
@@ -412,6 +433,19 @@ export default function App() {
             <p className="mt-0.5 text-sm font-bold text-white leading-snug">
               {walletToast.message}
             </p>
+            {walletToast.receiptTx && (
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = walletToast.receiptTx;
+                  setWalletToast(null);
+                  if (tx) setActiveReceiptTx(tx);
+                }}
+                className="mt-2 inline-flex min-h-[34px] items-center rounded-xl bg-[#FFD100] px-3 text-[11px] font-extrabold text-neutral-950 shadow-2xs active:scale-95 transition"
+              >
+                Ver Comprovante 66 Pay
+              </button>
+            )}
           </div>
           <button
             type="button"
@@ -422,6 +456,15 @@ export default function App() {
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
+      )}
+
+      {activeReceiptTx && currentUser && (
+        <Receipt66PayModal
+          transaction={activeReceiptTx}
+          currentUser={currentUser}
+          platformConfig={effectivePlatformConfig}
+          onClose={() => setActiveReceiptTx(null)}
+        />
       )}
 
       {showOtaModal && otaUpdateInfo && (

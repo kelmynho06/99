@@ -45,6 +45,7 @@ interface LiveMapProps {
   onLayerModeChange?: (mode: MapLayerMode) => void;
   controlsTopClassName?: string;
   followVehicle?: boolean;
+  enable3dHud?: boolean;
   speedKmh?: number;
   showSpeedometer?: boolean;
 }
@@ -76,6 +77,7 @@ function MapController({
   routeCoords,
   driverPosition,
   followVehicle,
+  enable3dHud,
   hudActive,
   userPanned,
   onUserPanChange,
@@ -88,6 +90,7 @@ function MapController({
   routeCoords?: [number, number][];
   driverPosition?: LiveMapProps['driverPosition'];
   followVehicle?: boolean;
+  enable3dHud?: boolean;
   hudActive: boolean;
   userPanned: boolean;
   onUserPanChange: (panned: boolean) => void;
@@ -143,9 +146,10 @@ function MapController({
 
   useEffect(() => {
     if (!followVehicle || !driverPosition || userPanned) return;
-    const targetZoom = Math.max(map.getZoom(), 16);
+    const minNavZoom = enable3dHud ? 17.5 : 16;
+    const targetZoom = Math.max(map.getZoom(), minNavZoom);
     map.setView([driverPosition.lat, driverPosition.lng], targetZoom, { animate: true });
-  }, [map, followVehicle, driverPosition?.lat, driverPosition?.lng, userPanned, recenterNonce]);
+  }, [map, followVehicle, enable3dHud, driverPosition?.lat, driverPosition?.lng, userPanned, recenterNonce]);
 
   useEffect(() => {
     if (!followVehicle && (!routeCoords || routeCoords.length < 2)) {
@@ -193,6 +197,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   onRecenter,
   controlsTopClassName = 'top-24',
   followVehicle = false,
+  enable3dHud = false,
   speedKmh = 0,
   showSpeedometer = false,
 }) => {
@@ -329,16 +334,20 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-neutral-100 dark:bg-neutral-900">
-      {/* Rotatable inner map viewport for 1st-Person Compass HUD */}
+      {/* Rotatable / 3D-tilted inner map viewport for 1st-Person Driving HUD */}
       <div
         className={
           isHudRotating
-            ? 'leaflet-hud-viewport absolute left-1/2 top-1/2 h-[155vmax] w-[155vmax]'
+            ? 'leaflet-hud-viewport absolute left-1/2 top-1/2 h-[175vmax] w-[175vmax]'
             : 'leaflet-hud-viewport h-full w-full'
         }
         style={
           isHudRotating
-            ? { transform: `translate(-50%, -50%) rotate(${hudRotationDeg}deg)` }
+            ? {
+                transform: enable3dHud
+                  ? `translate(-50%, -44%) perspective(950px) rotateX(55deg) rotateZ(${hudRotationDeg}deg) scale(1.14)`
+                  : `translate(-50%, -50%) rotate(${hudRotationDeg}deg)`,
+              }
             : undefined
         }
       >
@@ -360,6 +369,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             routeCoords={routeCoords}
             driverPosition={driverPosition}
             followVehicle={followVehicle}
+            enable3dHud={enable3dHud}
             hudActive={isHudRotating}
             userPanned={userPanned}
             onUserPanChange={setUserPanned}
@@ -474,7 +484,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
               className="h-4 w-4 transition-transform"
               style={{ transform: `rotate(${activeHeading}deg)` }}
             />
-            <span>HUD</span>
+            <span>{enable3dHud ? '3D HUD' : 'HUD'}</span>
           </button>
         )}
 

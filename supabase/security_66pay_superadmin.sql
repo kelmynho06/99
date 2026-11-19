@@ -267,6 +267,11 @@ DECLARE
   v_to_name TEXT;
   v_from_bal NUMERIC(10,2);
   v_from_status TEXT;
+  v_from_tx_id UUID;
+  v_to_tx_id UUID;
+  v_tx_ts TIMESTAMPTZ := NOW();
+  v_from_desc TEXT;
+  v_to_desc TEXT;
 BEGIN
   v_from := auth.uid();
   IF v_from IS NULL THEN
@@ -343,21 +348,42 @@ BEGIN
       updated_at = NOW()
   WHERE id = v_to;
 
-  INSERT INTO public.wallet_transactions (user_id, amount, type, description)
-  VALUES (
-    v_from,
-    -v_amount,
-    'transfer_out',
-    'Enviado para ' || v_to_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '')
-  );
+  v_from_desc := 'Enviado para ' || v_to_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '');
+  v_to_desc := 'Recebido de ' || v_from_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '');
 
   INSERT INTO public.wallet_transactions (user_id, amount, type, description)
-  VALUES (
-    v_to,
-    v_amount,
-    'transfer_in',
-    'Recebido de ' || v_from_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '')
-  );
+  VALUES (v_from, -v_amount, 'transfer_out', v_from_desc)
+  RETURNING id, created_at INTO v_from_tx_id, v_tx_ts;
+
+  INSERT INTO public.wallet_transactions (user_id, amount, type, description)
+  VALUES (v_to, v_amount, 'transfer_in', v_to_desc)
+  RETURNING id INTO v_to_tx_id;
+
+  IF to_regclass('public.app_notifications') IS NOT NULL THEN
+    INSERT INTO public.app_notifications (
+      title, message, category, target_scope, target_user_id, action_tab, metadata, created_by
+    )
+    VALUES (
+      'Transferência 66 Pay recebida',
+      v_from_name || ' enviou R$ ' || REPLACE(TO_CHAR(v_amount, 'FM999999990.00'), '.', ',') || ' para sua conta 66 Pay.',
+      'wallet',
+      'user',
+      v_to,
+      'wallet',
+      jsonb_build_object(
+        'source', 'p2p_transfer',
+        'tx', jsonb_build_object(
+          'id', v_to_tx_id,
+          'user_id', v_to,
+          'amount', v_amount,
+          'type', 'transfer_in',
+          'description', v_to_desc,
+          'created_at', v_tx_ts
+        )
+      ),
+      v_from
+    );
+  END IF;
 
   RETURN jsonb_build_object(
     'ok', TRUE,
@@ -365,7 +391,10 @@ BEGIN
     'recipient_id', v_to,
     'recipient_name', v_to_name,
     'from_name', v_from_name,
-    'new_balance', ROUND((v_from_bal - v_amount)::NUMERIC, 2)
+    'new_balance', ROUND((v_from_bal - v_amount)::NUMERIC, 2),
+    'tx_id', v_from_tx_id,
+    'created_at', v_tx_ts,
+    'description', v_from_desc
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -1170,6 +1199,328 @@ BEGIN
   RETURN jsonb_build_object('ok', TRUE, 'fee', v_fee, 'refund', v_refund);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 7. Central de Notificações & Cupons de Desconto
+CREATE TABLE IF NOT EXISTS public.app_notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'general' CHECK (category IN ('general', 'payment', 'event', 'coupon', 'wallet')),
+  target_scope TEXT NOT NULL DEFAULT 'all' CHECK (target_scope IN ('all', 'passengers', 'drivers', 'user')),
+  target_user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  action_tab TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.notification_reads (
+  notification_id UUID NOT NULL REFERENCES public.app_notifications(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (notification_id, user_id)
+);
+
+ALTER TABLE public.app_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notification_reads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "app_notifications_select" ON public.app_notifications;
+DROP POLICY IF EXISTS "app_notifications_admin_insert" ON public.app_notifications;
+DROP POLICY IF EXISTS "app_notifications_admin_delete" ON public.app_notifications;
+DROP POLICY IF EXISTS "notification_reads_own" ON public.notification_reads;
+
+CREATE POLICY "app_notifications_select"
+  ON public.app_notifications FOR SELECT
+  TO authenticated
+  USING (
+    public.is_admin()
+    OR target_scope = 'all'
+    OR (target_scope = 'user' AND target_user_id = auth.uid())
+    OR (
+      target_scope = 'passengers'
+      AND EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'passenger')
+    )
+    OR (
+      target_scope = 'drivers'
+      AND EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'driver')
+    )
+  );
+
+CREATE POLICY "app_notifications_admin_insert"
+  ON public.app_notifications FOR INSERT
+  TO authenticated
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "app_notifications_admin_delete"
+  ON public.app_notifications FOR DELETE
+  TO authenticated
+  USING (public.is_admin());
+
+CREATE POLICY "notification_reads_own"
+  ON public.notification_reads FOR ALL
+  TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+CREATE TABLE IF NOT EXISTS public.coupons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  discount_type TEXT NOT NULL CHECK (discount_type IN ('percent', 'fixed')),
+  discount_value NUMERIC(10,2) NOT NULL CHECK (discount_value > 0),
+  max_discount NUMERIC(10,2),
+  min_ride_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.user_coupons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coupon_id UUID NOT NULL REFERENCES public.coupons(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'used', 'revoked')),
+  used_ride_id UUID REFERENCES public.rides(id) ON DELETE SET NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.rides
+  ADD COLUMN IF NOT EXISTS coupon_id UUID REFERENCES public.coupons(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS user_coupon_id UUID REFERENCES public.user_coupons(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_coupons ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "coupons_select_assigned_or_admin" ON public.coupons;
+DROP POLICY IF EXISTS "coupons_admin_all" ON public.coupons;
+DROP POLICY IF EXISTS "user_coupons_select_own_or_admin" ON public.user_coupons;
+DROP POLICY IF EXISTS "user_coupons_admin_insert" ON public.user_coupons;
+DROP POLICY IF EXISTS "user_coupons_update_own_or_admin" ON public.user_coupons;
+DROP POLICY IF EXISTS "user_coupons_admin_delete" ON public.user_coupons;
+
+CREATE POLICY "coupons_select_assigned_or_admin"
+  ON public.coupons FOR SELECT
+  TO authenticated
+  USING (
+    public.is_admin()
+    OR EXISTS (
+      SELECT 1 FROM public.user_coupons uc
+      WHERE uc.coupon_id = coupons.id
+        AND uc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "coupons_admin_all"
+  ON public.coupons FOR ALL
+  TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "user_coupons_select_own_or_admin"
+  ON public.user_coupons FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin());
+
+CREATE POLICY "user_coupons_admin_insert"
+  ON public.user_coupons FOR INSERT
+  TO authenticated
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "user_coupons_update_own_or_admin"
+  ON public.user_coupons FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+CREATE POLICY "user_coupons_admin_delete"
+  ON public.user_coupons FOR DELETE
+  TO authenticated
+  USING (public.is_admin());
+
+CREATE OR REPLACE FUNCTION public.admin_grant_coupon(
+  p_coupon_id UUID,
+  p_user_id UUID DEFAULT NULL,
+  p_send_notification BOOLEAN DEFAULT TRUE
+)
+RETURNS INTEGER AS $$
+DECLARE
+  v_coupon public.coupons%ROWTYPE;
+  v_count INTEGER := 0;
+  v_discount_label TEXT;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Restrito ao Admin.';
+  END IF;
+
+  SELECT * INTO v_coupon FROM public.coupons WHERE id = p_coupon_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Cupom não encontrado.';
+  END IF;
+
+  v_discount_label := CASE
+    WHEN v_coupon.discount_type = 'percent'
+      THEN ROUND(v_coupon.discount_value, 0)::TEXT || '% OFF'
+    ELSE 'R$ ' || REPLACE(TO_CHAR(v_coupon.discount_value, 'FM999999990.00'), '.', ',') || ' OFF'
+  END;
+
+  IF p_user_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.user_coupons
+      WHERE coupon_id = p_coupon_id AND user_id = p_user_id AND status = 'available'
+    ) THEN
+      INSERT INTO public.user_coupons (coupon_id, user_id, status)
+      VALUES (p_coupon_id, p_user_id, 'available');
+      v_count := 1;
+    END IF;
+
+    IF p_send_notification THEN
+      INSERT INTO public.app_notifications (
+        title, message, category, target_scope, target_user_id, action_tab, metadata, created_by
+      )
+      VALUES (
+        'Cupom liberado: ' || v_coupon.code,
+        'Você ganhou ' || v_discount_label || ' (' || v_coupon.title || ') para usar na sua próxima corrida!',
+        'coupon',
+        'user',
+        p_user_id,
+        'coupons',
+        jsonb_build_object('coupon_id', p_coupon_id, 'code', v_coupon.code),
+        auth.uid()
+      );
+    END IF;
+  ELSE
+    WITH inserted AS (
+      INSERT INTO public.user_coupons (coupon_id, user_id, status)
+      SELECT p_coupon_id, p.id, 'available'
+      FROM public.profiles p
+      WHERE p.role = 'passenger'
+        AND p.status = 'active'
+        AND COALESCE(p.is_anonymized, FALSE) = FALSE
+        AND NOT EXISTS (
+          SELECT 1 FROM public.user_coupons uc
+          WHERE uc.coupon_id = p_coupon_id AND uc.user_id = p.id AND uc.status = 'available'
+        )
+      RETURNING 1
+    )
+    SELECT COUNT(*) INTO v_count FROM inserted;
+
+    IF p_send_notification THEN
+      INSERT INTO public.app_notifications (
+        title, message, category, target_scope, target_user_id, action_tab, metadata, created_by
+      )
+      VALUES (
+        'Novo cupom liberado: ' || v_coupon.code,
+        'Você recebeu ' || v_discount_label || ' (' || v_coupon.title || '). Escolha ao pedir sua próxima corrida!',
+        'coupon',
+        'passengers',
+        NULL,
+        'coupons',
+        jsonb_build_object('coupon_id', p_coupon_id, 'code', v_coupon.code),
+        auth.uid()
+      );
+    END IF;
+  END IF;
+
+  RETURN v_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.redeem_user_coupon(
+  p_user_coupon_id UUID,
+  p_ride_id UUID
+)
+RETURNS VOID AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  UPDATE public.user_coupons
+  SET status = 'used',
+      used_ride_id = p_ride_id,
+      used_at = NOW()
+  WHERE id = p_user_coupon_id
+    AND user_id = v_uid
+    AND status = 'available';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'app_notifications'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.app_notifications;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'coupons'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.coupons;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'user_coupons'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.user_coupons;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- SEÇÃO 8: 66PAY CHAVE EXCLUSIVA, RESERVA DE SALDO & TRANSFERÊNCIA ATÔMICA
+-- ============================================================================
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS pay66_key TEXT,
+  ADD COLUMN IF NOT EXISTS reserved_balance NUMERIC(10,2) NOT NULL DEFAULT 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_pay66_key_unique
+  ON public.profiles (LOWER(pay66_key))
+  WHERE pay66_key IS NOT NULL;
+
+UPDATE public.profiles
+SET pay66_key = '66-' || UPPER(SUBSTRING(REPLACE(id::TEXT, '-', ''), 1, 8))
+WHERE pay66_key IS NULL;
+
+CREATE OR REPLACE VIEW public.user_wallets AS
+SELECT
+  id AS user_id,
+  full_name,
+  pay66_key,
+  wallet_balance,
+  reserved_balance,
+  pending_debt_amount,
+  updated_at
+FROM public.profiles;
+
+ALTER TABLE public.wallet_transactions
+  ADD COLUMN IF NOT EXISTS auth_code TEXT,
+  ADD COLUMN IF NOT EXISTS sender_name TEXT,
+  ADD COLUMN IF NOT EXISTS recipient_name TEXT,
+  ADD COLUMN IF NOT EXISTS recipient_key TEXT;
+
+DO $$
+DECLARE
+  c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'public.rides'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%payment_status%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.rides DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+
+ALTER TABLE public.rides
+  ADD CONSTRAINT rides_payment_status_check
+  CHECK (payment_status IN ('pending', 'paid', 'paid_cash', 'paid_pix', 'paid_wallet', 'disputed', 'admin_settled'));
 
 -- ============================================================================
 -- GARANTIA DO SUPER ADMINISTRADOR PRINCIPAL (MESMO E-MAIL E MESMA SENHA DO AUTH)

@@ -26,6 +26,9 @@ export interface NominatimResult {
     road?: string;
     pedestrian?: string;
     house_number?: string;
+    residential?: string;
+    hamlet?: string;
+    borough?: string;
     suburb?: string;
     neighbourhood?: string;
     quarter?: string;
@@ -147,13 +150,15 @@ export function formatShortAddress(item: NominatimResult, typedQuery?: string): 
     a?.hospital ||
     a?.park ||
     a?.building ||
+    a?.residential ||
     '';
 
   const road = a?.road || a?.pedestrian || '';
   const typedNum = typedQuery ? extractTypedHouseNumber(typedQuery) : null;
   const houseNumber = a?.house_number || (road && typedNum ? typedNum : '');
   const roadWithNum = road ? (houseNumber ? `${road}, ${houseNumber}` : road) : '';
-  const hood = a?.neighbourhood || a?.suburb || a?.quarter || '';
+  const residential = (a?.residential || '').trim();
+  const hood = a?.neighbourhood || a?.suburb || a?.quarter || a?.borough || a?.hamlet || '';
   const city = a?.city || a?.town || a?.municipality || a?.village || '';
   const state = a?.state || '';
 
@@ -162,7 +167,18 @@ export function formatShortAddress(item: NominatimResult, typedQuery?: string): 
     parts.push(poiName);
   }
   if (roadWithNum) parts.push(roadWithNum);
-  if (hood) parts.push(hood);
+  if (
+    residential &&
+    !parts.some((p) => p.toLowerCase().includes(residential.toLowerCase()))
+  ) {
+    parts.push(residential);
+  }
+  if (
+    hood &&
+    !parts.some((p) => p.toLowerCase() === hood.toLowerCase())
+  ) {
+    parts.push(hood);
+  }
   if (city) parts.push(state ? `${city} - ${state}` : city);
 
   if (parts.length > 0) {
@@ -279,7 +295,7 @@ interface LocalGeoIndexItem {
   searchNorm: string;
 }
 
-const LOCAL_INDEX_STORAGE_PREFIX = 'mobilidade66_geo_idx_v1_';
+const LOCAL_INDEX_STORAGE_PREFIX = 'mobilidade66_geo_idx_v2_';
 const localGeoIndexMap = new Map<string, LocalGeoIndexItem[]>();
 const localGeoIndexInFlight = new Map<string, Promise<LocalGeoIndexItem[]>>();
 
@@ -374,26 +390,48 @@ export async function preloadLocalGeoIndex(
 
   const job = (async (): Promise<LocalGeoIndexItem[]> => {
     const localCity = await resolveCachedLocalCity(lat, lng).catch(() => '');
-    const overpassQuery = `[out:json][timeout:8];(
-      node(around:8500,${lat},${lng})["name"]["shop"];
-      way(around:8500,${lat},${lng})["name"]["shop"];
-      node(around:8500,${lat},${lng})["name"]["amenity"];
-      way(around:8500,${lat},${lng})["name"]["amenity"];
-      node(around:8500,${lat},${lng})["name"]["place"];
-      way(around:8500,${lat},${lng})["name"]["landuse"="residential"];
-      way(around:8500,${lat},${lng})["name"]["building"~"apartments|residential|commercial|retail|supermarket"];
-      node(around:8500,${lat},${lng})["name"]["leisure"];
-      way(around:8500,${lat},${lng})["name"]["leisure"];
-      way(around:6500,${lat},${lng})["highway"]["name"];
-    );out center 450;`;
+    const overpassStreetsAndHoods = `[out:json][timeout:10];(
+      node(around:15000,${lat},${lng})["name"]["place"];
+      way(around:15000,${lat},${lng})["name"]["place"];
+      relation(around:15000,${lat},${lng})["name"]["place"];
+      way(around:15000,${lat},${lng})["name"]["landuse"~"residential|commercial|retail|industrial"];
+      way(around:15000,${lat},${lng})["highway"]["name"];
+    );out center 1200;`;
 
-    const data = await queryOverpassJson(overpassQuery);
-    if (!data?.elements?.length) return [];
+    const overpassPois = `[out:json][timeout:10];(
+      node(around:15000,${lat},${lng})["name"]["shop"];
+      way(around:15000,${lat},${lng})["name"]["shop"];
+      node(around:15000,${lat},${lng})["name"]["amenity"];
+      way(around:15000,${lat},${lng})["name"]["amenity"];
+      node(around:15000,${lat},${lng})["name"]["healthcare"];
+      way(around:15000,${lat},${lng})["name"]["healthcare"];
+      node(around:15000,${lat},${lng})["name"]["office"];
+      way(around:15000,${lat},${lng})["name"]["office"];
+      node(around:15000,${lat},${lng})["name"]["tourism"];
+      way(around:15000,${lat},${lng})["name"]["tourism"];
+      node(around:15000,${lat},${lng})["name"]["leisure"];
+      way(around:15000,${lat},${lng})["name"]["leisure"];
+      node(around:15000,${lat},${lng})["name"]["craft"];
+      node(around:15000,${lat},${lng})["name"]["sport"];
+      node(around:15000,${lat},${lng})["name"]["historic"];
+      node(around:15000,${lat},${lng})["name"]["public_transport"];
+      way(around:15000,${lat},${lng})["name"]["building"];
+    );out center 1200;`;
+
+    const [streetsData, poisData] = await Promise.all([
+      queryOverpassJson(overpassStreetsAndHoods),
+      queryOverpassJson(overpassPois),
+    ]);
+    const combinedElements = [
+      ...(poisData?.elements || []),
+      ...(streetsData?.elements || []),
+    ];
+    if (!combinedElements.length) return [];
 
     const dedup = new Set<string>();
     const items: LocalGeoIndexItem[] = [];
 
-    for (const el of data.elements) {
+    for (const el of combinedElements) {
       const elLat = el.lat ?? el.center?.lat;
       const elLng = el.lon ?? el.center?.lon;
       const rawName = el.tags?.name?.trim();
@@ -412,7 +450,9 @@ export async function preloadLocalGeoIndex(
 
       const tagsRec = tags as Record<string, string | undefined>;
       const isRoad = Boolean(tagsRec.highway && !tags.shop && !tags.amenity && !tags.leisure);
-      const isNeighborhood = Boolean(tagsRec.place || tagsRec.landuse === 'residential');
+      const isNeighborhood = Boolean(
+        tagsRec.place || ['residential', 'commercial', 'retail', 'industrial'].includes(tagsRec.landuse || '')
+      );
       const categoryLabel = isRoad
         ? 'Rua / Av.'
         : isNeighborhood
@@ -438,7 +478,7 @@ export async function preloadLocalGeoIndex(
       try {
         localStorage.setItem(
           `${LOCAL_INDEX_STORAGE_PREFIX}${key}`,
-          JSON.stringify({ ts: Date.now(), items: items.slice(0, 450) })
+          JSON.stringify({ ts: Date.now(), items: items.slice(0, 1500) })
         );
       } catch {
         // Ignore storage quota
@@ -837,16 +877,29 @@ export async function searchAddresses(
 
   const runOverpassLocalPois = async (qText: string) => {
     if (!hasLocalCoords) return;
-    const safeToken = qText
+    const words = qText
       .replace(/[^a-zA-Z0-9À-ÿ\s]/g, ' ')
       .trim()
       .split(/\s+/)
-      .filter((w) => w.length >= 2)
-      .slice(0, 3)
-      .join('.*');
+      .filter((w) => w.length >= 2);
+    const safeToken = words.slice(0, 3).join('.*');
+    const strippedWords = words.filter(
+      (w) =>
+        !/^(residencial|condominio|condomínio|loteamento|rua|avenida|travessa|bairro|conjunto|parque|jardim)$/i.test(
+          w
+        )
+    );
+    const strippedToken =
+      strippedWords.length > 0 && strippedWords.length < words.length
+        ? strippedWords.slice(0, 3).join('.*')
+        : '';
     if (!safeToken || safeToken.length < 2) return;
 
-    const overpassQuery = `[out:json][timeout:6];(node(around:20000,${biasLat},${biasLng})["name"~"${safeToken}",i];way(around:20000,${biasLat},${biasLng})["name"~"${safeToken}",i];);out center 18;`;
+    const filterClause = strippedToken
+      ? `["name"~"${safeToken}|${strippedToken}",i]`
+      : `["name"~"${safeToken}",i]`;
+
+    const overpassQuery = `[out:json][timeout:6];(node(around:22000,${biasLat},${biasLng})${filterClause};way(around:22000,${biasLat},${biasLng})${filterClause};);out center 25;`;
     const data = await queryOverpassJson(overpassQuery, signal);
     if (!data) return;
 
@@ -912,7 +965,7 @@ export async function searchAddresses(
   const finalPool = localPool.length > 0 ? localPool : widePool;
   finalPool.sort((a, b) => b.score - a.score || a.distKm - b.distKm);
 
-  return finalPool.slice(0, 12).map((item) => item.entry);
+  return finalPool.slice(0, 18).map((item) => item.entry);
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

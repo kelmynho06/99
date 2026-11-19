@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Banknote,
+  Bell,
   Briefcase,
   Car,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   EyeOff,
   FileText,
   Flag,
+  Gift,
   Headphones,
   HelpCircle,
   History,
@@ -28,6 +30,7 @@ import {
   Phone,
   Plus,
   QrCode,
+  Receipt,
   Search,
   Settings,
   Shield,
@@ -58,8 +61,14 @@ import { useTranslation } from '../lib/i18n';
 import {
   cancelRideWithPolicy,
   computeCancellationFeeEstimate,
+  computeCouponDiscount,
   createRideRequest,
+  fetchMyAvailableCoupons,
+  fetchMyNotifications,
+  fetchRideByIdEnriched,
   fetchUserProfileById,
+  markAllNotificationsRead,
+  markNotificationRead,
   payCompletedRideWithWallet,
   switchCompletedRidePaymentMethod,
 } from '../lib/mobilityApi';
@@ -68,8 +77,11 @@ import {
   saveOfflineActiveRideCache,
 } from '../lib/offlineNavigation';
 import { playRideAcceptedChime, unlockAudioContext } from '../lib/sound';
+import { supabase } from '../lib/supabase';
 import type {
+  AppNotification,
   GeoPoint,
+  Pay66ReceiptResult,
   PaymentMethod,
   PlatformConfig,
   PricingSetting,
@@ -77,7 +89,9 @@ import type {
   RideCategory,
   RideMessage,
   SavedAddress,
+  UserCoupon,
   UserProfile,
+  WalletTransaction,
   WeatherInfo,
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
@@ -86,9 +100,12 @@ import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
+import { NotificationsModal } from './NotificationsModal';
 import { PixPaymentModal } from './PixPaymentModal';
 import { PWAInstallButton } from './PWAInstallButton';
+import { Qr66PayScannerModal } from './Qr66PayScannerModal';
 import { RatingModal } from './RatingModal';
+import { Receipt66PayModal } from './Receipt66PayModal';
 import { RideChatModal } from './RideChatModal';
 
 interface PassengerViewProps {
@@ -178,11 +195,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [category, setCategory] = useState<RideCategory>('pop');
   const [negotiatedFare, setNegotiatedFare] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
-    currentUser.preferred_payment === 'wallet'
-      ? 'wallet'
-      : currentUser.preferred_payment === 'cash'
-      ? 'cash'
-      : 'pix'
+    currentUser.preferred_payment === 'cash' ? 'cash' : 'wallet'
   );
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [requireDeliveryPin, setRequireDeliveryPin] = useState(true);
@@ -200,6 +213,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [postRidePaymentError, setPostRidePaymentError] = useState<string | null>(null);
   const [cashChoiceConfirmedRideIds, setCashChoiceConfirmedRideIds] = useState<string[]>([]);
   const [dismissedCompletedPayIds, setDismissedCompletedPayIds] = useState<string[]>([]);
+
+  // Notificações, Cupons e Pagamento QR 66pay no destino
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState<UserCoupon[]>([]);
+  const [selectedUserCoupon, setSelectedUserCoupon] = useState<UserCoupon | null>(null);
+  const [qrScannerRide, setQrScannerRide] = useState<Ride | null>(null);
+  const [receiptModalState, setReceiptModalState] = useState<{
+    transaction?: WalletTransaction | null;
+    receipt66?: Pay66ReceiptResult | null;
+  } | null>(null);
+  const [receiptsByRideId, setReceiptsByRideId] = useState<Record<string, Pay66ReceiptResult>>({});
 
   const ratingStorageKey = `velo99_passenger_dismissed_ratings_${currentUser.id}`;
   const [dismissedRatingIds, setDismissedRatingIds] = useState<string[]>(() => {
@@ -258,16 +284,66 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       myRides.find(
         (r) =>
           r.status === 'completed' &&
-          r.payment_status === 'pending' &&
-          r.payment_method !== 'wallet'
+          r.payment_status === 'pending'
       ) || null,
     [myRides]
   );
 
+  const unpaidCompletedWalletRide =
+    unpaidCompletedRide?.payment_method === 'wallet' ? unpaidCompletedRide : null;
   const unpaidCompletedPixRide =
     unpaidCompletedRide?.payment_method === 'pix' ? unpaidCompletedRide : null;
   const unpaidCompletedCashRide =
     unpaidCompletedRide?.payment_method === 'cash' ? unpaidCompletedRide : null;
+
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((n) => !n.is_read).length,
+    [notifications]
+  );
+
+  const loadNotificationsAndCoupons = useCallback(async () => {
+    setLoadingNotifications(true);
+    try {
+      const [notifs, coupons] = await Promise.all([
+        fetchMyNotifications(currentUser),
+        fetchMyAvailableCoupons(currentUser.id),
+      ]);
+      setNotifications(notifs);
+      setAvailableCoupons(coupons);
+      setSelectedUserCoupon((prev) =>
+        prev ? coupons.find((c) => c.id === prev.id) || null : null
+      );
+    } catch {
+      // Ignore transient load error
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    void loadNotificationsAndCoupons();
+    const ch = supabase
+      .channel(`passenger-notif-coupons-${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'app_notifications' },
+        () => {
+          void loadNotificationsAndCoupons();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_coupons', filter: `user_id=eq.${currentUser.id}` },
+        () => {
+          void loadNotificationsAndCoupons();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [currentUser.id, loadNotificationsAndCoupons]);
 
   const livePixModalRide = useMemo(
     () =>
@@ -351,15 +427,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       myRides.find((r) => {
         if (r.status !== 'completed' || r.passenger_rating_submitted) return false;
         if (dismissedRatingIds.includes(r.id)) return false;
-        if (r.payment_status === 'pending' && r.payment_method !== 'wallet') return false;
-        if (pixModalRide?.id === r.id) return false;
+        if (r.payment_status === 'pending') return false;
+        if (pixModalRide?.id === r.id || qrScannerRide?.id === r.id || receiptModalState) {
+          return false;
+        }
         const completedMs = new Date(r.completed_at || r.created_at).getTime();
         return (
           r.id === justCompletedRideIdRef.current ||
           completedMs >= sessionStartedAtRef.current - 60_000
         );
       }) || null,
-    [myRides, dismissedRatingIds, pixModalRide?.id]
+    [myRides, dismissedRatingIds, pixModalRide?.id, qrScannerRide?.id, receiptModalState]
   );
 
   const loadNearbyForCoords = useCallback(async (lat: number, lng: number) => {
@@ -444,7 +522,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         setOriginSuggestions(merged.slice(0, 12));
         setSearchingAddress(false);
       }
-    }, 120);
+    }, 260);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -484,7 +562,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         setDestSuggestions(merged.slice(0, 12));
         setSearchingAddress(false);
       }
-    }, 120);
+    }, 260);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -656,7 +734,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       : selectedCategoryObj
       ? getFareForCategory(selectedCategoryObj)
       : 0;
-  const totalFareWithDebt = Number((selectedCategoryFare + pendingDebt).toFixed(2));
+  const couponDiscount =
+    availableCoupons.length > 0 && selectedUserCoupon?.coupon
+      ? computeCouponDiscount(selectedUserCoupon.coupon, selectedCategoryFare)
+      : 0;
+  const discountedCategoryFare = Math.max(0, Number((selectedCategoryFare - couponDiscount).toFixed(2)));
+  const totalFareWithDebt = Number((discountedCategoryFare + pendingDebt).toFixed(2));
   const walletBalance = Number((currentUser.wallet_balance || 0).toFixed(2));
   const hasEnoughWalletBalance = walletBalance >= totalFareWithDebt;
 
@@ -670,7 +753,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     unlockAudioContext();
     if (paymentMethod === 'wallet' && !hasEnoughWalletBalance) {
       setErrorMsg(
-        `Saldo insuficiente (${formatBRL(walletBalance)}). Deposite via Pix ou escolha Pix/Dinheiro.`
+        `Saldo 66pay insuficiente (${formatBRL(walletBalance)}). Deposite via Pix na 66pay ou escolha Dinheiro.`
       );
       return;
     }
@@ -693,8 +776,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         delivery_notes: isDelivery ? deliveryNotes : null,
         require_pin: isDelivery ? requireDeliveryPin : true,
         pending_debt_included: pendingDebt,
+        coupon_id: couponDiscount > 0 ? selectedUserCoupon?.coupon_id || null : null,
+        user_coupon_id: couponDiscount > 0 ? selectedUserCoupon?.id || null : null,
+        discount_amount: couponDiscount,
       });
       setDeliveryNotes('');
+      setSelectedUserCoupon(null);
+      if (couponDiscount > 0) {
+        void loadNotificationsAndCoupons();
+      }
       onRideUpsert(created);
       void logAuditEvent({
         user: currentUser,
@@ -705,6 +795,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           category,
           payment_method: paymentMethod,
           fare: totalFareWithDebt,
+          discount_amount: couponDiscount,
         },
       });
       if (paymentMethod === 'wallet') {
@@ -1008,6 +1099,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 )}
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setNotificationsOpen(true);
+                void loadNotificationsAndCoupons();
+              }}
+              className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+              aria-label="Notificações"
+              title="Notificações"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white font-mono-num shadow-sm">
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1065,7 +1174,30 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </div>
             )}
 
-            {unpaidCompletedPixRide && (
+            {unpaidCompletedWalletRide && (
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#FFD100] bg-neutral-950 px-3 py-2.5 text-white shadow-sm">
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold text-[#FFD100]">
+                    Corrida finalizada · Confirmar pagamento 66pay
+                  </p>
+                  <p className="text-[11px] text-neutral-300 font-mono-num">
+                    {formatBRL(
+                      unpaidCompletedWalletRide.final_fare ?? unpaidCompletedWalletRide.estimated_fare
+                    )}{' '}
+                    · Leia o QR Code do motorista
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQrScannerRide(unpaidCompletedWalletRide)}
+                  className="min-h-[38px] shrink-0 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950"
+                >
+                  Ler QR 66pay
+                </button>
+              </div>
+            )}
+
+            {!unpaidCompletedWalletRide && unpaidCompletedPixRide && (
               <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2">
                 <div className="min-w-0">
                   <p className="text-xs font-extrabold text-neutral-950 dark:text-white">
@@ -1087,7 +1219,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </div>
             )}
 
-            {!unpaidCompletedPixRide && unpaidCompletedCashRide && (
+            {!unpaidCompletedWalletRide && !unpaidCompletedPixRide && unpaidCompletedCashRide && (
               <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2">
                 <div className="min-w-0">
                   <p className="text-xs font-extrabold text-neutral-950 dark:text-white">
@@ -1538,25 +1670,79 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   </div>
                 )}
 
-                {/* Payment Method: Saldo do App vs Pix vs Dinheiro */}
-                <div className="grid grid-cols-3 gap-1.5">
+                {/* CUPONS DISPONÍVEIS — EXIBIDO SOMENTE QUANDO O USUÁRIO POSSUI CUPONS ATIVOS */}
+                {availableCoupons.length > 0 && (
+                  <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-900 dark:text-emerald-300">
+                        <Gift className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        Cupons disponíveis ({availableCoupons.length})
+                      </span>
+                      {selectedUserCoupon && couponDiscount > 0 && (
+                        <span className="rounded-lg bg-emerald-600 px-2 py-0.5 font-mono-num text-[10px] font-extrabold text-white">
+                          -{formatBRL(couponDiscount)} aplicado
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserCoupon(null)}
+                        className={`shrink-0 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition ${
+                          !selectedUserCoupon
+                            ? 'border-neutral-950 dark:border-white bg-neutral-950 dark:bg-white text-white dark:text-neutral-950'
+                            : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
+                        }`}
+                      >
+                        Sem cupom
+                      </button>
+                      {availableCoupons.map((uc) => {
+                        const c = uc.coupon;
+                        if (!c) return null;
+                        const active = selectedUserCoupon?.id === uc.id;
+                        const previewDiscount = computeCouponDiscount(c, selectedCategoryFare);
+                        return (
+                          <button
+                            key={uc.id}
+                            type="button"
+                            onClick={() => setSelectedUserCoupon(active ? null : uc)}
+                            className={`shrink-0 rounded-xl border px-3 py-1.5 text-left transition ${
+                              active
+                                ? 'border-emerald-600 bg-emerald-600 text-white shadow-xs'
+                                : 'border-emerald-200 dark:border-emerald-800 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white'
+                            }`}
+                          >
+                            <span className="block text-[11px] font-extrabold font-mono-num">
+                              {c.code} ·{' '}
+                              {c.discount_type === 'percent'
+                                ? `${c.discount_value}% OFF`
+                                : `-${formatBRL(c.discount_value)}`}
+                            </span>
+                            <span className="block text-[10px] opacity-80">
+                              {previewDiscount > 0
+                                ? `Economiza ${formatBRL(previewDiscount)}`
+                                : `Mín. ${formatBRL(c.min_ride_fare)}`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Method: EXCLUSIVAMENTE 66pay (Saldo na Conta) vs Dinheiro */}
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     {
                       id: 'wallet' as PaymentMethod,
-                      label: t.pay_with_wallet,
-                      sub: formatBRL(walletBalance),
+                      label: '66pay (Saldo na Conta)',
+                      sub: `Disponível: ${formatBRL(walletBalance)}`,
                       icon: Wallet,
-                    },
-                    {
-                      id: 'pix' as PaymentMethod,
-                      label: t.pay_with_pix,
-                      sub: 'QR / Chave',
-                      icon: QrCode,
                     },
                     {
                       id: 'cash' as PaymentMethod,
                       label: t.pay_with_cash,
-                      sub: t.driver_role_badge,
+                      sub: 'Pagar ao motorista',
                       icon: Banknote,
                     },
                   ].map((pm) => {
@@ -1570,15 +1756,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           setPaymentMethod(pm.id);
                           setErrorMsg(null);
                         }}
-                        className={`min-h-[54px] flex flex-col items-center justify-center gap-0.5 rounded-xl border px-1.5 py-1.5 transition ${
+                        className={`min-h-[58px] flex flex-col items-center justify-center gap-0.5 rounded-xl border px-2.5 py-2 transition ${
                           active
-                            ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950'
+                            ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-sm'
                             : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200'
                         }`}
                       >
-                        <div className="flex items-center gap-1 text-xs font-extrabold">
-                          <PmIcon className="h-3.5 w-3.5 shrink-0" />
-                          <span>{pm.label}</span>
+                        <div className="flex items-center gap-1.5 text-xs font-extrabold">
+                          <PmIcon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{pm.label}</span>
                         </div>
                         <span
                           className={`text-[10px] font-mono-num font-bold ${
@@ -1596,14 +1782,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-xs">
                     <div className="min-w-0">
                       <p className="font-extrabold text-amber-950 dark:text-amber-200">
-                        Saldo insuficiente ({formatBRL(walletBalance)})
+                        Saldo 66pay insuficiente ({formatBRL(walletBalance)})
                       </p>
                       <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                        {t.deposit}{' '}
+                        Deposite{' '}
                         <strong className="font-mono-num">
                           {formatBRL(totalFareWithDebt - walletBalance)}
                         </strong>{' '}
-                        via Pix
+                        na carteira 66pay via Pix ou pague em Dinheiro.
                       </p>
                     </div>
                     <button
@@ -1611,7 +1797,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       onClick={() => openWallet('deposit')}
                       className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-[11px] font-extrabold text-[#FFD100]"
                     >
-                      {t.deposit} Pix
+                      Depositar 66pay
                     </button>
                   </div>
                 )}
@@ -1628,12 +1814,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </button>
               </div>
             ) : unpaidCompletedRide && !dismissedCompletedPayIds.includes(unpaidCompletedRide.id) ? (
-              /* POST-RIDE PAYMENT CHOOSER (NO AUTO-PIX POPUP) */
+              /* POST-RIDE CHECKOUT: 66PAY QR/CHAVE OR DINHEIRO */
               (() => {
                 const unpaidFare = Number(
                   (unpaidCompletedRide.final_fare ?? unpaidCompletedRide.estimated_fare).toFixed(2)
                 );
-                const canPayWithWallet = walletBalance >= unpaidFare;
+                const canPayWithWallet =
+                  unpaidCompletedRide.payment_method === 'wallet' || walletBalance >= unpaidFare;
                 const isCashChosen =
                   unpaidCompletedRide.payment_method === 'cash' &&
                   cashChoiceConfirmedRideIds.includes(unpaidCompletedRide.id);
@@ -1650,7 +1837,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                             Corrida finalizada
                           </span>
                           <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white leading-tight">
-                            Como você quer pagar a corrida?
+                            {unpaidCompletedRide.payment_method === 'wallet'
+                              ? 'Confirmar pagamento 66pay'
+                              : 'Como você quer pagar a corrida?'}
                           </h3>
                         </div>
                       </div>
@@ -1691,6 +1880,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       </div>
                     )}
 
+                    {unpaidCompletedRide.payment_method === 'wallet' && (
+                      <div className="rounded-2xl border border-[#FFD100]/60 bg-[#FFD100]/15 p-3 text-xs text-neutral-900 dark:text-amber-100">
+                        <p className="font-extrabold">Valor reservado na sua carteira 66pay</p>
+                        <p className="mt-0.5 text-[11px]">
+                          Escaneie o QR Code 66pay na tela do motorista (ou informe a Chave 66pay dele) para transferir o valor e emitir seu comprovante.
+                        </p>
+                      </div>
+                    )}
+
                     {isCashChosen && (
                       <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-xs">
                         <Banknote className="h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-400 mt-0.5" />
@@ -1699,43 +1897,32 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                             Pagamento em Dinheiro selecionado
                           </p>
                           <p className="mt-0.5 text-emerald-800 dark:text-emerald-300">
-                            Pague <strong className="font-mono-num">{formatBRL(unpaidFare)}</strong> em dinheiro diretamente ao motorista (aguardando confirmação dele). Se preferir, escolha Saldo do App ou Pix abaixo.
+                            Pague <strong className="font-mono-num">{formatBRL(unpaidFare)}</strong> em dinheiro diretamente ao motorista (aguardando confirmação dele), ou conclua via QR 66pay abaixo.
                           </p>
                         </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         disabled={Boolean(postRidePaymentBusy) || !canPayWithWallet}
-                        onClick={() => handlePayCompletedWithWallet(unpaidCompletedRide)}
+                        onClick={() => setQrScannerRide(unpaidCompletedRide)}
                         className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-2xl border p-2 text-center transition active:scale-[0.98] disabled:opacity-55 ${
                           canPayWithWallet
                             ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-sm'
                             : 'border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'
                         }`}
                       >
-                        <Wallet className="h-5 w-5 shrink-0" />
-                        <span className="text-xs font-extrabold leading-tight">
-                          {postRidePaymentBusy === 'wallet' ? 'Pagando...' : 'Saldo do App'}
-                        </span>
-                        <span className="font-mono-num text-[10px] font-bold opacity-85">
-                          {formatBRL(walletBalance)}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={Boolean(postRidePaymentBusy)}
-                        onClick={() => handleChooseCompletedPix(unpaidCompletedRide)}
-                        className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-2xl border border-amber-300 dark:border-amber-700 bg-[#FFD100] text-neutral-950 p-2 text-center shadow-sm transition active:scale-[0.98] disabled:opacity-55"
-                      >
                         <QrCode className="h-5 w-5 shrink-0" />
                         <span className="text-xs font-extrabold leading-tight">
-                          {postRidePaymentBusy === 'pix' ? 'Abrindo...' : 'Pix'}
+                          Ler QR / Pagar 66pay
                         </span>
-                        <span className="text-[10px] font-bold opacity-80">QR Code / Chave</span>
+                        <span className="font-mono-num text-[10px] font-bold opacity-85">
+                          {unpaidCompletedRide.payment_method === 'wallet'
+                            ? 'Saldo reservado'
+                            : formatBRL(walletBalance)}
+                        </span>
                       </button>
 
                       <button
@@ -1759,14 +1946,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {!canPayWithWallet && (
                       <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-[11px]">
                         <span className="font-semibold text-amber-950 dark:text-amber-200">
-                          Saldo insuficiente ({formatBRL(walletBalance)}) para pagar com a carteira.
+                          Saldo 66pay insuficiente ({formatBRL(walletBalance)}).
                         </span>
                         <button
                           type="button"
                           onClick={() => openWallet('deposit')}
                           className="shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1.5 font-extrabold text-[#FFD100] dark:text-neutral-950"
                         >
-                          Depositar Pix
+                          Depositar 66pay
                         </button>
                       </div>
                     )}
@@ -2006,10 +2193,65 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               )}
 
               {/* Payment Status CTA / Badge */}
-              {activeRide.payment_method === 'wallet' && (
-                <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 py-2 text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
-                  <Wallet className="h-4 w-4" />
-                  Pago pelo aplicativo (Saldo do App)
+              {activeRide.payment_method === 'wallet' && activeRide.payment_status === 'pending' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 py-2 px-3 text-xs font-extrabold text-amber-900 dark:text-amber-200 text-center">
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    Saldo 66pay reservado · Escaneie o QR Code do motorista ao chegar
+                  </div>
+                  {activeRide.status === 'in_progress' && (
+                    <button
+                      type="button"
+                      onClick={() => setQrScannerRide(activeRide)}
+                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                    >
+                      <QrCode className="h-4 w-4" />
+                      Escanear QR / Pagar via 66pay ({formatBRL(activeRide.estimated_fare + passengerWaitingStats.waitingFee)})
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {activeRide.payment_method === 'wallet' &&
+                (activeRide.payment_status === 'paid' || activeRide.payment_status === 'paid_wallet') && (
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
+                  <span className="flex items-center gap-1.5">
+                    <Wallet className="h-4 w-4" />
+                    Pago via 66pay!
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const savedReceipt = receiptsByRideId[activeRide.id];
+                      if (savedReceipt) {
+                        setReceiptModalState({ receipt66: savedReceipt });
+                      } else {
+                        setReceiptModalState({
+                          transaction: {
+                            id: activeRide.id,
+                            user_id: currentUser.id,
+                            ride_id: activeRide.id,
+                            amount: -(activeRide.final_fare ?? activeRide.estimated_fare),
+                            type: 'ride_debit',
+                            description: `Corrida 66pay #${activeRide.id.slice(-4)} · ${activeRide.destination_address}`,
+                            auth_code: `66PAY-${activeRide.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+                            sender_name: currentUser.full_name,
+                            recipient_name: activeRide.driver?.full_name || 'Motorista 66pay',
+                            recipient_key:
+                              activeRide.driver?.pay66_key ||
+                              (activeRide.driver_id
+                                ? `66-${activeRide.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+                                : '66pay'),
+                            created_at: activeRide.completed_at || activeRide.created_at,
+                          },
+                        });
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                  >
+                    <Receipt className="h-3.5 w-3.5" />
+                    Ver Comprovante 66pay
+                  </button>
                 </div>
               )}
 
@@ -2728,19 +2970,57 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
                         {r.payment_method === 'wallet'
-                          ? 'Saldo do App'
+                          ? '66pay'
                           : r.payment_method === 'pix'
                           ? 'Pix Plataforma'
                           : 'Dinheiro'}{' '}
                         · {r.payment_status}
                       </span>
-                      {r.payment_status === 'pending' &&
+                      {r.payment_method === 'wallet' &&
+                      (r.payment_status === 'paid' || r.payment_status === 'paid_wallet') ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistoryOpen(false);
+                            const saved = receiptsByRideId[r.id];
+                            if (saved) {
+                              setReceiptModalState({ receipt66: saved });
+                            } else {
+                              setReceiptModalState({
+                                transaction: {
+                                  id: r.id,
+                                  user_id: currentUser.id,
+                                  ride_id: r.id,
+                                  amount: -(r.final_fare ?? r.estimated_fare),
+                                  type: 'ride_debit',
+                                  description: `Corrida 66pay #${r.id.slice(-4)} · ${r.destination_address}`,
+                                  auth_code: `66PAY-${r.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+                                  sender_name: currentUser.full_name,
+                                  recipient_name: r.driver?.full_name || 'Motorista 66pay',
+                                  recipient_key:
+                                    r.driver?.pay66_key ||
+                                    (r.driver_id
+                                      ? `66-${r.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+                                      : '66pay'),
+                                  created_at: r.completed_at || r.created_at,
+                                },
+                              });
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                        >
+                          <Receipt className="h-3 w-3" />
+                          Comprovante 66pay
+                        </button>
+                      ) : r.payment_status === 'pending' &&
                         r.status !== 'cancelled' && (
                           <button
                             type="button"
                             onClick={() => {
                               setHistoryOpen(false);
-                              if (r.payment_method === 'pix') {
+                              if (r.payment_method === 'wallet') {
+                                setQrScannerRide(r);
+                              } else if (r.payment_method === 'pix') {
                                 setPixModalRide(r);
                               } else {
                                 setDismissedCompletedPayIds((prev) =>
@@ -2750,7 +3030,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                             }}
                             className="rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
                           >
-                            {r.payment_method === 'pix' ? 'Pagar Pix' : 'Pagar Corrida'}
+                            {r.payment_method === 'wallet'
+                              ? 'Pagar 66pay'
+                              : r.payment_method === 'pix'
+                              ? 'Pagar Pix'
+                              : 'Pagar Corrida'}
                           </button>
                         )}
                     </div>
@@ -2932,6 +3216,59 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {notificationsOpen && (
+        <NotificationsModal
+          notifications={notifications}
+          loading={loadingNotifications}
+          onMarkRead={(nid) => {
+            setNotifications((prev) =>
+              prev.map((n) => (n.id === nid ? { ...n, is_read: true } : n))
+            );
+            void markNotificationRead(nid, currentUser.id);
+          }}
+          onMarkAllRead={() => {
+            const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+            setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+            void markAllNotificationsRead(unreadIds, currentUser.id);
+          }}
+          onOpenReceipt={(tx) => {
+            setNotificationsOpen(false);
+            setReceiptModalState({ transaction: tx });
+          }}
+          onClose={() => setNotificationsOpen(false)}
+        />
+      )}
+
+      {qrScannerRide && (
+        <Qr66PayScannerModal
+          ride={qrScannerRide}
+          onPaid={async (receipt) => {
+            setReceiptsByRideId((prev) => ({ ...prev, [qrScannerRide.id]: receipt }));
+            justCompletedRideIdRef.current = qrScannerRide.id;
+            setQrScannerRide(null);
+            setReceiptModalState({ receipt66: receipt });
+            const [freshRide, freshProfile] = await Promise.all([
+              fetchRideByIdEnriched(receipt.ride_id).catch(() => null),
+              fetchUserProfileById(currentUser.id).catch(() => null),
+            ]);
+            if (freshRide) onRideUpsert(freshRide);
+            if (freshProfile) onUserUpdated(freshProfile);
+            void playRideAcceptedChime();
+          }}
+          onClose={() => setQrScannerRide(null)}
+        />
+      )}
+
+      {receiptModalState && (
+        <Receipt66PayModal
+          transaction={receiptModalState.transaction}
+          receipt66={receiptModalState.receipt66}
+          currentUser={currentUser}
+          platformConfig={platformConfig}
+          onClose={() => setReceiptModalState(null)}
+        />
       )}
     </div>
   );

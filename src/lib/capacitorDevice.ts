@@ -261,17 +261,21 @@ export async function getCurrentGpsPosition(): Promise<DeviceCoords | null> {
 
   if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
   return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) =>
-        resolve({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          heading: pos.coords.heading ?? 0,
-          speedKmh: toSpeedKmh(pos.coords.speed),
-        }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            heading: pos.coords.heading ?? 0,
+            speedKmh: toSpeedKmh(pos.coords.speed),
+          }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } catch {
+      resolve(null);
+    }
   });
 }
 
@@ -309,19 +313,23 @@ export function watchGpsPosition(
           .catch(() => {});
       });
   } else if (typeof navigator !== 'undefined' && navigator.geolocation) {
-    webWatchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (!active) return;
-        onUpdate({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          heading: pos.coords.heading ?? 0,
-          speedKmh: toSpeedKmh(pos.coords.speed),
-        });
-      },
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
-    );
+    try {
+      webWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (!active) return;
+          onUpdate({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            heading: pos.coords.heading ?? 0,
+            speedKmh: toSpeedKmh(pos.coords.speed),
+          });
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      );
+    } catch {
+      // Ignore restricted geolocation contexts
+    }
   }
 
   return () => {
@@ -330,7 +338,11 @@ export function watchGpsPosition(
       Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
     }
     if (webWatchId !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.clearWatch(webWatchId);
+      try {
+        navigator.geolocation.clearWatch(webWatchId);
+      } catch {
+        // Ignore clearWatch errors
+      }
     }
   };
 }

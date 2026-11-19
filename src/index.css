@@ -41,6 +41,8 @@
 .leaflet-hud-viewport {
   transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: center center;
+  transform-style: preserve-3d;
+  will-change: transform;
 }
 
 /* Smooth GPS marker interpolation */

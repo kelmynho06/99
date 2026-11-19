@@ -8,6 +8,7 @@ export type PaymentMethod = 'cash' | 'pix' | 'wallet';
 
 export type PaymentStatus =
   | 'pending'
+  | 'paid'
   | 'paid_pix'
   | 'paid_cash'
   | 'paid_wallet'
@@ -130,6 +131,8 @@ export interface UserProfile {
   rating_avg: number;
   rating_count: number;
   wallet_balance: number;
+  reserved_balance?: number;
+  pay66_key?: string | null;
   pending_debt_amount?: number;
   pending_debt_note?: string | null;
   is_anonymized?: boolean;
@@ -172,6 +175,9 @@ export interface Ride {
   delivery_notes?: string | null;
   dispute_reason?: string | null;
   pix_declared_at?: string | null;
+  coupon_id?: string | null;
+  user_coupon_id?: string | null;
+  discount_amount?: number;
   created_at: string;
   accepted_at: string | null;
   arrived_at: string | null;
@@ -210,7 +216,36 @@ export interface WalletTransaction {
     | 'withdrawal'
     | 'withdrawal_refund';
   description: string;
+  auth_code?: string | null;
+  sender_name?: string | null;
+  recipient_name?: string | null;
+  recipient_key?: string | null;
   created_at: string;
+}
+
+export interface Pay66DriverMatch {
+  id: string;
+  full_name: string;
+  pay66_key: string;
+  avatar_url?: string | null;
+  phone?: string;
+  vehicle_model?: string | null;
+  vehicle_plate?: string | null;
+}
+
+export interface Pay66ReceiptResult {
+  ok: boolean;
+  already_paid?: boolean;
+  ride_id: string;
+  amount: number;
+  auth_code: string;
+  tx_id: string;
+  created_at: string;
+  sender_name: string;
+  sender_key: string;
+  recipient_name: string;
+  recipient_key: string;
+  new_passenger_balance?: number;
 }
 
 export type WalletDepositStatus = 'pending' | 'approved' | 'rejected';
@@ -297,4 +332,48 @@ export interface DevicePermissionsState {
   camera: PermissionGrantState;
   microphone: PermissionGrantState;
   photos: PermissionGrantState;
+}
+
+export type NotificationCategory = 'general' | 'payment' | 'event' | 'coupon' | 'wallet';
+
+export type NotificationTargetScope = 'all' | 'passengers' | 'drivers' | 'user';
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  category: NotificationCategory;
+  target_scope: NotificationTargetScope;
+  target_user_id?: string | null;
+  action_tab?: string | null;
+  metadata?: Record<string, unknown>;
+  created_by?: string | null;
+  created_at: string;
+  is_read?: boolean;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  title: string;
+  description: string;
+  discount_type: 'percent' | 'fixed';
+  discount_value: number;
+  max_discount?: number | null;
+  min_ride_fare: number;
+  active: boolean;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export interface UserCoupon {
+  id: string;
+  coupon_id: string;
+  user_id: string;
+  status: 'available' | 'used' | 'revoked';
+  used_ride_id?: string | null;
+  granted_at: string;
+  used_at?: string | null;
+  coupon?: Coupon | null;
+  user?: UserProfile;
 }

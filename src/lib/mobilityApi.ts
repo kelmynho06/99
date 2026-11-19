@@ -1,9 +1,13 @@
 import { haversineKm } from './geo';
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
 import type {
+  AppNotification,
+  Coupon,
   DirectMessage,
   DriverDetails,
   GeoPoint,
+  NotificationCategory,
+  NotificationTargetScope,
   PaymentMethod,
   PaymentStatus,
   PlatformConfig,
@@ -14,6 +18,7 @@ import type {
   RideMessage,
   RideStatus,
   SavedAddress,
+  UserCoupon,
   UserProfile,
   WalletDeposit,
   WalletDepositStatus,
@@ -164,6 +169,10 @@ export function mapDbProfile(
     rating_avg: Number(row.rating_avg ?? 5),
     rating_count: Number(row.rating_count ?? 0),
     wallet_balance: Number(row.wallet_balance ?? 0),
+    reserved_balance: Number(row.reserved_balance ?? 0),
+    pay66_key: row.pay66_key
+      ? String(row.pay66_key)
+      : `66-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
     pending_debt_amount: Number(row.pending_debt_amount ?? 0),
     pending_debt_note: row.pending_debt_note ? String(row.pending_debt_note) : null,
     is_anonymized: Boolean(row.is_anonymized ?? false),
@@ -191,11 +200,7 @@ export function mapDbRide(
       ? 'cash'
       : 'pix';
   const defaultPaymentStatus: PaymentStatus =
-    paymentMethod === 'wallet'
-      ? 'paid_wallet'
-      : status === 'completed' && paymentMethod === 'cash'
-      ? 'paid_cash'
-      : 'pending';
+    status === 'completed' && paymentMethod === 'cash' ? 'paid_cash' : 'pending';
 
   return {
     id: String(row.id),
@@ -223,6 +228,9 @@ export function mapDbRide(
     delivery_notes: row.delivery_notes ? String(row.delivery_notes) : null,
     dispute_reason: row.dispute_reason ? String(row.dispute_reason) : null,
     pix_declared_at: row.pix_declared_at ? String(row.pix_declared_at) : null,
+    coupon_id: row.coupon_id ? String(row.coupon_id) : null,
+    user_coupon_id: row.user_coupon_id ? String(row.user_coupon_id) : null,
+    discount_amount: Number(row.discount_amount ?? 0),
     created_at: String(row.created_at || new Date().toISOString()),
     accepted_at: row.accepted_at ? String(row.accepted_at) : null,
     arrived_at: row.arrived_at ? String(row.arrived_at) : null,
@@ -972,6 +980,9 @@ export async function createRideRequest(input: {
   delivery_notes?: string | null;
   require_pin?: boolean;
   pending_debt_included?: number;
+  coupon_id?: string | null;
+  user_coupon_id?: string | null;
+  discount_amount?: number;
 }): Promise<Ride> {
   const fareRounded = Number(input.estimated_fare.toFixed(2));
   let precheckWalletBalance = 0;
@@ -995,7 +1006,7 @@ export async function createRideRequest(input: {
     passenger_id: input.passenger_id,
     category: input.category,
     payment_method: input.payment_method,
-    payment_status: input.payment_method === 'wallet' ? 'paid_wallet' : 'pending',
+    payment_status: 'pending',
     status: 'searching',
     origin_address: input.origin.address,
     origin_lat: input.origin.lat,
@@ -1010,6 +1021,9 @@ export async function createRideRequest(input: {
     require_pin: input.require_pin ?? true,
     pending_debt_included: Number(input.pending_debt_included ?? 0),
     delivery_notes: input.delivery_notes || null,
+    coupon_id: input.coupon_id ?? null,
+    user_coupon_id: input.user_coupon_id ?? null,
+    discount_amount: Number((input.discount_amount ?? 0).toFixed(2)),
   };
 
   let { data, error } = await supabase
@@ -1025,7 +1039,10 @@ export async function createRideRequest(input: {
       error.message.includes('require_pin') ||
       error.message.includes('pending_debt_included') ||
       error.message.includes('delivery_notes') ||
-      error.message.includes('negotiated_fare'))
+      error.message.includes('negotiated_fare') ||
+      error.message.includes('coupon_id') ||
+      error.message.includes('user_coupon_id') ||
+      error.message.includes('discount_amount'))
   ) {
     // Fallback if optional incremental columns haven't been executed yet on Supabase
     const legacyCategory =
@@ -1040,7 +1057,7 @@ export async function createRideRequest(input: {
         passenger_id: input.passenger_id,
         category: error.message.includes('category') ? legacyCategory : input.category,
         payment_method: input.payment_method,
-        payment_status: input.payment_method === 'wallet' ? 'paid_wallet' : 'pending',
+        payment_status: 'pending',
         status: 'searching',
         origin_address: input.origin.address,
         origin_lat: input.origin.lat,
@@ -1070,57 +1087,90 @@ export async function createRideRequest(input: {
   const rideId = String(data.id);
 
   if (input.payment_method === 'wallet') {
-    const desc = `Pagamento com Saldo do App #${rideId.slice(-4)} · ${
+    const desc = `Reserva 66pay corrida #${rideId.slice(-4)} · ${
       input.destination.address.split(',')[0]
     }`;
-    const { error: rpcErr } = await supabase.rpc('debit_own_wallet_for_ride', {
+    const { error: reserveErr } = await supabase.rpc('reserve_66pay_for_ride', {
       p_ride_id: rideId,
       p_amount: fareRounded,
       p_description: desc,
     });
-    if (rpcErr) {
-      if (rpcErr.message?.toLowerCase().includes('saldo insuficiente')) {
+
+    if (reserveErr) {
+      if (reserveErr.message?.toLowerCase().includes('saldo')) {
         await supabase.from('rides').delete().eq('id', rideId);
-        throw new Error('Saldo insuficiente na carteira.');
+        throw new Error('Saldo 66pay insuficiente na carteira.');
       }
-      // Fallback direct debit (user updating own profile & inserting own transaction)
-      const { data: freshProf } = await supabase
-        .from('profiles')
-        .select('wallet_balance')
-        .eq('id', input.passenger_id)
-        .maybeSingle();
-      const bal = Number(freshProf?.wallet_balance ?? precheckWalletBalance);
-      if (bal < fareRounded) {
-        await supabase.from('rides').delete().eq('id', rideId);
-        throw new Error('Saldo insuficiente na carteira.');
-      }
-      const nextBal = Number((bal - fareRounded).toFixed(2));
-      const { error: updErr } = await supabase
-        .from('profiles')
-        .update({ wallet_balance: nextBal, updated_at: new Date().toISOString() })
-        .eq('id', input.passenger_id);
-      if (updErr) {
-        await supabase.from('rides').delete().eq('id', rideId);
-        throw new Error(updErr.message);
+      // Fallback for older SQL schemas without reserve_66pay_for_ride: use debit_own_wallet_for_ride & mark paid_wallet
+      const { error: rpcErr } = await supabase.rpc('debit_own_wallet_for_ride', {
+        p_ride_id: rideId,
+        p_amount: fareRounded,
+        p_description: desc,
+      });
+      if (rpcErr) {
+        if (rpcErr.message?.toLowerCase().includes('saldo insuficiente')) {
+          await supabase.from('rides').delete().eq('id', rideId);
+          throw new Error('Saldo insuficiente na carteira.');
+        }
+        const { data: freshProf } = await supabase
+          .from('profiles')
+          .select('wallet_balance')
+          .eq('id', input.passenger_id)
+          .maybeSingle();
+        const bal = Number(freshProf?.wallet_balance ?? precheckWalletBalance);
+        if (bal < fareRounded) {
+          await supabase.from('rides').delete().eq('id', rideId);
+          throw new Error('Saldo insuficiente na carteira.');
+        }
+        const nextBal = Number((bal - fareRounded).toFixed(2));
+        const { error: updErr } = await supabase
+          .from('profiles')
+          .update({ wallet_balance: nextBal, updated_at: new Date().toISOString() })
+          .eq('id', input.passenger_id);
+        if (updErr) {
+          await supabase.from('rides').delete().eq('id', rideId);
+          throw new Error(updErr.message);
+        }
+        await supabase
+          .from('wallet_transactions')
+          .insert({
+            user_id: input.passenger_id,
+            ride_id: rideId,
+            amount: -fareRounded,
+            type: 'ride_debit',
+            description: desc,
+          })
+          .then(() => undefined, () => undefined);
       }
       await supabase
-        .from('wallet_transactions')
-        .insert({
-          user_id: input.passenger_id,
-          ride_id: rideId,
-          amount: -fareRounded,
-          type: 'ride_debit',
-          description: desc,
-        })
-        .then(() => undefined, () => undefined);
+        .from('rides')
+        .update({ payment_status: 'paid_wallet' })
+        .eq('id', rideId);
+      if (input.pending_debt_included && input.pending_debt_included > 0) {
+        await clearPassengerIncludedDebtIfAny({
+          id: rideId,
+          passenger_id: input.passenger_id,
+          pending_debt_included: input.pending_debt_included,
+        } as Ride);
+      }
     }
+  }
 
-    if (input.pending_debt_included && input.pending_debt_included > 0) {
-      await clearPassengerIncludedDebtIfAny({
-        id: rideId,
-        passenger_id: input.passenger_id,
-        pending_debt_included: input.pending_debt_included,
-      } as Ride);
+  if (input.user_coupon_id) {
+    const { error: redeemErr } = await supabase.rpc('redeem_user_coupon', {
+      p_user_coupon_id: input.user_coupon_id,
+      p_ride_id: rideId,
+    });
+    if (redeemErr) {
+      await supabase
+        .from('user_coupons')
+        .update({
+          status: 'used',
+          used_ride_id: rideId,
+          used_at: new Date().toISOString(),
+        })
+        .eq('id', input.user_coupon_id)
+        .eq('user_id', input.passenger_id);
     }
   }
 
@@ -1142,7 +1192,7 @@ export async function cancelRide(rideId: string): Promise<Ride | null> {
     existing.status !== 'completed' &&
     existing.status !== 'cancelled' &&
     existing.payment_method === 'wallet' &&
-    existing.payment_status === 'paid_wallet'
+    (existing.payment_status === 'paid_wallet' || existing.payment_status === 'paid')
   ) {
     const { error: rpcErr } = await supabase.rpc('refund_wallet_for_cancelled_ride', {
       p_ride_id: rideId,
@@ -1498,9 +1548,10 @@ export async function completeRide(
   const baseFare = overrideFinalFare ?? ride.final_fare ?? ride.estimated_fare;
   const finalFare = Number(baseFare.toFixed(2));
   const nextPaymentStatus: PaymentStatus =
-    ride.payment_method === 'wallet' || ride.payment_status === 'paid_wallet'
-      ? 'paid_wallet'
-      : ride.payment_status === 'paid_pix' || ride.payment_status === 'admin_settled'
+    ride.payment_status === 'paid' ||
+    ride.payment_status === 'paid_wallet' ||
+    ride.payment_status === 'paid_pix' ||
+    ride.payment_status === 'admin_settled'
       ? ride.payment_status
       : 'pending';
 
@@ -1528,13 +1579,14 @@ export async function completeRide(
 
   if (
     (ride.payment_method === 'pix' && nextPaymentStatus === 'paid_pix') ||
-    nextPaymentStatus === 'paid_wallet'
+    nextPaymentStatus === 'paid_wallet' ||
+    nextPaymentStatus === 'paid'
   ) {
     const labelPrefix =
-      nextPaymentStatus === 'paid_wallet'
+      nextPaymentStatus === 'paid' || nextPaymentStatus === 'paid_wallet'
         ? isDelivery
-          ? 'Entrega Saldo App'
-          : 'Corrida Saldo App'
+          ? 'Entrega 66pay'
+          : 'Corrida 66pay'
         : isDelivery
         ? 'Entrega Pix'
         : 'Corrida Pix';
@@ -1731,6 +1783,10 @@ export async function fetchWalletTransactions(userId: string): Promise<WalletTra
     amount: Number(t.amount),
     type: t.type as WalletTransaction['type'],
     description: String(t.description),
+    auth_code: t.auth_code ? String(t.auth_code) : null,
+    sender_name: t.sender_name ? String(t.sender_name) : null,
+    recipient_name: t.recipient_name ? String(t.recipient_name) : null,
+    recipient_key: t.recipient_key ? String(t.recipient_key) : null,
     created_at: String(t.created_at),
   }));
 }
@@ -2669,7 +2725,7 @@ export async function transferirSaldo66(
   destinatario: string,
   valor: number,
   observacao?: string
-): Promise<void> {
+): Promise<WalletTransaction | null> {
   const cleanTarget = destinatario.trim();
   const cleanAmount = Number(Math.max(0, valor).toFixed(2));
   if (!cleanTarget) {
@@ -2679,13 +2735,35 @@ export async function transferirSaldo66(
     throw new Error('O valor mínimo para transferência 66 Pay é R$ 1,00.');
   }
 
-  const { error: rpc66Err } = await supabase.rpc('transferir_saldo_66', {
+  const { data: rpc66Data, error: rpc66Err } = await supabase.rpc('transferir_saldo_66', {
     p_destinatario: cleanTarget,
     p_valor: cleanAmount,
     p_observacao: observacao?.trim() || null,
   });
 
-  if (!rpc66Err) return;
+  if (!rpc66Err) {
+    const payload = (rpc66Data || {}) as {
+      tx_id?: string;
+      recipient_name?: string;
+      amount?: number;
+      created_at?: string;
+      description?: string;
+    };
+    const { data: sessionData } = await supabase.auth.getSession();
+    const uid = sessionData.session?.user?.id || '';
+    return {
+      id: payload.tx_id ? String(payload.tx_id) : `66PAY-${Date.now()}`,
+      user_id: uid,
+      amount: -Number(payload.amount ?? cleanAmount),
+      type: 'transfer_out',
+      description:
+        payload.description ||
+        `Enviado para ${payload.recipient_name || cleanTarget}${
+          observacao?.trim() ? ` · ${observacao.trim()}` : ''
+        }`,
+      created_at: payload.created_at || new Date().toISOString(),
+    };
+  }
 
   // Fallback to UUID RPC alias if only transfer_wallet_balance is present
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2695,7 +2773,7 @@ export async function transferirSaldo66(
       p_amount: cleanAmount,
       p_note: observacao?.trim() || null,
     });
-    if (!legacyErr) return;
+    if (!legacyErr) return null;
     throw new Error(legacyErr.message || rpc66Err.message || 'Erro ao transferir saldo.');
   }
 
@@ -2707,7 +2785,7 @@ export async function transferWalletBalance(
   amount: number,
   note?: string
 ): Promise<void> {
-  return transferirSaldo66(toUserId, amount, note);
+  await transferirSaldo66(toUserId, amount, note);
 }
 
 export async function fetchMyWalletWithdrawals(userId: string): Promise<WalletWithdrawal[]> {
@@ -2780,3 +2858,430 @@ export async function checkSupabaseHealth(): Promise<{ ok: boolean; detail: stri
     return { ok: false, detail: err instanceof Error ? err.message : 'Sem conexão' };
   }
 }
+
+// --- CENTRAL DE NOTIFICAÇÕES (PASSAGEIRO, MOTORISTA & ADMIN) ---
+
+function mapDbNotification(
+  row: Record<string, unknown>,
+  readIds?: Set<string>
+): AppNotification {
+  const id = String(row.id);
+  return {
+    id,
+    title: String(row.title || ''),
+    message: String(row.message || ''),
+    category: (row.category as NotificationCategory) || 'general',
+    target_scope: (row.target_scope as NotificationTargetScope) || 'all',
+    target_user_id: row.target_user_id ? String(row.target_user_id) : null,
+    action_tab: row.action_tab ? String(row.action_tab) : null,
+    metadata:
+      row.metadata && typeof row.metadata === 'object'
+        ? (row.metadata as Record<string, unknown>)
+        : {},
+    created_by: row.created_by ? String(row.created_by) : null,
+    created_at: String(row.created_at || new Date().toISOString()),
+    is_read: readIds ? readIds.has(id) : false,
+  };
+}
+
+export async function fetchMyNotifications(user: UserProfile): Promise<AppNotification[]> {
+  const [{ data: rows, error }, { data: reads }] = await Promise.all([
+    supabase
+      .from('app_notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(60),
+    supabase
+      .from('notification_reads')
+      .select('notification_id')
+      .eq('user_id', user.id),
+  ]);
+
+  if (error || !rows) return [];
+  const readIds = new Set((reads || []).map((r) => String(r.notification_id)));
+
+  return rows
+    .filter((r) => {
+      const scope = String(r.target_scope || 'all');
+      if (scope === 'all') return true;
+      if (scope === 'user') return String(r.target_user_id || '') === user.id;
+      if (scope === 'passengers') return user.role === 'passenger';
+      if (scope === 'drivers') return user.role === 'driver';
+      return false;
+    })
+    .map((r) => mapDbNotification(r as Record<string, unknown>, readIds));
+}
+
+export async function markNotificationRead(
+  notificationId: string,
+  userId: string
+): Promise<void> {
+  await supabase
+    .from('notification_reads')
+    .upsert(
+      {
+        notification_id: notificationId,
+        user_id: userId,
+        read_at: new Date().toISOString(),
+      },
+      { onConflict: 'notification_id,user_id' }
+    )
+    .then(() => undefined, () => undefined);
+}
+
+export async function markAllNotificationsRead(
+  notificationIds: string[],
+  userId: string
+): Promise<void> {
+  if (notificationIds.length === 0) return;
+  const now = new Date().toISOString();
+  await supabase
+    .from('notification_reads')
+    .upsert(
+      notificationIds.map((nid) => ({
+        notification_id: nid,
+        user_id: userId,
+        read_at: now,
+      })),
+      { onConflict: 'notification_id,user_id' }
+    )
+    .then(() => undefined, () => undefined);
+}
+
+export async function adminFetchSentNotifications(): Promise<AppNotification[]> {
+  const { data, error } = await supabase
+    .from('app_notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(60);
+
+  if (error || !data) return [];
+  return data.map((r) => mapDbNotification(r as Record<string, unknown>));
+}
+
+export async function adminSendNotification(input: {
+  title: string;
+  message: string;
+  category: NotificationCategory;
+  target_scope: NotificationTargetScope;
+  target_user_id?: string | null;
+  action_tab?: string | null;
+  metadata?: Record<string, unknown>;
+  created_by?: string | null;
+}): Promise<AppNotification> {
+  const { data, error } = await supabase
+    .from('app_notifications')
+    .insert({
+      title: input.title.trim(),
+      message: input.message.trim(),
+      category: input.category,
+      target_scope: input.target_scope,
+      target_user_id: input.target_scope === 'user' ? input.target_user_id || null : null,
+      action_tab: input.action_tab || null,
+      metadata: input.metadata || {},
+      created_by: input.created_by || null,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      error?.message || 'Erro ao enviar notificação. Verifique se o SQL incremental foi executado.'
+    );
+  }
+  return mapDbNotification(data as Record<string, unknown>);
+}
+
+// --- CUPONS DE DESCONTO ---
+
+function mapDbCoupon(row: Record<string, unknown>): Coupon {
+  return {
+    id: String(row.id),
+    code: String(row.code || '').toUpperCase(),
+    title: String(row.title || ''),
+    description: String(row.description || ''),
+    discount_type: row.discount_type === 'fixed' ? 'fixed' : 'percent',
+    discount_value: Number(row.discount_value ?? 0),
+    max_discount: row.max_discount !== null && row.max_discount !== undefined ? Number(row.max_discount) : null,
+    min_ride_fare: Number(row.min_ride_fare ?? 0),
+    active: Boolean(row.active ?? true),
+    expires_at: row.expires_at ? String(row.expires_at) : null,
+    created_at: String(row.created_at || new Date().toISOString()),
+  };
+}
+
+export function computeCouponDiscount(coupon: Coupon, baseFare: number): number {
+  if (!coupon.active || baseFare <= 0) return 0;
+  if (coupon.expires_at && new Date(coupon.expires_at).getTime() < Date.now()) return 0;
+  if (baseFare < (coupon.min_ride_fare || 0)) return 0;
+
+  let discount =
+    coupon.discount_type === 'percent'
+      ? baseFare * (coupon.discount_value / 100)
+      : coupon.discount_value;
+
+  if (coupon.max_discount && coupon.max_discount > 0) {
+    discount = Math.min(discount, coupon.max_discount);
+  }
+  // Preserva mínimo operacional simbólico de R$ 1,00 quando corrida for maior
+  const maxAllowed = Math.max(0, baseFare - 1);
+  return Number(Math.min(maxAllowed, Math.max(0, discount)).toFixed(2));
+}
+
+export async function fetchMyAvailableCoupons(userId: string): Promise<UserCoupon[]> {
+  const { data: grants, error } = await supabase
+    .from('user_coupons')
+    .select('*, coupon:coupons(*)')
+    .eq('user_id', userId)
+    .eq('status', 'available')
+    .order('granted_at', { ascending: false });
+
+  if (error || !grants) return [];
+
+  const now = Date.now();
+  return grants
+    .map((g) => {
+      const cRaw = g.coupon as Record<string, unknown> | null;
+      const coupon = cRaw ? mapDbCoupon(cRaw) : null;
+      return {
+        id: String(g.id),
+        coupon_id: String(g.coupon_id),
+        user_id: String(g.user_id),
+        status: (g.status as UserCoupon['status']) || 'available',
+        used_ride_id: g.used_ride_id ? String(g.used_ride_id) : null,
+        granted_at: String(g.granted_at),
+        used_at: g.used_at ? String(g.used_at) : null,
+        coupon,
+      } satisfies UserCoupon;
+    })
+    .filter((uc) => {
+      if (!uc.coupon || !uc.coupon.active) return false;
+      if (uc.coupon.expires_at && new Date(uc.coupon.expires_at).getTime() < now) return false;
+      return true;
+    });
+}
+
+export async function adminFetchCouponsOverview(): Promise<{
+  coupons: Coupon[];
+  grants: UserCoupon[];
+}> {
+  const [{ data: couponRows }, { data: grantRows }] = await Promise.all([
+    supabase.from('coupons').select('*').order('created_at', { ascending: false }),
+    supabase
+      .from('user_coupons')
+      .select('*')
+      .order('granted_at', { ascending: false })
+      .limit(200),
+  ]);
+
+  const coupons = (couponRows || []).map((c) => mapDbCoupon(c as Record<string, unknown>));
+  const couponMap = new Map(coupons.map((c) => [c.id, c]));
+
+  const grants: UserCoupon[] = (grantRows || []).map((g) => ({
+    id: String(g.id),
+    coupon_id: String(g.coupon_id),
+    user_id: String(g.user_id),
+    status: (g.status as UserCoupon['status']) || 'available',
+    used_ride_id: g.used_ride_id ? String(g.used_ride_id) : null,
+    granted_at: String(g.granted_at),
+    used_at: g.used_at ? String(g.used_at) : null,
+    coupon: couponMap.get(String(g.coupon_id)) || null,
+  }));
+
+  return { coupons, grants };
+}
+
+export async function adminCreateCoupon(input: {
+  code: string;
+  title: string;
+  description: string;
+  discount_type: 'percent' | 'fixed';
+  discount_value: number;
+  max_discount?: number | null;
+  min_ride_fare?: number;
+  expires_at?: string | null;
+}): Promise<Coupon> {
+  const cleanCode = input.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  if (!cleanCode || cleanCode.length < 3) {
+    throw new Error('Informe um código de cupom com pelo menos 3 caracteres.');
+  }
+
+  const { data, error } = await supabase
+    .from('coupons')
+    .insert({
+      code: cleanCode,
+      title: input.title.trim(),
+      description: input.description.trim(),
+      discount_type: input.discount_type,
+      discount_value: Number(input.discount_value),
+      max_discount:
+        input.max_discount && input.max_discount > 0 ? Number(input.max_discount) : null,
+      min_ride_fare: Number(input.min_ride_fare || 0),
+      active: true,
+      expires_at: input.expires_at || null,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Erro ao criar cupom no Supabase.');
+  }
+  return mapDbCoupon(data as Record<string, unknown>);
+}
+
+export async function adminToggleCoupon(couponId: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from('coupons').update({ active }).eq('id', couponId);
+  if (error) throw new Error(error.message);
+}
+
+export async function adminDeleteCoupon(couponId: string): Promise<void> {
+  const { error } = await supabase.from('coupons').delete().eq('id', couponId);
+  if (error) throw new Error(error.message);
+}
+
+export async function adminGrantCouponToUsers(
+  couponId: string,
+  targetUserId: string | null,
+  sendNotification = true
+): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_grant_coupon', {
+    p_coupon_id: couponId,
+    p_user_id: targetUserId,
+    p_send_notification: sendNotification,
+  });
+
+  if (error) {
+    throw new Error(
+      error.message || 'Erro ao liberar cupom. Verifique se o SQL incremental foi aplicado.'
+    );
+  }
+  return Number(data ?? 0);
+}
+
+// --- TRANSFERÊNCIA 66PAY NA CORRIDA (QR CODE / CHAVE 66PAY DO MOTORISTA) ---
+
+export function buildDriver66PayQrPayload(driver: UserProfile): string {
+  const key =
+    driver.pay66_key ||
+    `66-${driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+  const cleanName = (driver.full_name || 'Motorista').replace(/\|/g, ' ').trim();
+  const cleanEmail = (driver.email || '').replace(/\|/g, '').trim();
+  return `66PAY|${driver.id}|${key}|${cleanEmail}|${cleanName}`;
+}
+
+export async function lookup66PayDriver(
+  keyOrQr: string
+): Promise<import('../types/mobility').Pay66DriverMatch | null> {
+  const clean = keyOrQr.trim();
+  if (!clean) return null;
+
+  let token = clean;
+  if (clean.toUpperCase().startsWith('66PAY|')) {
+    const parts = clean.split('|');
+    token = (parts[1] || parts[2] || '').trim();
+  }
+
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('lookup_66pay_driver', {
+    p_key: clean,
+  });
+
+  if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+    const row = rpcData[0] as Record<string, unknown>;
+    return {
+      id: String(row.id),
+      full_name: String(row.full_name || 'Motorista'),
+      pay66_key: String(
+        row.pay66_key || `66-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
+      ),
+      avatar_url: row.avatar_url ? String(row.avatar_url) : null,
+      phone: row.phone ? String(row.phone) : '',
+      vehicle_model: row.vehicle_model ? String(row.vehicle_model) : null,
+      vehicle_plate: row.vehicle_plate ? String(row.vehicle_plate) : null,
+    };
+  }
+
+  // Fallback query on profiles if RPC isn't applied yet
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
+  if (isUuid) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, phone')
+      .eq('id', token)
+      .maybeSingle();
+    if (prof) {
+      const { data: drv } = await supabase
+        .from('driver_profiles')
+        .select('vehicle_model, vehicle_plate')
+        .eq('user_id', prof.id)
+        .maybeSingle();
+      return {
+        id: String(prof.id),
+        full_name: String(prof.full_name || 'Motorista'),
+        pay66_key: `66-${String(prof.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+        avatar_url: prof.avatar_url ? String(prof.avatar_url) : null,
+        phone: prof.phone ? String(prof.phone) : '',
+        vehicle_model: drv?.vehicle_model ? String(drv.vehicle_model) : null,
+        vehicle_plate: drv?.vehicle_plate ? String(drv.vehicle_plate) : null,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function process66PayRideTransfer(
+  rideId: string,
+  driverKey?: string
+): Promise<import('../types/mobility').Pay66ReceiptResult> {
+  const { data, error } = await supabase.rpc('process_66pay_ride_transfer', {
+    p_ride_id: rideId,
+    p_driver_key: driverKey?.trim() || null,
+  });
+
+  if (!error && data) {
+    const res = data as Record<string, unknown>;
+    return {
+      ok: Boolean(res.ok ?? true),
+      already_paid: Boolean(res.already_paid ?? false),
+      ride_id: String(res.ride_id || rideId),
+      amount: Number(res.amount ?? 0),
+      auth_code: String(res.auth_code || `66PAY-${rideId.slice(0, 8).toUpperCase()}`),
+      tx_id: String(res.tx_id || rideId),
+      created_at: String(res.created_at || new Date().toISOString()),
+      sender_name: String(res.sender_name || 'Cliente'),
+      sender_key: String(res.sender_key || ''),
+      recipient_name: String(res.recipient_name || 'Motorista'),
+      recipient_key: String(res.recipient_key || ''),
+      new_passenger_balance:
+        res.new_passenger_balance !== undefined ? Number(res.new_passenger_balance) : undefined,
+    };
+  }
+
+  // Fallback via pay_completed_ride_with_wallet if Section 8 RPC isn't yet deployed
+  const { error: legacyErr } = await supabase.rpc('pay_completed_ride_with_wallet', {
+    p_ride_id: rideId,
+  });
+  if (legacyErr) {
+    throw new Error(error?.message || legacyErr.message || 'Falha ao processar pagamento 66pay.');
+  }
+
+  const ride = await fetchRideByIdEnriched(rideId);
+  const driverId = ride?.driver_id || '';
+  return {
+    ok: true,
+    ride_id: rideId,
+    amount: Number((ride?.final_fare ?? ride?.estimated_fare ?? 0).toFixed(2)),
+    auth_code: `66PAY-${rideId.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+    tx_id: rideId,
+    created_at: new Date().toISOString(),
+    sender_name: ride?.passenger?.full_name || 'Cliente',
+    sender_key:
+      ride?.passenger?.pay66_key ||
+      `66-${(ride?.passenger_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+    recipient_name: ride?.driver?.full_name || 'Motorista',
+    recipient_key:
+      ride?.driver?.pay66_key ||
+      `66-${driverId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+  };
+}
+

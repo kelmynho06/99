@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowUp,
   Banknote,
+  Bell,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -18,6 +19,7 @@ import {
   Flag,
   Headphones,
   History,
+  KeyRound,
   LogOut,
   MapPin,
   Menu,
@@ -26,8 +28,10 @@ import {
   Phone,
   Power,
   QrCode,
+  Receipt,
   RefreshCw,
   RotateCcw,
+  Search,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -47,16 +51,25 @@ import {
   fetchRouteGeometry,
   formatBRL,
   haversineKm,
+  preloadLocalGeoIndex,
+  reverseGeocode,
+  searchAddresses,
+  searchLocalGeoIndex,
+  type AddressSuggestion,
   type RouteStep,
 } from '../lib/geo';
 import {
   acceptRide,
+  buildDriver66PayQrPayload,
   completeRide,
   confirmCashReceived,
   declarePixPaid,
+  fetchMyNotifications,
   fetchRideByIdEnriched,
   fetchUserProfileById,
   fetchWalletTransactions,
+  markAllNotificationsRead,
+  markNotificationRead,
   markRideArrived,
   reportRideUnpaid,
   startRideWithPin,
@@ -78,12 +91,15 @@ import {
   stopSpeech,
   unlockAudioContext,
 } from '../lib/sound';
+import { supabase } from '../lib/supabase';
 import {
   getUserPreferences,
   saveUserPreferences,
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
+  AppNotification,
+  GeoPoint,
   PeriodFilter,
   PlatformConfig,
   PlatformEvent,
@@ -99,8 +115,10 @@ import { AvatarImage } from './AvatarImage';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
 import { LiveMap } from './LiveMap';
+import { NotificationsModal } from './NotificationsModal';
 import { PWAInstallButton } from './PWAInstallButton';
 import { RatingModal } from './RatingModal';
+import { Receipt66PayModal } from './Receipt66PayModal';
 import { RideChatModal } from './RideChatModal';
 import { SlideToConfirm } from './SlideToConfirm';
 
@@ -215,7 +233,26 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [pixConfirmedSuccess, setPixConfirmedSuccess] = useState(false);
   const [walletCheckoutSuccess, setWalletCheckoutSuccess] = useState(false);
   const [copiedCheckoutPix, setCopiedCheckoutPix] = useState(false);
+  const [copied66PayKey, setCopied66PayKey] = useState(false);
   const [waitNowMs, setWaitNowMs] = useState<number>(() => Date.now());
+
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [receiptTx, setReceiptTx] = useState<WalletTransaction | null>(null);
+  const [receipt66Ride, setReceipt66Ride] = useState<Ride | null>(null);
+
+  const [freeNavOpen, setFreeNavOpen] = useState(false);
+  const [freeNavQuery, setFreeNavQuery] = useState('');
+  const [freeNavSuggestions, setFreeNavSuggestions] = useState<AddressSuggestion[]>([]);
+  const [freeNavSearching, setFreeNavSearching] = useState(false);
+  const [freeNavPickMode, setFreeNavPickMode] = useState(false);
+  const [freeNavDest, setFreeNavDest] = useState<GeoPoint | null>(null);
+  const [freeNavRouteCoords, setFreeNavRouteCoords] = useState<[number, number][]>([]);
+  const [freeNavRouteInfo, setFreeNavRouteInfo] = useState<{
+    distanceKm: number;
+    durationMin: number;
+  } | null>(null);
 
   const [disputeRide, setDisputeRide] = useState<Ride | null>(null);
   const [disputeReason, setDisputeReason] = useState('');
@@ -363,19 +400,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
     return stopAlarm;
   }, [incomingRide]);
 
-  // Keep checkoutRide synced and show green confirmation feedback when Admin confirms Pix or client pays via App Wallet
+  // Keep checkoutRide synced and show green confirmation feedback when Admin confirms Pix or client scans 66pay QR
   useEffect(() => {
     if (!checkoutRide) return;
     const latest = myDriverRides.find((r) => r.id === checkoutRide.id);
     if (!latest) return;
 
     if (
+      latest.payment_status === 'paid' ||
       latest.payment_status === 'paid_pix' ||
       latest.payment_status === 'admin_settled' ||
       latest.payment_status === 'paid_wallet'
     ) {
       if (!pixConfirmedSuccess) {
-        setWalletCheckoutSuccess(latest.payment_status === 'paid_wallet');
+        const isWalletPay =
+          latest.payment_status === 'paid' || latest.payment_status === 'paid_wallet';
+        setWalletCheckoutSuccess(isWalletPay);
         setPixConfirmedSuccess(true);
         setCheckoutRide(latest);
         justCompletedRideIdRef.current = latest.id;
@@ -385,11 +425,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
           .then((fresh) => fresh && onUserUpdated(fresh))
           .catch(() => {});
         if (pixSuccessTimerRef.current) window.clearTimeout(pixSuccessTimerRef.current);
-        pixSuccessTimerRef.current = window.setTimeout(() => {
-          setCheckoutRide(null);
-          setPixConfirmedSuccess(false);
-          setWalletCheckoutSuccess(false);
-        }, 2800);
+        if (!isWalletPay) {
+          pixSuccessTimerRef.current = window.setTimeout(() => {
+            setCheckoutRide(null);
+            setPixConfirmedSuccess(false);
+            setWalletCheckoutSuccess(false);
+          }, 3200);
+        }
       }
       return;
     }
@@ -613,6 +655,133 @@ export const DriverView: React.FC<DriverViewProps> = ({
     setTransactions(txs);
   }, [currentUser.id, refreshProfile]);
 
+  const loadNotifications = useCallback(async () => {
+    setLoadingNotifications(true);
+    try {
+      const list = await fetchMyNotifications(currentUser);
+      setNotifications(list);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    void loadNotifications();
+    const channel = supabase
+      .channel(`driver-notifications-${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'app_notifications' },
+        () => {
+          void loadNotifications();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser.id, loadNotifications]);
+
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((n) => !n.is_read).length,
+    [notifications]
+  );
+
+  // Free-Map Navigation ONLY when !activeRide — auto-clears completely as soon as a ride starts
+  useEffect(() => {
+    if (activeRide) {
+      setFreeNavOpen(false);
+      setFreeNavPickMode(false);
+      setFreeNavQuery('');
+      setFreeNavSuggestions([]);
+      setFreeNavDest(null);
+      setFreeNavRouteCoords([]);
+      setFreeNavRouteInfo(null);
+    }
+  }, [activeRide]);
+
+  useEffect(() => {
+    if (!driverGpsFixed) return;
+    void preloadLocalGeoIndex(driverCoords[0], driverCoords[1]);
+  }, [driverGpsFixed, driverCoords]);
+
+  useEffect(() => {
+    if (activeRide || !freeNavOpen) return;
+    const trimmed = freeNavQuery.trim();
+    if (trimmed.length < 2) {
+      setFreeNavSuggestions([]);
+      setFreeNavSearching(false);
+      return;
+    }
+
+    const localHits = searchLocalGeoIndex(trimmed, driverCoords[0], driverCoords[1]);
+    if (localHits.length > 0) {
+      setFreeNavSuggestions(localHits);
+    }
+
+    const controller = new AbortController();
+    setFreeNavSearching(true);
+    const timer = window.setTimeout(() => {
+      searchAddresses(trimmed, driverCoords[0], driverCoords[1], controller.signal)
+        .then((results) => {
+          if (!controller.signal.aborted) {
+            setFreeNavSuggestions(results.length > 0 ? results : localHits);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!controller.signal.aborted) setFreeNavSearching(false);
+        });
+    }, 260);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeRide, freeNavOpen, freeNavQuery, driverCoords]);
+
+  const selectFreeNavDestination = useCallback(
+    async (point: GeoPoint) => {
+      if (activeRide) return;
+      setFreeNavDest(point);
+      setFreeNavQuery(point.address);
+      setFreeNavSuggestions([]);
+      setFreeNavPickMode(false);
+      const route = await fetchRouteGeometry(
+        driverCoords[0],
+        driverCoords[1],
+        point.lat,
+        point.lng
+      );
+      setFreeNavRouteCoords(route.coords);
+      setFreeNavRouteInfo({
+        distanceKm: route.distanceKm,
+        durationMin: route.durationMin,
+      });
+    },
+    [activeRide, driverCoords]
+  );
+
+  const handleFreeNavMapPick = useCallback(
+    async (lat: number, lng: number) => {
+      if (activeRide || !freeNavPickMode) return;
+      const address = await reverseGeocode(lat, lng).catch(
+        () => `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+      );
+      await selectFreeNavDestination({ lat, lng, address });
+    },
+    [activeRide, freeNavPickMode, selectFreeNavDestination]
+  );
+
+  const clearFreeNav = useCallback(() => {
+    setFreeNavQuery('');
+    setFreeNavSuggestions([]);
+    setFreeNavPickMode(false);
+    setFreeNavDest(null);
+    setFreeNavRouteCoords([]);
+    setFreeNavRouteInfo(null);
+  }, []);
+
   useEffect(() => {
     fetchWalletTransactions(currentUser.id).then(setTransactions).catch(() => {});
   }, [currentUser.id]);
@@ -736,17 +905,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
         fare: updated.final_fare ?? updated.estimated_fare,
       },
     });
-    if (updated.payment_method === 'wallet' || updated.payment_status === 'paid_wallet') {
+    if (updated.payment_status === 'paid' || updated.payment_status === 'paid_wallet') {
       setCheckoutRide(null);
       setPixConfirmedSuccess(false);
       setWalletPaidSuccessRide(updated);
       void playRideAcceptedChime();
-      if (walletSuccessTimerRef.current) window.clearTimeout(walletSuccessTimerRef.current);
-      walletSuccessTimerRef.current = window.setTimeout(() => {
-        setWalletPaidSuccessRide(null);
-      }, 2600);
     } else {
       setPixConfirmedSuccess(false);
+      setWalletCheckoutSuccess(false);
       setCheckoutRide(updated);
     }
     await loadFinancePanel();
@@ -1022,6 +1188,36 @@ export const DriverView: React.FC<DriverViewProps> = ({
     );
   }, [checkoutRide, platformConfig, checkoutPixCycle]);
 
+  const myPay66Key = useMemo(
+    () =>
+      currentUser.pay66_key ||
+      `66-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+    [currentUser.pay66_key, currentUser.id]
+  );
+
+  const driver66PayQrPayload = useMemo(
+    () => buildDriver66PayQrPayload(currentUser),
+    [currentUser]
+  );
+
+  const openRide66PayReceipt = (ride: Ride) => {
+    const fare = Number(ride.final_fare ?? ride.estimated_fare ?? 0);
+    setReceiptTx({
+      id: ride.id,
+      user_id: currentUser.id,
+      ride_id: ride.id,
+      amount: fare,
+      type: 'ride_earning',
+      description: `Corrida #${ride.id.slice(-4)} recebida via 66pay`,
+      auth_code: `66PAY-${ride.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+      sender_name: ride.passenger?.full_name || 'Passageiro 66 Mobilidade',
+      recipient_name: currentUser.full_name,
+      recipient_key: myPay66Key,
+      created_at: ride.completed_at || new Date().toISOString(),
+    });
+    setReceipt66Ride(ride);
+  };
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-900">
       <LiveMap
@@ -1042,9 +1238,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 lng: activeRide.destination_lng,
                 address: activeRide.destination_address,
               }
-            : null
+            : freeNavDest
         }
-        routeCoords={routeCoords}
+        routeCoords={activeRide ? routeCoords : freeNavRouteCoords}
+        pickOnMapMode={!activeRide && freeNavPickMode ? 'destination' : null}
+        onMapPick={!activeRide ? handleFreeNavMapPick : undefined}
         controlsTopClassName={
           activeRide
             ? 'top-28'
@@ -1053,6 +1251,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             : 'top-1/2 -translate-y-1/2 sm:top-20 sm:translate-y-0'
         }
         followVehicle={Boolean(activeRide)}
+        enable3dHud={Boolean(activeRide)}
         showSpeedometer={Boolean(activeRide)}
         speedKmh={driverSpeedKmh}
         driverPosition={{
@@ -1080,14 +1279,32 @@ export const DriverView: React.FC<DriverViewProps> = ({
       {/* NORMAL IDLE TOP BAR — HIDDEN IN IMMERSIVE NAVIGATION OR CLEAN MAP MODE */}
       {!activeRide && !idleCleanMap && (
         <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] flex items-center justify-between gap-2 px-4 pt-safe py-3">
-          <button
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#181B22] text-white shadow-lg border border-white/10 active:scale-95 transition"
-            aria-label="Abrir menu do motorista"
-          >
-            <Menu className="h-6 w-6" />
-          </button>
+          <div className="pointer-events-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#181B22] text-white shadow-lg border border-white/10 active:scale-95 transition"
+              aria-label="Abrir menu do motorista"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void loadNotifications();
+                setNotificationsOpen(true);
+              }}
+              className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-[#181B22] text-white shadow-lg border border-white/10 active:scale-95 transition"
+              aria-label="Notificações"
+            >
+              <Bell className="h-5 w-5 text-[#FFD100]" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white shadow">
+                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+          </div>
 
           <button
             type="button"
@@ -1095,10 +1312,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
               loadFinancePanel();
               setFinanceOpen(true);
             }}
-            className="pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-full bg-[#181B22] px-5 text-white shadow-xl border border-white/10 active:scale-95 transition"
+            className="pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-full bg-[#181B22] px-4 sm:px-5 text-white shadow-xl border border-white/10 active:scale-95 transition"
           >
             <Wallet className="h-4 w-4 text-[#FFD100]" />
-            <span className="font-mono-num text-base font-extrabold text-white">
+            <span className="font-mono-num text-sm sm:text-base font-extrabold text-white">
               {formatBRL(currentUser.wallet_balance)}
             </span>
           </button>
@@ -1687,6 +1904,122 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   <span>{t.transfer}</span>
                 </button>
               </div>
+
+              {/* Navegação Livre no Mapa (Disponível somente fora de corrida ativa) */}
+              <div className="rounded-2xl border border-white/10 bg-[#1A1D24] p-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFreeNavOpen((v) => !v)}
+                    className="flex items-center gap-2 text-left text-xs font-extrabold text-white"
+                  >
+                    <Navigation className="h-4 w-4 text-[#FFD100]" />
+                    <span>Navegação Livre (Sem corrida)</span>
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {freeNavDest && (
+                      <button
+                        type="button"
+                        onClick={clearFreeNav}
+                        className="rounded-lg bg-red-500/15 px-2 py-1 text-[10px] font-bold text-red-300"
+                      >
+                        Limpar rota
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setFreeNavOpen((v) => !v)}
+                      className="rounded-lg bg-white/10 px-2 py-1 text-[10px] font-bold text-[#FFD100]"
+                    >
+                      {freeNavOpen ? 'Ocultar' : 'Buscar endereço'}
+                    </button>
+                  </div>
+                </div>
+
+                {freeNavOpen && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="text"
+                          value={freeNavQuery}
+                          onChange={(e) => setFreeNavQuery(e.target.value)}
+                          placeholder="Buscar rua, bairro ou ponto de apoio..."
+                          className="min-h-[40px] w-full rounded-xl border border-white/10 bg-[#11141B] pl-8 pr-3 text-xs font-semibold text-white outline-none focus:border-[#FFD100]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFreeNavPickMode((v) => !v)}
+                        className={`min-h-[40px] shrink-0 rounded-xl px-2.5 text-[11px] font-extrabold transition ${
+                          freeNavPickMode
+                            ? 'bg-[#FFD100] text-neutral-950'
+                            : 'bg-white/10 text-neutral-200 border border-white/10'
+                        }`}
+                        title="Toque no mapa para definir destino"
+                      >
+                        {freeNavPickMode ? 'Toque no mapa...' : 'No mapa'}
+                      </button>
+                    </div>
+
+                    {freeNavSearching && (
+                      <p className="text-[11px] text-neutral-400">Buscando endereços...</p>
+                    )}
+
+                    {freeNavSuggestions.length > 0 && (
+                      <div className="max-h-36 overflow-y-auto rounded-xl border border-white/10 bg-[#11141B] divide-y divide-white/5">
+                        {freeNavSuggestions.map((s, idx) => (
+                          <button
+                            key={`${s.lat}-${s.lng}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              void selectFreeNavDestination({
+                                lat: s.lat,
+                                lng: s.lng,
+                                address: s.address,
+                              });
+                            }}
+                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs text-neutral-200 hover:bg-white/5"
+                          >
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFD100]" />
+                            <div className="min-w-0 flex-1">
+                              <span className="block truncate font-semibold text-white">
+                                {s.address}
+                              </span>
+                              {s.subtitle && (
+                                <span className="block truncate text-[10px] text-neutral-400">
+                                  {s.subtitle}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {freeNavDest && freeNavRouteInfo && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-3 py-2 text-[11px]">
+                    <div className="min-w-0">
+                      <p className="font-bold text-white truncate">{freeNavDest.address}</p>
+                      <p className="font-mono-num text-[#FFD100] font-bold">
+                        {freeNavRouteInfo.distanceKm} km · ~{freeNavRouteInfo.durationMin} min
+                      </p>
+                    </div>
+                    <a
+                      href={buildGoogleMapsDirectionsUrl(freeNavDest.lat, freeNavDest.lng)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Maps
+                    </a>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1815,7 +2148,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* ETAPA C: DESTINATION CHECKOUT WITH ALWAYS-ON PIX QR, ADMIN LOCK & GREEN PIX SUCCESS FEEDBACK */}
+      {/* ETAPA C: DESTINATION CHECKOUT WITH 66PAY QR, ADMIN PIX QR & CONFIRMATION + RECEIPT */}
       {checkoutRide && (() => {
         if (pixConfirmedSuccess) {
           return (
@@ -1827,7 +2160,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <div>
                   <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                     {walletCheckoutSuccess
-                      ? t.pay_with_wallet
+                      ? 'Pagamento 66pay Confirmado'
                       : t.checkout_pix_confirmed_admin}
                   </p>
                   <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
@@ -1835,34 +2168,51 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   </h3>
                   <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-300">
                     {walletCheckoutSuccess
-                      ? 'O cliente pagou com o Saldo do App. O valor de '
+                      ? 'Transferência interna 66pay recebida do passageiro. O valor de '
                       : 'O valor de '}
                     <strong className="font-mono-num text-neutral-950 dark:text-[#FFD100]">
                       {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
                     </strong>{' '}
-                    já foi creditado no seu saldo de repasses.
+                    já foi creditado no seu saldo 66pay.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pixSuccessTimerRef.current) {
-                      window.clearTimeout(pixSuccessTimerRef.current);
-                    }
-                    setCheckoutRide(null);
-                    setPixConfirmedSuccess(false);
-                    setWalletCheckoutSuccess(false);
-                  }}
-                  className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
-                >
-                  {t.continue_btn}
-                </button>
+                <div className="space-y-2">
+                  {walletCheckoutSuccess && (
+                    <button
+                      type="button"
+                      onClick={() => openRide66PayReceipt(checkoutRide)}
+                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98]"
+                    >
+                      <Receipt className="h-4 w-4" />
+                      Gerar Comprovante 66pay
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pixSuccessTimerRef.current) {
+                        window.clearTimeout(pixSuccessTimerRef.current);
+                      }
+                      setCheckoutRide(null);
+                      setPixConfirmedSuccess(false);
+                      setWalletCheckoutSuccess(false);
+                    }}
+                    className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
+                  >
+                    {t.continue_btn}
+                  </button>
+                </div>
               </div>
             </div>
           );
         }
 
+        const isWalletQrCheckout =
+          checkoutRide.payment_method === 'wallet' &&
+          checkoutRide.payment_status === 'pending';
+
         const waitingAdminPix =
+          !isWalletQrCheckout &&
           (checkoutRide.payment_method === 'pix' || Boolean(checkoutRide.pix_declared_at)) &&
           checkoutRide.payment_status === 'pending';
 
@@ -1872,15 +2222,19 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <div className="flex items-center justify-between border-b border-neutral-100 dark:border-white/10 pb-3">
                 <div>
                   <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                    Etapa C · Pix / Pagamento
+                    {isWalletQrCheckout
+                      ? 'Etapa C · Recebimento 66pay'
+                      : 'Etapa C · Pix / Pagamento'}
                   </p>
                   <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                    {waitingAdminPix
+                    {isWalletQrCheckout
+                      ? 'Receber Corrida via 66pay'
+                      : waitingAdminPix
                       ? t.checkout_pix_waiting_title
                       : t.checkout_payment_title}
                   </h3>
                 </div>
-                {!waitingAdminPix && (
+                {!waitingAdminPix && !isWalletQrCheckout && (
                   <button
                     type="button"
                     onClick={() => setCheckoutRide(null)}
@@ -1914,80 +2268,137 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 )}
               </div>
 
-              {waitingAdminPix && (
-                <div className="rounded-2xl border border-amber-300 dark:border-amber-500/50 bg-amber-50 dark:bg-amber-950/60 px-3.5 py-3 text-xs font-bold text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
-                  <Clock className="h-5 w-5 shrink-0 text-amber-600 dark:text-[#FFD100] animate-pulse mt-0.5" />
-                  <div>
-                    <p className="text-neutral-950 dark:text-white font-extrabold">
-                      {t.checkout_waiting_admin_headline}
-                    </p>
-                    <p className="mt-0.5 font-normal text-amber-800 dark:text-amber-100/80">
-                      {t.checkout_waiting_admin_desc}
-                    </p>
+              {isWalletQrCheckout ? (
+                <div className="rounded-2xl bg-[#11141B] text-white p-4 border border-[#FFD100]/40 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#FFD100]">
+                      <KeyRound className="h-4 w-4" />
+                      QR Code Exclusivo 66pay (Motorista)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(myPay66Key);
+                        setCopied66PayKey(true);
+                        setTimeout(() => setCopied66PayKey(false), 2000);
+                      }}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
+                    >
+                      {copied66PayKey ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      {copied66PayKey ? 'Copiada!' : 'Copiar Chave'}
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-neutral-200 leading-relaxed">
+                    Mostre este QR Code ao passageiro para concluir a transferência interna 66pay
+                    (saldo já reservado na corrida).
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3.5">
+                    <div className="rounded-2xl bg-white p-2.5 shrink-0 shadow-sm">
+                      <PixQrSvg payload={driver66PayQrPayload} size={144} />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2 text-center sm:text-left">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                          Sua Chave 66pay
+                        </p>
+                        <p className="font-mono-num text-sm font-extrabold text-[#FFD100] select-all">
+                          {myPay66Key}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-2 text-[11px] font-bold text-amber-200 flex items-center gap-2">
+                        <Clock className="h-4 w-4 shrink-0 text-[#FFD100] animate-pulse" />
+                        <span>Aguardando passageiro escanear QR Code 66pay...</span>
+                      </div>
+                      <p className="text-[10px] text-neutral-400">
+                        Transferência interna 66pay (não é Pix bancário)
+                      </p>
+                    </div>
                   </div>
                 </div>
-              )}
+              ) : (
+                <>
+                  {waitingAdminPix && (
+                    <div className="rounded-2xl border border-amber-300 dark:border-amber-500/50 bg-amber-50 dark:bg-amber-950/60 px-3.5 py-3 text-xs font-bold text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+                      <Clock className="h-5 w-5 shrink-0 text-amber-600 dark:text-[#FFD100] animate-pulse mt-0.5" />
+                      <div>
+                        <p className="text-neutral-950 dark:text-white font-extrabold">
+                          {t.checkout_waiting_admin_headline}
+                        </p>
+                        <p className="mt-0.5 font-normal text-amber-800 dark:text-amber-100/80">
+                          {t.checkout_waiting_admin_desc}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
-              {/* ALWAYS SHOW ADMIN PIX QR CODE (FOR PIX RIDES OR UNFORESEEN SWITCH FROM CASH) */}
-              <div className="rounded-2xl bg-neutral-50 dark:bg-[#1D212B] p-4 border border-neutral-200 dark:border-white/10 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-extrabold text-neutral-900 dark:text-[#FFD100]">
-                    {checkoutRide.payment_method === 'cash'
-                      ? t.checkout_qr_cash_option
-                      : `${t.checkout_qr_admin_platform} · ${platformConfig.platform_pix_receiver}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(checkoutEmvPayload);
-                      setCopiedCheckoutPix(true);
-                      setTimeout(() => setCopiedCheckoutPix(false), 2000);
-                    }}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
-                  >
-                    {copiedCheckoutPix ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                    {copiedCheckoutPix ? t.checkout_copied_pix : t.checkout_copy_pix}
-                  </button>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center gap-3.5">
-                  <div
-                    key={checkoutPixCycle}
-                    className="rounded-2xl bg-white p-2.5 border border-neutral-200 dark:border-transparent shrink-0 shadow-xs"
-                  >
-                    {platformConfig.platform_pix_qr_url ? (
-                      <img
-                        src={platformConfig.platform_pix_qr_url}
-                        alt={t.checkout_qr_admin_platform}
-                        className="h-32 w-32 sm:h-36 sm:w-36 object-contain rounded-lg"
-                      />
-                    ) : (
-                      <PixQrSvg payload={checkoutEmvPayload} size={132} />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-left">
-                    <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                      Atualiza em <span className="font-mono-num">{checkoutPixTimer}</span> · Conta Admin
-                    </p>
-                    <p className="text-[11px] font-bold text-neutral-600 dark:text-neutral-300">
-                      {platformConfig.platform_pix_receiver}
-                    </p>
-                    <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
-                      Chave:{' '}
-                      <span className="text-neutral-950 dark:text-white font-mono-num">
-                        {platformConfig.platform_pix_key}
+                  {/* ALWAYS SHOW ADMIN PIX QR CODE (FOR PIX RIDES OR UNFORESEEN SWITCH FROM CASH) */}
+                  <div className="rounded-2xl bg-neutral-50 dark:bg-[#1D212B] p-4 border border-neutral-200 dark:border-white/10 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-extrabold text-neutral-900 dark:text-[#FFD100]">
+                        {checkoutRide.payment_method === 'cash'
+                          ? t.checkout_qr_cash_option
+                          : `${t.checkout_qr_admin_platform} · ${platformConfig.platform_pix_receiver}`}
                       </span>
-                    </p>
-                    <p className="font-mono-num text-[10px] text-neutral-600 dark:text-neutral-300 break-all line-clamp-3 select-all">
-                      {checkoutEmvPayload}
-                    </p>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(checkoutEmvPayload);
+                          setCopiedCheckoutPix(true);
+                          setTimeout(() => setCopiedCheckoutPix(false), 2000);
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                      >
+                        {copiedCheckoutPix ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                        {copiedCheckoutPix ? t.checkout_copied_pix : t.checkout_copy_pix}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-3.5">
+                      <div
+                        key={checkoutPixCycle}
+                        className="rounded-2xl bg-white p-2.5 border border-neutral-200 dark:border-transparent shrink-0 shadow-xs"
+                      >
+                        {platformConfig.platform_pix_qr_url ? (
+                          <img
+                            src={platformConfig.platform_pix_qr_url}
+                            alt={t.checkout_qr_admin_platform}
+                            className="h-32 w-32 sm:h-36 sm:w-36 object-contain rounded-lg"
+                          />
+                        ) : (
+                          <PixQrSvg payload={checkoutEmvPayload} size={132} />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-left">
+                        <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                          Atualiza em <span className="font-mono-num">{checkoutPixTimer}</span> · Conta Admin
+                        </p>
+                        <p className="text-[11px] font-bold text-neutral-600 dark:text-neutral-300">
+                          {platformConfig.platform_pix_receiver}
+                        </p>
+                        <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
+                          Chave:{' '}
+                          <span className="text-neutral-950 dark:text-white font-mono-num">
+                            {platformConfig.platform_pix_key}
+                          </span>
+                        </p>
+                        <p className="font-mono-num text-[10px] text-neutral-600 dark:text-neutral-300 break-all line-clamp-3 select-all">
+                          {checkoutEmvPayload}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 {checkoutRide.payment_method === 'cash' && !checkoutRide.pix_declared_at && (
@@ -2033,7 +2444,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
         );
       })()}
 
-      {/* Instant Celebratory Modal for Rides/Deliveries Paid with App Wallet Balance */}
+      {/* Instant Celebratory Modal for Rides/Deliveries Paid with 66pay */}
       {walletPaidSuccessRide && (
         <div className="fixed inset-0 z-[1185] flex items-center justify-center bg-black/75 p-4">
           <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 text-center shadow-2xl space-y-4 border border-emerald-200 dark:border-emerald-800">
@@ -2042,7 +2453,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                Pago pelo Aplicativo (Saldo)
+                Pagamento 66pay Confirmado
               </p>
               <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
                 Valor creditado no seu saldo!
@@ -2054,21 +2465,31 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     walletPaidSuccessRide.final_fare ?? walletPaidSuccessRide.estimated_fare
                   )}
                 </strong>{' '}
-                já foi adicionado automaticamente ao seu saldo de repasses.
+                já foi adicionado automaticamente ao seu saldo 66pay.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (walletSuccessTimerRef.current) {
-                  window.clearTimeout(walletSuccessTimerRef.current);
-                }
-                setWalletPaidSuccessRide(null);
-              }}
-              className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
-            >
-              Continuar
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => openRide66PayReceipt(walletPaidSuccessRide)}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98]"
+              >
+                <Receipt className="h-4 w-4" />
+                Gerar Comprovante 66pay
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (walletSuccessTimerRef.current) {
+                    window.clearTimeout(walletSuccessTimerRef.current);
+                  }
+                  setWalletPaidSuccessRide(null);
+                }}
+                className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
+              >
+                Continuar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2317,6 +2738,28 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   Eventos & Bônus ({relevantEvents.length})
                 </span>
                 <ChevronRight className="h-4 w-4 text-neutral-500" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void loadNotifications();
+                  setNotificationsOpen(true);
+                  setMenuOpen(false);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+              >
+                <span className="flex items-center gap-3">
+                  <Bell className="h-5 w-5 text-[#FFD100]" />
+                  Notificações
+                </span>
+                {unreadNotificationsCount > 0 ? (
+                  <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                    {unreadNotificationsCount}
+                  </span>
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-neutral-500" />
+                )}
               </button>
 
               <button
@@ -2907,6 +3350,42 @@ export const DriverView: React.FC<DriverViewProps> = ({
             onRideUpsert(updated);
           }}
           onSkip={() => markRatingHandled(pendingRatingRide.id)}
+        />
+      )}
+
+      {notificationsOpen && (
+        <NotificationsModal
+          notifications={notifications}
+          loading={loadingNotifications}
+          onMarkRead={(nid) => {
+            setNotifications((prev) =>
+              prev.map((n) => (n.id === nid ? { ...n, is_read: true } : n))
+            );
+            void markNotificationRead(nid, currentUser.id);
+          }}
+          onMarkAllRead={() => {
+            const ids = notifications.filter((n) => !n.is_read).map((n) => n.id);
+            setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+            void markAllNotificationsRead(ids, currentUser.id);
+          }}
+          onOpenEvents={() => setEventsOpen(true)}
+          onOpenReceipt={(tx) => {
+            setReceipt66Ride(null);
+            setReceiptTx(tx);
+          }}
+          onClose={() => setNotificationsOpen(false)}
+        />
+      )}
+
+      {(receiptTx || receipt66Ride) && (
+        <Receipt66PayModal
+          transaction={receiptTx}
+          currentUser={currentUser}
+          platformConfig={platformConfig}
+          onClose={() => {
+            setReceiptTx(null);
+            setReceipt66Ride(null);
+          }}
         />
       )}
     </div>

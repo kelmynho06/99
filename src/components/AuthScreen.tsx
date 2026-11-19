@@ -32,7 +32,6 @@ import {
 } from '../lib/userPrefs';
 import type { PlatformConfig, UserProfile } from '../types/mobility';
 import { LegalDocsModal, type LegalDocTab } from './LegalDocsModal';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface AuthScreenProps {
   onAuthenticated: (user: UserProfile) => void;
@@ -206,11 +205,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   </option>
                 ))}
               </select>
-              <PWAInstallButton
-                variant="compact"
-                apkUrl={platformConfig?.ota_apk_url}
-                siteName={siteName}
-              />
             </div>
           </div>
 
