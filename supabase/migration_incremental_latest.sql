@@ -1621,3 +1621,279 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- 9. Horário Automático de Depósitos Pix, Registro de Chave 66pay pelo Usuário & Transferência/Busca por Chave/QR 66pay
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS deposit_window_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS deposit_start_time TEXT NOT NULL DEFAULT '07:00',
+  ADD COLUMN IF NOT EXISTS deposit_end_time TEXT NOT NULL DEFAULT '23:30';
+
+UPDATE public.platform_settings
+SET
+  deposit_window_enabled = COALESCE(deposit_window_enabled, TRUE),
+  deposit_start_time = COALESCE(NULLIF(BTRIM(deposit_start_time), ''), '07:00'),
+  deposit_end_time = COALESCE(NULLIF(BTRIM(deposit_end_time), ''), '23:30')
+WHERE id = 1;
+
+-- Permite que qualquer usuário autenticado (passageiro ou motorista) cadastre/altere sua Chave 66pay exclusiva (sem colisão)
+CREATE OR REPLACE FUNCTION public.update_my_pay66_key(p_new_key TEXT)
+RETURNS TEXT AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_clean TEXT := BTRIM(COALESCE(p_new_key, ''));
+  v_conflict UUID;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  v_clean := regexp_replace(v_clean, '\s+', '', 'g');
+  IF LENGTH(v_clean) < 4 OR LENGTH(v_clean) > 64 THEN
+    RAISE EXCEPTION 'Informe uma Chave 66pay válida entre 4 e 64 caracteres (e-mail, telefone, CPF ou código 66-...).';
+  END IF;
+
+  SELECT id INTO v_conflict
+  FROM public.profiles
+  WHERE LOWER(COALESCE(pay66_key, '')) = LOWER(v_clean)
+    AND id <> v_uid
+    AND COALESCE(is_anonymized, FALSE) = FALSE
+  LIMIT 1;
+
+  IF v_conflict IS NOT NULL THEN
+    RAISE EXCEPTION 'Esta Chave 66pay já está cadastrada por outro usuário. Escolha outra.';
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET pay66_key = v_clean,
+      updated_at = NOW()
+  WHERE id = v_uid
+    AND COALESCE(is_anonymized, FALSE) = FALSE;
+
+  RETURN v_clean;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Atualiza lookup_wallet_recipient para buscar também por Chave 66pay e QR Code 66PAY|...
+DROP FUNCTION IF EXISTS public.lookup_wallet_recipient(TEXT);
+CREATE OR REPLACE FUNCTION public.lookup_wallet_recipient(p_query TEXT)
+RETURNS TABLE (
+  id UUID,
+  full_name TEXT,
+  email TEXT,
+  phone TEXT,
+  role TEXT,
+  avatar_url TEXT,
+  pay66_key TEXT
+) AS $$
+DECLARE
+  v_uid UUID;
+  v_raw TEXT;
+  v_clean TEXT;
+  v_digits TEXT;
+  v_parts TEXT[];
+BEGIN
+  v_uid := auth.uid();
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  v_raw := TRIM(COALESCE(p_query, ''));
+  IF LENGTH(v_raw) < 3 THEN
+    RETURN;
+  END IF;
+
+  IF UPPER(v_raw) LIKE '66PAY|%' THEN
+    v_parts := string_to_array(v_raw, '|');
+    v_clean := COALESCE(NULLIF(TRIM(v_parts[2]), ''), NULLIF(TRIM(v_parts[3]), ''), v_raw);
+  ELSE
+    v_clean := v_raw;
+  END IF;
+
+  v_digits := regexp_replace(v_clean, '\D', '', 'g');
+
+  RETURN QUERY
+  SELECT
+    p.id,
+    p.full_name,
+    p.email,
+    p.phone,
+    p.role,
+    p.avatar_url,
+    COALESCE(p.pay66_key, '66-' || UPPER(SUBSTRING(REPLACE(p.id::TEXT, '-', ''), 1, 8))) AS pay66_key
+  FROM public.profiles p
+  WHERE p.id <> v_uid
+    AND COALESCE(p.is_anonymized, FALSE) = FALSE
+    AND p.status = 'active'
+    AND (
+      p.id::TEXT = v_clean
+      OR LOWER(COALESCE(p.pay66_key, '')) = LOWER(v_clean)
+      OR LOWER(COALESCE(p.pay66_key, '')) LIKE '%' || LOWER(v_clean) || '%'
+      OR LOWER(p.email) = LOWER(v_clean)
+      OR LOWER(p.email) LIKE '%' || LOWER(v_clean) || '%'
+      OR (LENGTH(v_digits) >= 8 AND regexp_replace(COALESCE(p.phone, ''), '\D', '', 'g') LIKE '%' || v_digits || '%')
+      OR LOWER(p.full_name) LIKE '%' || LOWER(v_clean) || '%'
+    )
+  ORDER BY
+    CASE
+      WHEN p.id::TEXT = v_clean THEN 0
+      WHEN LOWER(COALESCE(p.pay66_key, '')) = LOWER(v_clean) THEN 1
+      WHEN LOWER(p.email) = LOWER(v_clean) THEN 2
+      ELSE 3
+    END,
+    p.full_name ASC
+  LIMIT 6;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Atualiza transferir_saldo_66 para reconhecer também QR Code 66PAY|... e Chave 66pay cadastrada
+CREATE OR REPLACE FUNCTION public.transferir_saldo_66(
+  p_destinatario TEXT,
+  p_valor NUMERIC,
+  p_observacao TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_from UUID;
+  v_to UUID;
+  v_raw TEXT;
+  v_clean TEXT;
+  v_digits TEXT;
+  v_parts TEXT[];
+  v_amount NUMERIC(10,2);
+  v_from_name TEXT;
+  v_to_name TEXT;
+  v_from_bal NUMERIC(10,2);
+  v_from_status TEXT;
+  v_from_tx_id UUID;
+  v_to_tx_id UUID;
+  v_tx_ts TIMESTAMPTZ := NOW();
+  v_from_desc TEXT;
+  v_to_desc TEXT;
+BEGIN
+  v_from := auth.uid();
+  IF v_from IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  v_raw := TRIM(COALESCE(p_destinatario, ''));
+  v_amount := ROUND(COALESCE(p_valor, 0)::NUMERIC, 2);
+  IF v_raw = '' OR v_amount < 1 THEN
+    RAISE EXCEPTION 'Informe destinatário válido e valor mínimo de R$ 1,00.';
+  END IF;
+
+  IF UPPER(v_raw) LIKE '66PAY|%' THEN
+    v_parts := string_to_array(v_raw, '|');
+    v_clean := COALESCE(NULLIF(TRIM(v_parts[2]), ''), NULLIF(TRIM(v_parts[3]), ''), v_raw);
+  ELSE
+    v_clean := v_raw;
+  END IF;
+
+  BEGIN
+    v_to := v_clean::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    v_digits := regexp_replace(v_clean, '\D', '', 'g');
+    SELECT id INTO v_to
+    FROM public.profiles
+    WHERE COALESCE(is_anonymized, FALSE) = FALSE
+      AND status = 'active'
+      AND (
+        LOWER(COALESCE(pay66_key, '')) = LOWER(v_clean)
+        OR LOWER(email) = LOWER(v_clean)
+        OR (LENGTH(v_digits) >= 10 AND regexp_replace(COALESCE(phone, ''), '\D', '', 'g') = v_digits)
+      )
+    LIMIT 1;
+  END;
+
+  IF v_to IS NULL OR v_to = v_from THEN
+    RAISE EXCEPTION 'Destinatário não encontrado ou inválido.';
+  END IF;
+
+  IF v_from < v_to THEN
+    PERFORM 1 FROM public.profiles WHERE id IN (v_from, v_to) ORDER BY id FOR UPDATE;
+  ELSE
+    PERFORM 1 FROM public.profiles WHERE id IN (v_to, v_from) ORDER BY id FOR UPDATE;
+  END IF;
+
+  SELECT full_name, COALESCE(wallet_balance, 0), status
+  INTO v_from_name, v_from_bal, v_from_status
+  FROM public.profiles WHERE id = v_from;
+
+  IF v_from_status <> 'active' THEN
+    RAISE EXCEPTION 'Conta inativa.';
+  END IF;
+
+  SELECT full_name INTO v_to_name
+  FROM public.profiles
+  WHERE id = v_to AND COALESCE(is_anonymized, FALSE) = FALSE AND status = 'active';
+
+  IF v_to_name IS NULL THEN
+    RAISE EXCEPTION 'Destinatário indisponível.';
+  END IF;
+
+  IF v_from_bal < v_amount THEN
+    RAISE EXCEPTION 'Saldo insuficiente na carteira 66 Pay.';
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) - v_amount)::NUMERIC, 2), updated_at = NOW()
+  WHERE id = v_from;
+
+  UPDATE public.profiles
+  SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_amount)::NUMERIC, 2), updated_at = NOW()
+  WHERE id = v_to;
+
+  v_from_desc := 'Enviado para ' || v_to_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '');
+  v_to_desc := 'Recebido de ' || v_from_name || COALESCE(' · ' || NULLIF(TRIM(p_observacao), ''), '');
+
+  INSERT INTO public.wallet_transactions (user_id, amount, type, description)
+  VALUES (v_from, -v_amount, 'transfer_out', v_from_desc)
+  RETURNING id, created_at INTO v_from_tx_id, v_tx_ts;
+
+  INSERT INTO public.wallet_transactions (user_id, amount, type, description)
+  VALUES (v_to, v_amount, 'transfer_in', v_to_desc)
+  RETURNING id INTO v_to_tx_id;
+
+  IF to_regclass('public.app_notifications') IS NOT NULL THEN
+    INSERT INTO public.app_notifications (
+      title, message, category, target_scope, target_user_id, action_tab, metadata, created_by
+    )
+    VALUES (
+      'Transferência 66 Pay recebida',
+      v_from_name || ' enviou R$ ' || REPLACE(TO_CHAR(v_amount, 'FM999999990.00'), '.', ',') || ' para sua conta 66 Pay.',
+      'wallet',
+      'user',
+      v_to,
+      'wallet',
+      jsonb_build_object(
+        'source', 'p2p_transfer',
+        'tx', jsonb_build_object(
+          'id', v_to_tx_id,
+          'user_id', v_to,
+          'amount', v_amount,
+          'type', 'transfer_in',
+          'description', v_to_desc,
+          'created_at', v_tx_ts
+        )
+      ),
+      v_from
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', TRUE,
+    'amount', v_amount,
+    'recipient_id', v_to,
+    'recipient_name', v_to_name,
+    'from_name', v_from_name,
+    'new_balance', ROUND((v_from_bal - v_amount)::NUMERIC, 2),
+    'tx_id', v_from_tx_id,
+    'created_at', v_tx_ts,
+    'description', v_from_desc
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+

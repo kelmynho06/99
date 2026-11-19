@@ -1222,6 +1222,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-900">
       <LiveMap
         center={driverCoords}
+        isDelivery={
+          activeRide?.category === 'delivery_moto' || activeRide?.category === 'delivery_car'
+        }
         origin={
           activeRide
             ? {
@@ -2048,7 +2051,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </span>
             </div>
 
-            {/* Client Photo, Name & Rating Hero Card */}
+            {/* Client Photo, Name, Verified Account & Rating Hero Card */}
             <div className="flex items-center gap-4 rounded-3xl bg-neutral-50 p-4 border-2 border-[#FFD100] shadow-sm">
               <AvatarImage
                 src={incomingRide.passenger?.avatar_url}
@@ -2057,23 +2060,44 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 fallbackClassName="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#FFD100] border-2 border-neutral-950 text-neutral-950 font-extrabold text-xl"
               />
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-500">
-                  {isDeliveryCategory(incomingRide.category) ? 'Solicitante da Entrega' : 'Passageiro'}
-                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-500">
+                    {isDeliveryCategory(incomingRide.category) ? 'Solicitante da Entrega' : 'Passageiro'}
+                  </p>
+                  {incomingRide.passenger?.status === 'active' && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800">
+                      <ShieldCheck className="h-3 w-3" />
+                      Conta Verificada
+                    </span>
+                  )}
+                </div>
                 <h2 className="truncate font-display text-xl font-extrabold text-neutral-950">
                   {incomingRide.passenger?.full_name || 'Cliente 66 Mobilidade'}
                 </h2>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#FFD100]/35 px-2.5 py-0.5 text-xs font-extrabold text-neutral-950">
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#FFD100]/45 px-2.5 py-0.5 text-xs font-extrabold text-neutral-950">
                     ★ {(incomingRide.passenger?.rating_avg ?? 5).toFixed(1)}
+                    <span className="text-[10px] font-bold text-neutral-700">
+                      ({incomingRide.passenger?.rating_count || 1} aval.)
+                    </span>
                   </span>
-                  <span className="inline-flex items-center rounded-full bg-white px-2.5 py-0.5 text-[11px] font-bold text-neutral-700 border border-neutral-200">
+                  <span className="inline-flex items-center rounded-full bg-white px-2.5 py-0.5 text-[11px] font-extrabold text-neutral-800 border border-neutral-200">
                     {incomingRide.payment_method === 'wallet'
-                      ? 'Saldo 66 Pay · Garantido'
+                      ? '66pay · Saldo Reservado'
                       : incomingRide.payment_method === 'pix'
                       ? 'Pix Plataforma'
-                      : 'Dinheiro'}
+                      : 'Dinheiro ao Motorista'}
                   </span>
+                  {Boolean(incomingRide.discount_amount && incomingRide.discount_amount > 0) && (
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800">
+                      Cupom aplicado
+                    </span>
+                  )}
+                  {Boolean(incomingRide.pending_debt_included && incomingRide.pending_debt_included > 0) && (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-extrabold text-amber-900">
+                      +Pendência {formatBRL(incomingRide.pending_debt_included || 0)}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRight,
   Banknote,
   Bell,
   Briefcase,
@@ -11,6 +12,7 @@ import {
   ChevronUp,
   Clock,
   Crosshair,
+  DollarSign,
   Eye,
   EyeOff,
   FileText,
@@ -33,6 +35,7 @@ import {
   Receipt,
   Search,
   Settings,
+  Share2,
   Shield,
   ShieldCheck,
   Star,
@@ -67,6 +70,7 @@ import {
   fetchMyNotifications,
   fetchRideByIdEnriched,
   fetchUserProfileById,
+  getDepositWindowStatus,
   markAllNotificationsRead,
   markNotificationRead,
   payCompletedRideWithWallet,
@@ -167,6 +171,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletInitialTab, setWalletInitialTab] = useState<WalletModalTab>('deposit');
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const depositWindow = useMemo(
+    () => getDepositWindowStatus(platformConfig, new Date(nowTick)),
+    [platformConfig, nowTick]
+  );
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
   const [infoModal, setInfoModal] = useState<
     'help' | 'discounts' | 'security' | 'become_driver' | null
   >(null);
@@ -191,6 +204,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [distanceKm, setDistanceKm] = useState<number>(0);
   const [durationMin, setDurationMin] = useState<number>(0);
 
+  const [homeTab, setHomeTab] = useState<'rides' | 'delivery'>('rides');
+  const [deliveryDirection, setDeliveryDirection] = useState<'send' | 'receive'>('send');
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [serviceTab, setServiceTab] = useState<'rides' | 'delivery'>('rides');
   const [category, setCategory] = useState<RideCategory>('pop');
   const [negotiatedFare, setNegotiatedFare] = useState<number | null>(null);
@@ -986,10 +1002,43 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const savedFavorites: SavedAddress[] = currentUser.favorites || [];
 
+  const handleShareActiveTrip = async () => {
+    if (!activeRide) return;
+    const summary = `Acompanhe minha viagem na ${siteName}: ${
+      activeRide.driver?.full_name || 'Motorista'
+    } (${activeRide.driver?.driver?.vehicle_model || 'Veículo'} · ${
+      activeRide.driver?.driver?.vehicle_plate || '---'
+    }) indo de ${activeRide.origin_address} até ${activeRide.destination_address}.`;
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: `${siteName} · Viagem em andamento`,
+          text: summary,
+        });
+        return;
+      }
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(summary);
+        setShareNotice('Resumo da viagem copiado!');
+        window.setTimeout(() => setShareNotice(null), 2600);
+      }
+    } catch {
+      // Ignore cancelled share sheet
+    }
+  };
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-neutral-100 dark:bg-neutral-950">
       <LiveMap
         center={[origin.lat, origin.lng]}
+        userLocation={gpsFixed ? { lat: origin.lat, lng: origin.lng } : null}
+        isDelivery={
+          activeRide
+            ? isDeliveryActive
+            : Boolean(destination)
+            ? serviceTab === 'delivery'
+            : homeTab === 'delivery'
+        }
         origin={
           activeRide
             ? {
@@ -1015,7 +1064,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         speedKmh={driverSpeedKmh}
         controlsTopClassName={
           !activeRide && !destination && !unpaidCompletedRide && !idleCleanMap
-            ? 'top-[66%] -translate-y-1/2 sm:top-24 sm:translate-y-0'
+            ? 'top-[62%] -translate-y-1/2 sm:top-24 sm:translate-y-0'
             : activeRide
             ? 'top-24'
             : 'top-1/2 -translate-y-1/2 sm:top-24 sm:translate-y-0'
@@ -1026,9 +1075,278 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         onRecenter={detectMyGps}
       />
 
-      {/* Top Floating Bar + Top Search Card ("Para onde vamos?" at top + Clean Map toggle) */}
+      {/* FULL-SCREEN "66 ENTREGA" HUB WHEN DELIVERY TAB IS SELECTED ON IDLE */}
+      {!activeRide &&
+        !destination &&
+        !unpaidCompletedRide &&
+        !idleCleanMap &&
+        !pickOnMapMode &&
+        !addressScreenOpen &&
+        homeTab === 'delivery' && (
+          <div className="fixed inset-0 z-[580] flex flex-col bg-[#FFD100]">
+            {/* Yellow Top Header matching screenshot */}
+            <div className="flex items-center justify-between gap-3 px-4 pt-safe py-3.5">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(true)}
+                className="flex items-center gap-3 min-w-0 text-left active:scale-[0.98] transition"
+              >
+                <div className="relative shrink-0">
+                  <AvatarImage
+                    src={currentUser.avatar_url}
+                    name={currentUser.full_name}
+                    className="h-11 w-11 rounded-full object-cover border-2 border-white shadow-xs"
+                    fallbackClassName="flex h-11 w-11 items-center justify-center rounded-full bg-[#DBEAFE] text-[#3B82F6] border-2 border-white font-display text-base font-extrabold shadow-xs"
+                  />
+                  {unreadNotificationsCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-[#FFD100]" />
+                  )}
+                </div>
+                <span className="font-display text-xl font-extrabold text-neutral-950 truncate">
+                  Olá, {currentUser.full_name.split(' ')[0]}!
+                </span>
+              </button>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotificationsOpen(true);
+                    void loadNotificationsAndCoupons();
+                  }}
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-950 shadow-xs active:scale-95 transition"
+                  aria-label="Notificações"
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadNotificationsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-extrabold text-white font-mono-num">
+                      {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(true)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-950 shadow-xs active:scale-95 transition"
+                  aria-label="Abrir menu"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* White Rounded Sheet Body */}
+            <div className="flex-1 overflow-y-auto rounded-t-[28px] bg-white dark:bg-neutral-950 px-5 pt-7 pb-32 shadow-2xl">
+              <div className="mx-auto max-w-md space-y-6">
+                {/* Headline + Brand Arrow Lockup */}
+                <div className="text-center space-y-2">
+                  <p className="text-xs font-extrabold tracking-widest text-neutral-700 dark:text-neutral-300 uppercase">
+                    VOCÊ PRECISA,
+                  </p>
+                  <div className="inline-flex items-center justify-center gap-2">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFD100] text-white shadow-xs">
+                      <ArrowRight className="h-5 w-5 stroke-[3] text-neutral-950" />
+                    </span>
+                    <h2 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950 dark:text-white">
+                      66 <span className="font-semibold">Entrega</span>
+                    </h2>
+                  </div>
+                </div>
+
+                {/* Side-by-side Moto & Carro Package Cards */}
+                <div className="grid grid-cols-2 gap-4 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('delivery');
+                      setCategory('delivery_moto');
+                      setActiveSearchField('destination');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="group flex flex-col items-center justify-center rounded-3xl bg-neutral-50 dark:bg-neutral-900 p-4 border border-neutral-100 dark:border-neutral-800 hover:border-[#FFD100] active:scale-[0.98] transition"
+                  >
+                    <div className="relative flex h-24 w-full items-center justify-center">
+                      <img
+                        src={resolveCategoryVehicleImage('delivery_moto', platformConfig)}
+                        alt="Entrega Moto"
+                        className="h-20 w-28 object-contain"
+                      />
+                      <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#D99B66] text-amber-950 shadow-sm border border-white">
+                        <Package className="h-4 w-4" />
+                      </span>
+                    </div>
+                    <span className="mt-1 text-xs font-extrabold text-neutral-900 dark:text-white">
+                      Moto Entrega
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('delivery');
+                      setCategory('delivery_car');
+                      setActiveSearchField('destination');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="group flex flex-col items-center justify-center rounded-3xl bg-neutral-50 dark:bg-neutral-900 p-4 border border-neutral-100 dark:border-neutral-800 hover:border-[#FFD100] active:scale-[0.98] transition"
+                  >
+                    <div className="relative flex h-24 w-full items-center justify-center">
+                      <img
+                        src={resolveCategoryVehicleImage('delivery_car', platformConfig)}
+                        alt="Entrega Carro"
+                        className="h-20 w-28 object-contain"
+                      />
+                      <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#D99B66] text-amber-950 shadow-sm border border-white">
+                        <Package className="h-4 w-4" />
+                      </span>
+                    </div>
+                    <span className="mt-1 text-xs font-extrabold text-neutral-900 dark:text-white">
+                      Carro Entrega
+                    </span>
+                  </button>
+                </div>
+
+                {/* Enviar / Receber Card with Teal & Orange Rings */}
+                <div className="rounded-3xl bg-[#F6F7F9] dark:bg-neutral-900 p-4 space-y-3 border border-neutral-100 dark:border-neutral-800">
+                  <div className="flex items-center gap-6 px-1">
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryDirection('send')}
+                      className={`pb-1.5 text-lg font-extrabold border-b-[3px] transition ${
+                        deliveryDirection === 'send'
+                          ? 'border-[#FF6B00] text-neutral-950 dark:text-white'
+                          : 'border-transparent text-neutral-500 dark:text-neutral-400'
+                      }`}
+                    >
+                      Enviar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryDirection('receive')}
+                      className={`pb-1.5 text-lg font-extrabold border-b-[3px] transition ${
+                        deliveryDirection === 'receive'
+                          ? 'border-[#FF6B00] text-neutral-950 dark:text-white'
+                          : 'border-transparent text-neutral-500 dark:text-neutral-400'
+                      }`}
+                    >
+                      Receber
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('delivery');
+                      if (category !== 'delivery_moto' && category !== 'delivery_car') {
+                        setCategory('delivery_moto');
+                      }
+                      setActiveSearchField('origin');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="flex w-full items-center justify-between gap-3 px-2 py-2 text-left rounded-2xl hover:bg-white/60 dark:hover:bg-neutral-800/60 transition"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#00BFA5] bg-white" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-neutral-950 dark:text-white truncate">
+                          {origin.address || t.current_location}
+                        </p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                          {currentUser.full_name.split(' ')[0]} ·{' '}
+                          {currentUser.phone || t.current_location}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceTab('delivery');
+                      if (category !== 'delivery_moto' && category !== 'delivery_car') {
+                        setCategory('delivery_moto');
+                      }
+                      setActiveSearchField('destination');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="flex min-h-[60px] w-full items-center gap-3 rounded-2xl bg-white dark:bg-neutral-800 px-4 shadow-xs hover:shadow-md active:scale-[0.99] transition text-left"
+                  >
+                    <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#FF6B00] bg-white" />
+                    <span className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
+                      {deliveryDirection === 'receive' ? 'Coletar em' : 'Entregar para'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* Top Floating Bar + Top Search Card */}
       <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] px-3 sm:px-4 pt-safe py-3 space-y-2.5">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
+        {activeRide && activeRide.status !== 'searching' ? (
+          <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setSheetMinimized((v) => !v)}
+              className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+              aria-label={sheetMinimized ? 'Mostrar detalhes da corrida' : 'Ver mapa'}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+
+            <div className="pointer-events-auto flex min-w-0 flex-1 items-center justify-between gap-2 rounded-full bg-white dark:bg-neutral-900 px-3.5 py-2 shadow-lg border border-neutral-200 dark:border-neutral-700">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FFD100]">
+                  <span className="h-2 w-2 rounded-full bg-neutral-950" />
+                </span>
+                <span className="truncate text-xs sm:text-sm font-bold text-neutral-900 dark:text-white">
+                  {activeRide.status === 'in_progress'
+                    ? activeRide.destination_address
+                    : activeRide.origin_address}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSheetMinimized(false)}
+                className="shrink-0 border-l border-neutral-200 dark:border-neutral-700 pl-2.5 text-xs font-extrabold text-neutral-950 dark:text-[#FFD100]"
+              >
+                {activeRide.status === 'in_progress'
+                  ? durationMin > 0
+                    ? `${durationMin} min`
+                    : 'Em rota'
+                  : 'Detalhes'}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setNotificationsOpen(true);
+                void loadNotificationsAndCoupons();
+              }}
+              className="pointer-events-auto relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+              aria-label="Notificações"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white font-mono-num shadow-sm">
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+          </div>
+        ) : (
+        <div className={`mx-auto flex max-w-2xl items-center justify-between gap-2 ${
+          !activeRide && !destination && !unpaidCompletedRide && !idleCleanMap && !pickOnMapMode && homeTab === 'delivery'
+            ? 'hidden'
+            : ''
+        }`}>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -1062,17 +1380,6 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <MapPin className="h-4 w-4" />
                 Toque no mapa ({pickOnMapMode === 'origin' ? 'Embarque' : 'Destino'}) · Cancelar
               </button>
-            ) : activeRide && activeRide.status !== 'searching' ? (
-              <div className="flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2 text-xs font-extrabold text-white shadow-lg font-mono-num">
-                <span className="text-[#FFD100]">
-                  {activeRide.status === 'in_progress'
-                    ? 'Em rota'
-                    : activeRide.status === 'arrived'
-                    ? 'No embarque'
-                    : 'A caminho'}
-                </span>
-                {durationMin > 0 && <span>· ~{durationMin} min</span>}
-              </div>
             ) : destination && !activeRide ? (
               <div className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-xs font-extrabold text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 font-mono-num">
                 <span>
@@ -1119,9 +1426,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </button>
           </div>
         </div>
+        )}
 
-        {/* TOP SEARCH CARD ("Para onde vamos?") — LEAVES BOTTOM OF MAP 100% OPEN */}
-        {!activeRide && !destination && !idleCleanMap && !pickOnMapMode && (
+        {/* TOP SEARCH CARD ("Para onde vamos?") — SHOWN ON IDLE RIDES TAB */}
+        {!activeRide && !destination && !idleCleanMap && !pickOnMapMode && homeTab === 'rides' && (
           <div className="pointer-events-auto mx-auto max-w-lg rounded-3xl bg-white dark:bg-neutral-900 p-3.5 shadow-2xl border border-neutral-200 dark:border-neutral-800 space-y-2.5">
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 min-w-0">
@@ -1350,6 +1658,74 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* FLOATING BOTTOM NAVIGATION PILL (Corrida | Entrega | 66pay) ON IDLE SCREEN */}
+      {!activeRide &&
+        !destination &&
+        !unpaidCompletedRide &&
+        !idleCleanMap &&
+        !pickOnMapMode &&
+        !addressScreenOpen && (
+          <div className="pointer-events-none fixed bottom-4 left-0 right-0 z-[610] flex justify-center px-4 pb-safe">
+            <nav
+              aria-label="Navegação principal"
+              className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md px-3 py-1.5 shadow-2xl border border-neutral-200/80 dark:border-neutral-800"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setHomeTab('rides');
+                  setServiceTab('rides');
+                  if (category === 'delivery_moto' || category === 'delivery_car') {
+                    setCategory('pop');
+                  }
+                }}
+                className={`flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 transition active:scale-95 ${
+                  homeTab === 'rides'
+                    ? 'bg-[#FFD100] text-neutral-950 shadow-sm'
+                    : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                }`}
+              >
+                <Car className="h-5 w-5" />
+                <span className="mt-0.5 text-[11px] font-extrabold leading-none">
+                  Corrida
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setHomeTab('delivery');
+                  setServiceTab('delivery');
+                  if (category !== 'delivery_moto' && category !== 'delivery_car') {
+                    setCategory('delivery_moto');
+                  }
+                }}
+                className={`flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 transition active:scale-95 ${
+                  homeTab === 'delivery'
+                    ? 'bg-[#FFD100] text-neutral-950 shadow-sm'
+                    : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                }`}
+              >
+                <Package className="h-5 w-5" />
+                <span className="mt-0.5 text-[11px] font-extrabold leading-none">
+                  Entrega
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openWallet('deposit')}
+                className="flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition active:scale-95"
+              >
+                <DollarSign className="h-5 w-5" />
+                <span className="mt-0.5 text-[11px] font-extrabold leading-none">
+                  66pay
+                </span>
+              </button>
+            </nav>
+          </div>
+        )}
 
       {/* Bottom Sheet / Floating Card (Shown ONLY when choosing fare/category, active ride, OR post-ride payment) */}
       {(Boolean(destination) ||
@@ -1785,20 +2161,40 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         Saldo 66pay insuficiente ({formatBRL(walletBalance)})
                       </p>
                       <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                        Deposite{' '}
-                        <strong className="font-mono-num">
-                          {formatBRL(totalFareWithDebt - walletBalance)}
-                        </strong>{' '}
-                        na carteira 66pay via Pix ou pague em Dinheiro.
+                        {depositWindow.isOpen ? (
+                          <>
+                            Deposite{' '}
+                            <strong className="font-mono-num">
+                              {formatBRL(totalFareWithDebt - walletBalance)}
+                            </strong>{' '}
+                            na carteira 66pay via Pix ou pague em Dinheiro.
+                          </>
+                        ) : (
+                          <>
+                            Depósitos Pix pausados fora do horário ({depositWindow.startTime} às{' '}
+                            {depositWindow.endTime}). Quem já tem saldo usa normal; use{' '}
+                            <strong>Dinheiro</strong> agora.
+                          </>
+                        )}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => openWallet('deposit')}
-                      className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-[11px] font-extrabold text-[#FFD100]"
-                    >
-                      Depositar 66pay
-                    </button>
+                    {depositWindow.isOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => openWallet('deposit')}
+                        className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-[11px] font-extrabold text-[#FFD100]"
+                      >
+                        Depositar 66pay
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('cash')}
+                        className="min-h-[38px] shrink-0 rounded-xl bg-emerald-600 px-3 text-[11px] font-extrabold text-white"
+                      >
+                        Usar Dinheiro
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1946,15 +2342,28 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {!canPayWithWallet && (
                       <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-[11px]">
                         <span className="font-semibold text-amber-950 dark:text-amber-200">
-                          Saldo 66pay insuficiente ({formatBRL(walletBalance)}).
+                          {depositWindow.isOpen
+                            ? `Saldo 66pay insuficiente (${formatBRL(walletBalance)}).`
+                            : `Depósitos Pix das ${depositWindow.startTime} às ${depositWindow.endTime}. Selecione Dinheiro para pagar ao motorista.`}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => openWallet('deposit')}
-                          className="shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1.5 font-extrabold text-[#FFD100] dark:text-neutral-950"
-                        >
-                          Depositar 66pay
-                        </button>
+                        {depositWindow.isOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => openWallet('deposit')}
+                            className="shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1.5 font-extrabold text-[#FFD100] dark:text-neutral-950"
+                          >
+                            Depositar 66pay
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={Boolean(postRidePaymentBusy)}
+                            onClick={() => handleChooseCompletedCash(unpaidCompletedRide)}
+                            className="shrink-0 rounded-xl bg-emerald-600 px-2.5 py-1.5 font-extrabold text-white"
+                          >
+                            Pagar em Dinheiro
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2017,305 +2426,490 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             </div>
           ) : (
-            /* MODERN CLEAN MATCHED / LIVE TRACKING POP-UP (99 STYLE) */
-            <div className="space-y-3.5">
-              {/* Live ETA & Status Banner */}
-              <div className="text-center space-y-2">
-                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                  {activeRide.status === 'accepted' && (
-                    <>
-                      {isDeliveryActive ? `${t.pickup_in} ` : `${t.boarding_in} `}
-                      <span className="text-blue-600 dark:text-blue-400 font-mono-num">
-                        {durationMin > 0 ? `${durationMin} min` : '2 min'}
-                      </span>
-                    </>
-                  )}
-                  {activeRide.status === 'arrived' && (
-                    <span className="text-emerald-700 dark:text-emerald-400">
-                      {isDeliveryActive ? t.deliverer_arrived : t.driver_arrived}
-                    </span>
-                  )}
-                  {activeRide.status === 'in_progress' && (
-                    <>
-                      {isDeliveryActive ? 'Entrega · ' : `${t.arrival_in} `}
-                      <span className="text-blue-600 dark:text-blue-400 font-mono-num">
-                        {durationMin > 0 ? `${durationMin} min` : 'em breve'}
-                      </span>
-                    </>
-                  )}
-                </h3>
+            /* MODERN MATCHED / LIVE TRACKING BOTTOM SHEET (SCREENSHOT-FIDELITY) */
+            (() => {
+              const drvName = activeRide.driver?.full_name || 'Parceiro';
+              const drvRating = (activeRide.driver?.rating_avg ?? 5).toFixed(1);
+              const drvTrips = activeRide.driver?.rating_count ?? 0;
+              const etaMinutes = Math.max(2, durationMin || 3);
+              const arrivalClock = new Date(Date.now() + etaMinutes * 60_000).toLocaleTimeString(
+                'pt-BR',
+                { hour: '2-digit', minute: '2-digit' }
+              );
+              const pickupClock = new Date(
+                activeRide.started_at || activeRide.accepted_at || activeRide.created_at
+              ).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+              const currentFareTotal =
+                activeRide.estimated_fare + passengerWaitingStats.waitingFee;
 
-                <div className="rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/60 px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200">
-                  {activeRide.status === 'accepted' &&
-                    (isDeliveryActive
-                      ? 'Pedido aceito · Entregador a caminho da coleta'
-                      : 'Corrida aceita · Acompanhe seu motorista no mapa')}
-                  {activeRide.status === 'arrived' &&
-                    (isDeliveryActive
-                      ? 'Encontre seu entregador com o pacote'
-                      : 'Seu motorista está aguardando no embarque')}
-                  {activeRide.status === 'in_progress' &&
-                    (isDeliveryActive
-                      ? 'Pacote coletado · Em rota para o destino'
-                      : 'Viagem em andamento · Trajeto acompanhado por GPS')}
-                </div>
-              </div>
-
-              {/* Plate + Vehicle & Driver Avatar Cluster */}
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <div className="min-w-0 space-y-0.5">
-                  <p className="font-mono-num text-2xl font-extrabold tracking-tight text-neutral-950 dark:text-white leading-none">
-                    {activeRide.driver?.driver?.vehicle_plate || '---'}
-                  </p>
-                  <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 truncate">
-                    {activeRide.driver?.driver?.vehicle_color || ''}{' '}
-                    {activeRide.driver?.driver?.vehicle_model || 'Veículo'}
-                  </p>
-                  <div className="flex items-center gap-1.5 pt-1 text-xs text-neutral-800 dark:text-neutral-200">
-                    <span className="font-extrabold uppercase truncate">
-                      {activeRide.driver?.full_name || 'Parceiro'}
-                    </span>
-                    <span className="font-mono-num font-bold text-neutral-950 dark:text-white flex items-center gap-0.5 shrink-0">
-                      {(activeRide.driver?.rating_avg ?? 5).toFixed(1)}
-                      <Star className="h-3.5 w-3.5 fill-[#FFD100] text-[#F59E0B]" />
-                    </span>
-                  </div>
-                  <div className="pt-0.5 flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 text-[11px] font-bold text-blue-700 dark:text-blue-300">
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      {isDeliveryActive ? 'Entregador verificado' : 'Motorista verificado'}
-                    </span>
-                    <span className="font-mono-num text-xs font-extrabold text-neutral-900 dark:text-white">
-                      {formatBRL(activeRide.estimated_fare)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Overlapping Vehicle Photo + Driver Avatar */}
-                <div className="relative flex items-center shrink-0 pr-1">
-                  <img
-                    src={resolveCategoryVehicleImage(activeRide.category, platformConfig)}
-                    alt={CATEGORY_LABELS[activeRide.category]}
-                    className="h-14 w-20 rounded-2xl object-cover border border-neutral-200 bg-neutral-50 shadow-xs"
-                  />
-                  <div className="-ml-4 rounded-full border-2 border-white dark:border-neutral-900 shadow-md">
-                    <AvatarImage
-                      src={activeRide.driver?.avatar_url}
-                      name={activeRide.driver?.full_name || 'M'}
-                      className="h-14 w-14 rounded-full object-cover shrink-0"
-                      fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg shrink-0"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 4-Digit Security PIN Card (Modern Elevated 4-Tile Layout) */}
-              {(!isDeliveryActive || activeRide.require_pin !== false) ? (
-                <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700/80 bg-gradient-to-br from-neutral-50 to-amber-50/70 dark:from-neutral-800/90 dark:to-neutral-900 p-3.5 shadow-xs">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950 shadow-xs">
-                        <ShieldCheck className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate">
-                          {isDeliveryActive ? t.delivery_pin_title : t.security_pin_title}
-                        </p>
-                        <p className="text-[11px] text-neutral-600 dark:text-neutral-300 leading-tight">
-                          {activeRide.status === 'in_progress' && !isDeliveryActive
-                            ? 'Embarque validado · Chegada sem PIN'
-                            : t.pin_share_hint}
-                        </p>
-                      </div>
+              if (activeRide.status === 'in_progress') {
+                return (
+                  <div className="space-y-4">
+                    {/* Header: Previsão de chegada HH:MM */}
+                    <div className="text-center">
+                      <h3 className="font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+                        Previsão de chegada{' '}
+                        <span className="font-mono-num">{arrivalClock}</span>
+                      </h3>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {String(activeRide.pin_code || '0000')
-                        .padStart(4, '0')
-                        .slice(0, 4)
-                        .split('')
-                        .map((digit, idx) => (
-                          <span
-                            key={idx}
-                            className="flex h-10 w-8 items-center justify-center rounded-xl bg-white dark:bg-neutral-950 border-2 border-neutral-950/15 dark:border-[#FFD100]/60 font-mono-num text-lg font-extrabold text-neutral-950 dark:text-[#FFD100] shadow-xs"
-                          >
-                            {digit}
+
+                    {/* Driver Photo + Name + Rating + Excelente motorista + Chat Icon w/ Dot */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <AvatarImage
+                          src={activeRide.driver?.avatar_url}
+                          name={drvName}
+                          className="h-14 w-14 rounded-full object-cover border-2 border-white dark:border-neutral-800 shadow-sm shrink-0"
+                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg shrink-0"
+                        />
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-base font-extrabold uppercase text-neutral-950 dark:text-white truncate leading-tight">
+                            {drvName}
+                          </p>
+                          <div className="flex items-center gap-1 text-xs font-bold text-neutral-700 dark:text-neutral-300">
+                            <span className="font-mono-num">{drvRating}</span>
+                            <Star className="h-3.5 w-3.5 fill-neutral-950 dark:fill-[#FFD100] text-neutral-950 dark:text-[#FFD100]" />
+                            {drvTrips > 0 && (
+                              <span className="text-neutral-500 dark:text-neutral-400 font-mono-num">
+                                · {drvTrips} avaliações
+                              </span>
+                            )}
+                          </div>
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FEF9C3] dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-bold text-neutral-900 dark:text-amber-200">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD100] text-white">
+                              <Star className="h-2.5 w-2.5 fill-white text-white" />
+                            </span>
+                            {isDeliveryActive ? 'Excelente entregador' : 'Excelente motorista'}
                           </span>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-4 py-2.5 text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                  <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
-                  <span>Entrega direta sem necessidade de código PIN</span>
-                </div>
-              )}
+                        </div>
+                      </div>
 
-              {/* 2-Minute Wait Timer synced with Driver */}
-              {activeRide.status === 'arrived' && (
-                <div
-                  className={`flex items-center justify-between rounded-2xl border px-3.5 py-2.5 text-xs ${
-                    passengerWaitingStats.isCharging
-                      ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-200'
-                      : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Clock
-                      className={`h-4 w-4 shrink-0 ${
-                        passengerWaitingStats.isCharging ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'
-                      }`}
-                    />
-                    <div>
-                      <p className="font-extrabold">
-                        {passengerWaitingStats.isCharging
-                          ? 'Taxa de espera iniciada (+R$ 0,50/min)'
-                          : 'Motorista aguardando no embarque'}
-                      </p>
-                      <p className="text-[11px] opacity-80">
-                        {passengerWaitingStats.isCharging
-                          ? `Acréscimo atual: +${formatBRL(passengerWaitingStats.waitingFee)}`
-                          : 'Embarque dentro de 2 min sem custo adicional'}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setChatOpen(true)}
+                        className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700 active:scale-95 transition"
+                        aria-label="Abrir chat com motorista"
+                      >
+                        <MessageSquare className="h-5 w-5" />
+                        <span
+                          className={`absolute top-2 right-2 h-2.5 w-2.5 rounded-full ${
+                            currentChatMessages.length > 0 ? 'bg-[#FF6B00]' : 'bg-[#FF6B00]/80'
+                          }`}
+                        />
+                      </button>
                     </div>
-                  </div>
-                  <span className="font-mono-num text-base font-extrabold shrink-0">
-                    {passengerWaitingStats.isCharging
-                      ? `+${String(Math.floor(passengerWaitingStats.extraSec / 60)).padStart(2, '0')}:${String(
-                          passengerWaitingStats.extraSec % 60
-                        ).padStart(2, '0')}`
-                      : `${String(Math.floor(passengerWaitingStats.remainingFreeSec / 60)).padStart(
-                          2,
-                          '0'
-                        )}:${String(passengerWaitingStats.remainingFreeSec % 60).padStart(2, '0')}`}
-                  </span>
-                </div>
-              )}
 
-              {/* Payment Status CTA / Badge */}
-              {activeRide.payment_method === 'wallet' && activeRide.payment_status === 'pending' && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 py-2 px-3 text-xs font-extrabold text-amber-900 dark:text-amber-200 text-center">
-                    <Wallet className="h-4 w-4 shrink-0" />
-                    Saldo 66pay reservado · Escaneie o QR Code do motorista ao chegar
-                  </div>
-                  {activeRide.status === 'in_progress' && (
+                    {/* Category & Fare Row */}
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                      <span className="text-base font-extrabold text-neutral-950 dark:text-white">
+                        {CATEGORY_LABELS[activeRide.category]}
+                      </span>
+                      <span className="font-mono-num text-base font-extrabold text-neutral-950 dark:text-white">
+                        {formatBRL(currentFareTotal)}
+                      </span>
+                    </div>
+
+                    {/* Payment Method Row */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-lg bg-[#FFD100]/25 text-amber-600 dark:text-[#FFD100]">
+                          {activeRide.payment_method === 'wallet' ? (
+                            <Wallet className="h-4 w-4" />
+                          ) : (
+                            <Banknote className="h-4 w-4" />
+                          )}
+                        </span>
+                        <span className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate">
+                          {activeRide.payment_method === 'wallet'
+                            ? '66pay (Saldo na Conta)'
+                            : activeRide.payment_method === 'pix'
+                            ? 'Pix'
+                            : 'Dinheiro'}
+                        </span>
+                      </div>
+
+                      {activeRide.payment_method === 'wallet' &&
+                      activeRide.payment_status === 'pending' ? (
+                        <button
+                          type="button"
+                          onClick={() => setQrScannerRide(activeRide)}
+                          className="shrink-0 rounded-full bg-[#FFD100] px-3.5 py-1.5 text-xs font-extrabold text-neutral-950 shadow-xs active:scale-95"
+                        >
+                          Ler QR 66pay
+                        </button>
+                      ) : activeRide.payment_method === 'pix' &&
+                        activeRide.payment_status === 'pending' ? (
+                        <button
+                          type="button"
+                          onClick={() => setPixModalRide(activeRide)}
+                          className="shrink-0 rounded-full bg-[#FFD100] px-3.5 py-1.5 text-xs font-extrabold text-neutral-950 shadow-xs active:scale-95"
+                        >
+                          Pagar Pix
+                        </button>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1 text-xs font-bold text-neutral-600 dark:text-neutral-300">
+                          {activeRide.payment_status === 'paid' ||
+                          activeRide.payment_status === 'paid_wallet' ||
+                          activeRide.payment_status === 'paid_pix'
+                            ? 'Pago'
+                            : 'Ao chegar'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Paid 66pay Receipt Banner if already settled */}
+                    {activeRide.payment_method === 'wallet' &&
+                      (activeRide.payment_status === 'paid' ||
+                        activeRide.payment_status === 'paid_wallet') && (
+                        <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
+                          <span className="flex items-center gap-1.5">
+                            <Wallet className="h-4 w-4" />
+                            Pago via 66pay!
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const savedReceipt = receiptsByRideId[activeRide.id];
+                              if (savedReceipt) {
+                                setReceiptModalState({ receipt66: savedReceipt });
+                              } else {
+                                setReceiptModalState({
+                                  transaction: {
+                                    id: activeRide.id,
+                                    user_id: currentUser.id,
+                                    ride_id: activeRide.id,
+                                    amount: -(activeRide.final_fare ?? activeRide.estimated_fare),
+                                    type: 'ride_debit',
+                                    description: `Corrida 66pay #${activeRide.id.slice(-4)} · ${activeRide.destination_address}`,
+                                    auth_code: `66PAY-${activeRide.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+                                    sender_name: currentUser.full_name,
+                                    recipient_name: drvName,
+                                    recipient_key:
+                                      activeRide.driver?.pay66_key ||
+                                      (activeRide.driver_id
+                                        ? `66-${activeRide.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+                                        : '66pay'),
+                                    created_at: activeRide.completed_at || activeRide.created_at,
+                                  },
+                                });
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                          >
+                            <Receipt className="h-3.5 w-3.5" />
+                            Comprovante
+                          </button>
+                        </div>
+                      )}
+
+                    {/* Route Timeline: ◉ Origin + ⚑ Destination */}
+                    <div className="space-y-1 pt-1">
+                      <div className="flex items-start gap-3">
+                        <div className="flex flex-col items-center pt-1">
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD100]/45">
+                            <span className="h-2 w-2 rounded-full bg-[#FFD100] ring-2 ring-neutral-950/60" />
+                          </span>
+                          <span className="mt-1 h-5 w-[1.5px] bg-neutral-200 dark:bg-neutral-700" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-neutral-400 dark:text-neutral-500 truncate">
+                            {activeRide.origin_address}
+                          </p>
+                          <p className="font-mono-num text-xs text-neutral-400 dark:text-neutral-500">
+                            {pickupClock}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <div className="pt-0.5">
+                          <Flag className="h-4 w-4 fill-neutral-950 text-neutral-950 dark:fill-[#FFD100] dark:text-[#FFD100]" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-neutral-950 dark:text-white truncate">
+                            {activeRide.destination_address}
+                          </p>
+                          <p className="font-mono-num text-xs text-neutral-500 dark:text-neutral-400">
+                            {arrivalClock}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Help & Share Pill Buttons */}
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setSupportChatOpen(true)}
+                        className="flex min-h-[46px] items-center justify-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-sm font-extrabold text-neutral-950 dark:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.98] transition"
+                      >
+                        <Headphones className="h-4 w-4" />
+                        <span>Ajuda</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleShareActiveTrip}
+                        className="flex min-h-[46px] items-center justify-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-sm font-extrabold text-neutral-950 dark:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.98] transition"
+                      >
+                        <Share2 className="h-4 w-4" />
+                        <span>Compartilhar</span>
+                      </button>
+                    </div>
+
+                    {shareNotice && (
+                      <p className="text-center text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                        {shareNotice}
+                      </p>
+                    )}
+
+                    {/* Security Center Footer Link */}
                     <button
                       type="button"
-                      onClick={() => setQrScannerRide(activeRide)}
-                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                      onClick={() => setInfoModal('security')}
+                      className="flex w-full items-center justify-start gap-1 pt-2 border-t border-neutral-100 dark:border-neutral-800 text-sm font-extrabold text-neutral-950 dark:text-white"
                     >
-                      <QrCode className="h-4 w-4" />
-                      Escanear QR / Pagar via 66pay ({formatBRL(activeRide.estimated_fare + passengerWaitingStats.waitingFee)})
+                      <span>Central de Segurança</span>
+                      <ChevronRight className="h-4 w-4" />
                     </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3.5">
+                  {/* Floating Security Prompt Pill above main sheet details */}
+                  <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#F8FAFC] dark:bg-neutral-800/70 border border-neutral-200/70 dark:border-neutral-700 px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EFF6FF] dark:bg-blue-950/60 text-[#1677FF]">
+                        <ShieldCheck className="h-4 w-4" />
+                      </span>
+                      <span className="text-xs font-bold text-[#1677FF] dark:text-blue-300 truncate">
+                        Central de Segurança e contatos
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInfoModal('security')}
+                      className="shrink-0 rounded-full bg-[#EFF6FF] dark:bg-blue-950/80 px-3 py-1 text-xs font-extrabold text-[#1677FF] dark:text-blue-300"
+                    >
+                      Abrir
+                    </button>
+                  </div>
+
+                  {/* Headline: Embarque em X min (blue ETA) or Motorista no local */}
+                  <div className="text-center">
+                    <h3 className="font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+                      {activeRide.status === 'accepted' ? (
+                        <>
+                          {isDeliveryActive ? `${t.pickup_in} ` : `${t.boarding_in} `}
+                          <span className="text-[#1677FF] dark:text-blue-400 font-mono-num">
+                            {durationMin > 0 ? `${durationMin} min` : '3 min'}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-emerald-700 dark:text-emerald-400">
+                          {isDeliveryActive ? t.deliverer_arrived : t.driver_arrived}
+                        </span>
+                      )}
+                    </h3>
+                  </div>
+
+                  {/* 4-Digit Boarding PIN Card (Ice-Blue Card + 4 Vibrant Blue Digit Tiles) */}
+                  {!isDeliveryActive || activeRide.require_pin !== false ? (
+                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#EFF6FF] dark:bg-blue-950/40 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-neutral-950 dark:text-white truncate">
+                          {isDeliveryActive ? t.delivery_pin_title : 'PIN desta corrida'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {String(activeRide.pin_code || '0000')
+                          .padStart(4, '0')
+                          .slice(0, 4)
+                          .split('')
+                          .map((digit, idx) => (
+                            <span
+                              key={idx}
+                              className="flex h-9 w-8 items-center justify-center rounded-lg bg-[#1677FF] font-mono-num text-base font-extrabold text-white shadow-xs"
+                            >
+                              {digit}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-4 py-2.5 text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                      <span>Entrega direta sem necessidade de código PIN</span>
+                    </div>
                   )}
+
+                  {/* Plate & Vehicle Model + Overlapping Car & Driver Avatar */}
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-mono-num text-[26px] font-extrabold tracking-tight text-neutral-950 dark:text-white leading-none">
+                        {activeRide.driver?.driver?.vehicle_plate || '---'}
+                      </p>
+                      <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 truncate">
+                        {activeRide.driver?.driver?.vehicle_color || ''}{' '}
+                        {activeRide.driver?.driver?.vehicle_model || 'Veículo'}
+                      </p>
+                    </div>
+
+                    <div className="relative flex items-center shrink-0 pr-1">
+                      <img
+                        src={resolveCategoryVehicleImage(activeRide.category, platformConfig)}
+                        alt={CATEGORY_LABELS[activeRide.category]}
+                        className="h-14 w-22 object-contain"
+                      />
+                      <div className="-ml-4 rounded-full border-2 border-white dark:border-neutral-900 shadow-md">
+                        <AvatarImage
+                          src={activeRide.driver?.avatar_url}
+                          name={drvName}
+                          className="h-14 w-14 rounded-full object-cover shrink-0"
+                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg shrink-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Driver Meta + Excelente motorista badge */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 text-xs text-neutral-800 dark:text-neutral-200">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-extrabold uppercase truncate text-sm text-neutral-950 dark:text-white">
+                          {drvName}
+                        </span>
+                        <span className="font-mono-num font-bold text-neutral-950 dark:text-white flex items-center gap-0.5 shrink-0">
+                          {drvRating}
+                          <Star className="h-3.5 w-3.5 fill-neutral-950 dark:fill-[#FFD100] text-neutral-950 dark:text-[#FFD100]" />
+                        </span>
+                        {drvTrips > 0 && (
+                          <span className="text-neutral-500 dark:text-neutral-400 font-mono-num shrink-0">
+                            · {drvTrips} avaliações
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-mono-num text-xs font-extrabold text-neutral-950 dark:text-[#FFD100] shrink-0">
+                        {formatBRL(activeRide.estimated_fare)}
+                      </span>
+                    </div>
+
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FEF9C3] dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-bold text-neutral-900 dark:text-amber-200">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD100] text-white">
+                        <Star className="h-2.5 w-2.5 fill-white text-white" />
+                      </span>
+                      {isDeliveryActive ? 'Excelente entregador' : 'Excelente motorista'}
+                    </span>
+                  </div>
+
+                  {/* 2-Minute Wait Timer synced with Driver */}
+                  {activeRide.status === 'arrived' && (
+                    <div
+                      className={`flex items-center justify-between rounded-2xl border px-3.5 py-2.5 text-xs ${
+                        passengerWaitingStats.isCharging
+                          ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-200'
+                          : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Clock
+                          className={`h-4 w-4 shrink-0 ${
+                            passengerWaitingStats.isCharging
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-amber-700 dark:text-amber-400'
+                          }`}
+                        />
+                        <div>
+                          <p className="font-extrabold">
+                            {passengerWaitingStats.isCharging
+                              ? 'Taxa de espera iniciada (+R$ 0,50/min)'
+                              : 'Motorista aguardando no embarque'}
+                          </p>
+                          <p className="text-[11px] opacity-80">
+                            {passengerWaitingStats.isCharging
+                              ? `Acréscimo atual: +${formatBRL(passengerWaitingStats.waitingFee)}`
+                              : 'Embarque dentro de 2 min sem custo adicional'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="font-mono-num text-base font-extrabold shrink-0">
+                        {passengerWaitingStats.isCharging
+                          ? `+${String(Math.floor(passengerWaitingStats.extraSec / 60)).padStart(2, '0')}:${String(
+                              passengerWaitingStats.extraSec % 60
+                            ).padStart(2, '0')}`
+                          : `${String(Math.floor(passengerWaitingStats.remainingFreeSec / 60)).padStart(
+                              2,
+                              '0'
+                            )}:${String(passengerWaitingStats.remainingFreeSec % 60).padStart(2, '0')}`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Payment Status Badges */}
+                  {activeRide.payment_method === 'wallet' &&
+                    activeRide.payment_status === 'pending' && (
+                      <div className="flex items-center justify-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 py-2 px-3 text-xs font-extrabold text-amber-900 dark:text-amber-200 text-center">
+                        <Wallet className="h-4 w-4 shrink-0" />
+                        Saldo 66pay reservado · Escaneie o QR Code do motorista ao chegar
+                      </div>
+                    )}
+
+                  {activeRide.payment_method === 'pix' &&
+                    activeRide.payment_status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={() => setPixModalRide(activeRide)}
+                        className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                      >
+                        <QrCode className="h-4 w-4" />
+                        Pagar com Pix da Plataforma ({formatBRL(currentFareTotal)})
+                      </button>
+                    )}
+
+                  {/* Action Row: "Alguma observação?" + Phone + Cancel */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setChatOpen(true)}
+                      className="min-h-[48px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-sm font-extrabold text-neutral-950 dark:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.98] transition"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      <span>
+                        {currentChatMessages.length > 0
+                          ? `Chat (${currentChatMessages.length})`
+                          : t.any_note_chat}
+                      </span>
+                    </button>
+                    {activeRide.driver?.phone && (
+                      <a
+                        href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
+                        className="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-950 dark:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.98] transition"
+                        aria-label="Ligar para motorista"
+                        title="Ligar para motorista"
+                      >
+                        <Phone className="h-5 w-5" />
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCancelRide}
+                      className={`min-h-[48px] rounded-2xl border px-3.5 text-xs font-extrabold transition ${
+                        cancelEstimate && !cancelEstimate.isFreeGrace
+                          ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+                          : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+                      }`}
+                    >
+                      {cancelEstimate?.isFreeGrace
+                        ? `${t.cancel} (${cancelEstimate.remainingFreeSec}s grátis)`
+                        : cancelEstimate
+                        ? `${t.cancel} (${formatBRL(cancelEstimate.feeAmount)})`
+                        : t.cancel}
+                    </button>
+                  </div>
                 </div>
-              )}
-
-              {activeRide.payment_method === 'wallet' &&
-                (activeRide.payment_status === 'paid' || activeRide.payment_status === 'paid_wallet') && (
-                <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
-                  <span className="flex items-center gap-1.5">
-                    <Wallet className="h-4 w-4" />
-                    Pago via 66pay!
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const savedReceipt = receiptsByRideId[activeRide.id];
-                      if (savedReceipt) {
-                        setReceiptModalState({ receipt66: savedReceipt });
-                      } else {
-                        setReceiptModalState({
-                          transaction: {
-                            id: activeRide.id,
-                            user_id: currentUser.id,
-                            ride_id: activeRide.id,
-                            amount: -(activeRide.final_fare ?? activeRide.estimated_fare),
-                            type: 'ride_debit',
-                            description: `Corrida 66pay #${activeRide.id.slice(-4)} · ${activeRide.destination_address}`,
-                            auth_code: `66PAY-${activeRide.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
-                            sender_name: currentUser.full_name,
-                            recipient_name: activeRide.driver?.full_name || 'Motorista 66pay',
-                            recipient_key:
-                              activeRide.driver?.pay66_key ||
-                              (activeRide.driver_id
-                                ? `66-${activeRide.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-                                : '66pay'),
-                            created_at: activeRide.completed_at || activeRide.created_at,
-                          },
-                        });
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
-                  >
-                    <Receipt className="h-3.5 w-3.5" />
-                    Ver Comprovante 66pay
-                  </button>
-                </div>
-              )}
-
-              {activeRide.payment_method === 'pix' && activeRide.payment_status === 'pending' && (
-                <button
-                  type="button"
-                  onClick={() => setPixModalRide(activeRide)}
-                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
-                >
-                  <QrCode className="h-4 w-4" />
-                  Pagar com Pix da Plataforma ({formatBRL(activeRide.estimated_fare + passengerWaitingStats.waitingFee)})
-                </button>
-              )}
-
-              {activeRide.payment_status === 'paid_pix' && (
-                <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 py-2 text-xs font-bold text-emerald-800 dark:text-emerald-200">
-                  <ShieldCheck className="h-4 w-4" />
-                  Pix enviado para {platformConfig.platform_pix_receiver}
-                </div>
-              )}
-
-              {/* Clean Action Row matching 99 UI */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setChatOpen(true)}
-                  className="min-h-[48px] flex-1 flex items-center justify-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-sm font-bold text-neutral-900 dark:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.98] transition"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  <span>
-                    {currentChatMessages.length > 0
-                      ? `Chat (${currentChatMessages.length})`
-                      : t.any_note_chat}
-                  </span>
-                </button>
-                {activeRide.driver?.phone && (
-                  <a
-                    href={`tel:${activeRide.driver.phone.replace(/\D/g, '')}`}
-                    className="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-900 dark:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.98] transition"
-                    aria-label="Ligar para motorista"
-                    title="Ligar para motorista"
-                  >
-                    <Phone className="h-5 w-5" />
-                  </a>
-                )}
-                {activeRide.status !== 'in_progress' && (
-                  <button
-                    type="button"
-                    onClick={handleCancelRide}
-                    className={`min-h-[48px] rounded-2xl border px-3.5 text-xs font-extrabold transition ${
-                      cancelEstimate && !cancelEstimate.isFreeGrace
-                        ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
-                        : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700'
-                    }`}
-                  >
-                    {cancelEstimate?.isFreeGrace
-                      ? `${t.cancel} (${cancelEstimate.remainingFreeSec}s grátis)`
-                      : cancelEstimate
-                      ? `${t.cancel} (${formatBRL(cancelEstimate.feeAmount)})`
-                      : t.cancel}
-                  </button>
-                )}
-              </div>
-            </div>
+              );
+            })()
           )}
         </div>
         )}
@@ -2342,7 +2936,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
             <div className="mt-3 space-y-2.5">
               <div className="flex items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3.5 py-1.5 focus-within:border-neutral-950 dark:focus-within:border-[#FFD100]">
-                <span className="h-3 w-3 shrink-0 rounded-full bg-[#FFD100] border-2 border-neutral-950" />
+                {serviceTab === 'delivery' ? (
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#00BFA5] bg-white" />
+                ) : (
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FFD100]">
+                    <span className="h-2 w-2 rounded-full bg-neutral-950" />
+                  </span>
+                )}
                 <input
                   type="text"
                   value={originQuery}
@@ -2363,7 +2963,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
               <div className="flex items-center gap-2">
                 <div className="flex flex-1 items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-900 px-3.5 py-1.5 focus-within:border-neutral-950 dark:focus-within:border-[#FFD100] focus-within:bg-white dark:focus-within:bg-neutral-900">
-                  <Flag className="h-4 w-4 shrink-0 text-neutral-950 dark:text-[#FFD100]" />
+                  {serviceTab === 'delivery' ? (
+                    <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#FF6B00] bg-white" />
+                  ) : (
+                    <Flag className="h-4 w-4 shrink-0 fill-neutral-950 text-neutral-950 dark:fill-[#FFD100] dark:text-[#FFD100]" />
+                  )}
                   <input
                     type="text"
                     autoFocus

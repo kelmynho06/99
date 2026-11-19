@@ -29,6 +29,8 @@ interface LiveMapProps {
   center: [number, number];
   origin?: GeoPoint | null;
   destination?: GeoPoint | null;
+  userLocation?: { lat: number; lng: number } | null;
+  isDelivery?: boolean;
   routeCoords?: [number, number][];
   driverPosition?: {
     lat: number;
@@ -70,6 +72,17 @@ function findClosestRouteIndex(
     }
   }
   return bestIdx;
+}
+
+function computeSegmentBearingDeg(a: [number, number], b: [number, number]): number {
+  const lat1 = (a[0] * Math.PI) / 180;
+  const lat2 = (b[0] * Math.PI) / 180;
+  const dLng = ((b[1] - a[1]) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 function MapController({
@@ -189,6 +202,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   center,
   origin,
   destination,
+  userLocation,
+  isDelivery = false,
   routeCoords,
   driverPosition,
   nearbyDrivers = [],
@@ -279,28 +294,106 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     };
   }, [routeCoords, driverPosition, followVehicle]);
 
+  // Directional white chevrons along the remaining blue route (matching screenshot)
+  const routeChevrons = useMemo(() => {
+    if (remainingCoords.length < 4) return [] as Array<{ pos: [number, number]; angle: number }>;
+    const count = Math.min(7, Math.max(2, Math.floor(remainingCoords.length / 8)));
+    const items: Array<{ pos: [number, number]; angle: number }> = [];
+    for (let k = 1; k <= count; k++) {
+      const idx = Math.min(
+        remainingCoords.length - 2,
+        Math.max(1, Math.floor((k * (remainingCoords.length - 1)) / (count + 1)))
+      );
+      const a = remainingCoords[idx];
+      const b = remainingCoords[idx + 1];
+      if (!a || !b) continue;
+      items.push({
+        pos: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+        angle: computeSegmentBearingDeg(a, b),
+      });
+    }
+    return items;
+  }, [remainingCoords]);
+
+  // Passenger Live Location Badge ("pontinho da localização / eu" with translucent blue GPS halo + silhouette)
+  const userLocationIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: '',
+        html: `<div style="position:relative;width:54px;height:54px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(59,130,246,0.20);border:1.5px solid rgba(59,130,246,0.28);"></div>
+          <div style="position:relative;width:28px;height:28px;border-radius:9999px;background:#DBEAFE;border:3px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(37,99,235,0.4);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="#3B82F6">
+              <circle cx="12" cy="8.5" r="4"/>
+              <path d="M4.5 20.5c0-4 3.4-6.5 7.5-6.5s7.5 2.5 7.5 6.5z"/>
+            </svg>
+          </div>
+        </div>`,
+        iconSize: [54, 54],
+        iconAnchor: [27, 27],
+      }),
+    []
+  );
+
+  // Origin / Pickup Marker: Yellow circle with dark center dot (rides) OR Teal hollow ring (deliveries)
   const originIcon = useMemo(
     () =>
       L.divIcon({
         className: '',
-        html: `<div style="width:24px;height:24px;border-radius:9999px;background:#2563EB;border:4px solid #ffffff;box-shadow:0 4px 12px rgba(0,0,0,0.4);"></div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        html: isDelivery
+          ? `<div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">
+              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(0,191,165,0.22);"></div>
+              <div style="position:relative;width:22px;height:22px;border-radius:9999px;background:#ffffff;border:5px solid #00BFA5;box-shadow:0 4px 12px rgba(0,0,0,0.28);"></div>
+            </div>`
+          : `<div style="position:relative;width:38px;height:38px;display:flex;align-items:center;justify-content:center;">
+              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(255,209,0,0.34);"></div>
+              <div style="position:relative;width:24px;height:24px;border-radius:9999px;background:#FFD100;border:2.5px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.32);">
+                <div style="width:9px;height:9px;border-radius:9999px;background:#111827;"></div>
+              </div>
+            </div>`,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
       }),
-    []
+    [isDelivery]
   );
 
+  // Destination Marker: Black flag pin (rides) OR Orange hollow ring (deliveries)
   const destinationIcon = useMemo(
     () =>
       L.divIcon({
         className: '',
-        html: `<div style="width:28px;height:28px;border-radius:8px;background:#111827;color:#FFCC00;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;border:3px solid #ffffff;box-shadow:0 4px 14px rgba(0,0,0,0.38);">B</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+        html: isDelivery
+          ? `<div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">
+              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(255,107,0,0.22);"></div>
+              <div style="position:relative;width:22px;height:22px;border-radius:9999px;background:#ffffff;border:5px solid #FF6B00;box-shadow:0 4px 12px rgba(0,0,0,0.28);"></div>
+            </div>`
+          : `<div style="position:relative;width:34px;height:34px;display:flex;align-items:center;justify-content:center;">
+              <div style="width:30px;height:30px;border-radius:9999px;background:#111827;border:3px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(0,0,0,0.38);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#FFD100" stroke="#FFD100" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                  <line x1="4" y1="22" x2="4" y2="15"/>
+                </svg>
+              </div>
+            </div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       }),
-    []
+    [isDelivery]
   );
 
+  const makeChevronIcon = (angleDeg: number) =>
+    L.divIcon({
+      className: '',
+      html: `<div style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;transform:rotate(${angleDeg}deg);pointer-events:none;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 1px rgba(0,0,0,0.35));">
+          <path d="M18 15l-6-6-6 6"/>
+        </svg>
+      </div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+
+  // Top-down sleek vehicle SVG icon (white/silver 3D-style car or moto matching screenshot)
   const makeVehicleIcon = (
     vehicleType: 'car' | 'moto' | 'delivery' = 'car',
     heading = 0,
@@ -308,28 +401,37 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   ) =>
     L.divIcon({
       className: 'velo-smooth-marker',
-      html: `<div style="position:relative;transform:rotate(${heading}deg);width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+      html: `<div style="position:relative;transform:rotate(${heading}deg);width:46px;height:46px;display:flex;align-items:center;justify-content:center;">
         ${
-          active
-            ? `<div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:10px solid #FFCC00;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></div>`
-            : ''
+          vehicleType === 'moto' || vehicleType === 'delivery'
+            ? `<div style="width:36px;height:36px;border-radius:9999px;background:${
+                active ? '#111827' : '#ffffff'
+              };border:2.5px solid ${active ? '#FFD100' : '#2563EB'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,0.32);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${
+                  active ? '#FFD100' : '#111827'
+                }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="2" width="6" height="5" rx="2" fill="${active ? '#FFD100' : '#111827'}"/>
+                  <path d="M7 9h10"/>
+                  <rect x="8" y="9" width="8" height="10" rx="3" fill="${active ? '#ffffff' : '#FFD100'}" stroke="${active ? '#FFD100' : '#111827'}"/>
+                  <rect x="10" y="19" width="4" height="3" rx="1" fill="${active ? '#FFD100' : '#111827'}"/>
+                </svg>
+              </div>`
+            : `<div style="position:relative;width:28px;height:44px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 5px 8px rgba(0,0,0,0.38));">
+                <svg width="26" height="42" viewBox="0 0 36 58" fill="none">
+                  <rect x="4" y="4" width="28" height="50" rx="11" fill="${active ? '#FFFFFF' : '#F8FAFC'}" stroke="${active ? '#1E293B' : '#475569'}" stroke-width="2"/>
+                  <path d="M8 15C8 11 11 9 18 9C25 9 28 11 28 15L26 23H10L8 15Z" fill="#1E293B"/>
+                  <rect x="9" y="24" width="18" height="14" rx="4" fill="#E2E8F0"/>
+                  <path d="M10 40H26L27 45C27 47 24 49 18 49C12 49 9 47 9 45L10 40Z" fill="#334155"/>
+                  <rect x="7" y="5" width="6" height="2.5" rx="1.2" fill="#FFD100"/>
+                  <rect x="23" y="5" width="6" height="2.5" rx="1.2" fill="#FFD100"/>
+                  <rect x="2" y="17" width="3" height="6" rx="1.5" fill="#1E293B"/>
+                  <rect x="31" y="17" width="3" height="6" rx="1.5" fill="#1E293B"/>
+                </svg>
+              </div>`
         }
-        <div style="width:38px;height:38px;border-radius:9999px;background:${
-          active ? '#111827' : '#ffffff'
-        };border:3px solid ${active ? '#FFCC00' : '#2563EB'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,0.35);">
-          ${
-            vehicleType === 'moto' || vehicleType === 'delivery'
-              ? `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="${
-                  active ? '#FFCC00' : '#111827'
-                }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h3"/></svg>`
-              : `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="${
-                  active ? '#FFCC00' : '#111827'
-                }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`
-          }
-        </div>
       </div>`,
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
+      iconSize: [46, 46],
+      iconAnchor: [23, 23],
     });
 
   return (
@@ -381,8 +483,49 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             }}
           />
 
+          {/* Traveled Route Portion (Gray) */}
+          {traveledCoords.length >= 2 && (
+            <Polyline
+              positions={traveledCoords}
+              pathOptions={{ color: '#9CA3AF', weight: 6.5, opacity: 0.85 }}
+            />
+          )}
+
+          {/* Remaining Route Ahead (Vibrant Royal Blue with Casing) */}
+          {remainingCoords.length >= 2 && (
+            <>
+              <Polyline
+                positions={remainingCoords}
+                pathOptions={{ color: '#1D4ED8', weight: 8.5, opacity: 0.95 }}
+              />
+              <Polyline
+                positions={remainingCoords}
+                pathOptions={{ color: '#2563EB', weight: 5, opacity: 1 }}
+              />
+            </>
+          )}
+
+          {/* White Directional Chevrons along the blue path */}
+          {routeChevrons.map((ch, idx) => (
+            <Marker
+              key={`chev-${idx}`}
+              position={ch.pos}
+              icon={makeChevronIcon(ch.angle)}
+              interactive={false}
+            />
+          ))}
+
+          {/* Passenger Live GPS Location Badge ("Eu") */}
+          {userLocation && (
+            <Marker
+              position={[userLocation.lat, userLocation.lng]}
+              icon={userLocationIcon}
+              zIndexOffset={300}
+            />
+          )}
+
           {origin && (
-            <Marker position={[origin.lat, origin.lng]} icon={originIcon}>
+            <Marker position={[origin.lat, origin.lng]} icon={originIcon} zIndexOffset={450}>
               <Popup>
                 <div className="text-xs font-semibold text-neutral-900">
                   {origin.address}
@@ -392,7 +535,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           )}
 
           {destination && (
-            <Marker position={[destination.lat, destination.lng]} icon={destinationIcon}>
+            <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} zIndexOffset={450}>
               <Popup>
                 <div className="text-xs font-semibold text-neutral-900">
                   {destination.address}
@@ -401,32 +544,11 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             </Marker>
           )}
 
-          {/* Traveled Route Portion (Gray) */}
-          {traveledCoords.length >= 2 && (
-            <Polyline
-              positions={traveledCoords}
-              pathOptions={{ color: '#9CA3AF', weight: 6.5, opacity: 0.85 }}
-            />
-          )}
-
-          {/* Remaining Route Ahead (Two-tone Blue) */}
-          {remainingCoords.length >= 2 && (
-            <>
-              <Polyline
-                positions={remainingCoords}
-                pathOptions={{ color: '#1E3A8A', weight: 8, opacity: 0.9 }}
-              />
-              <Polyline
-                positions={remainingCoords}
-                pathOptions={{ color: '#3B82F6', weight: 4.5, opacity: 1 }}
-              />
-            </>
-          )}
-
           {driverPosition && (
             <Marker
               position={[driverPosition.lat, driverPosition.lng]}
               icon={makeVehicleIcon(driverPosition.vehicleType || 'car', driverPosition.heading || 0, true)}
+              zIndexOffset={600}
             >
               {driverPosition.label && (
                 <Popup>

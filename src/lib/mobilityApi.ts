@@ -58,7 +58,43 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   ota_apk_url: null,
   ota_web_url: null,
   ota_release_notes: null,
+  deposit_window_enabled: true,
+  deposit_start_time: '07:00',
+  deposit_end_time: '23:30',
 };
+
+function normalizeHHMM(raw: string | null | undefined, fallback: string): string {
+  const clean = String(raw || '').trim();
+  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+  const h = Math.min(23, Math.max(0, Number(match[1])));
+  const m = Math.min(59, Math.max(0, Number(match[2])));
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function getDepositWindowStatus(
+  config?: PlatformConfig | null,
+  now: Date = new Date()
+): { isOpen: boolean; enabled: boolean; startTime: string; endTime: string } {
+  const enabled = config?.deposit_window_enabled !== false;
+  const startTime = normalizeHHMM(config?.deposit_start_time, '07:00');
+  const endTime = normalizeHHMM(config?.deposit_end_time, '23:30');
+  if (!enabled) {
+    return { isOpen: true, enabled: false, startTime, endTime };
+  }
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  const curMin = now.getHours() * 60 + now.getMinutes();
+
+  const isOpen =
+    startMin <= endMin
+      ? curMin >= startMin && curMin <= endMin
+      : curMin >= startMin || curMin <= endMin;
+
+  return { isOpen, enabled: true, startTime, endTime };
+}
 
 export const DEFAULT_PRICING_LIST: PricingSetting[] = [
   {
@@ -820,6 +856,18 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       (data.ota_web_url as string | null | undefined) ?? cached.ota_web_url ?? null,
     ota_release_notes:
       (data.ota_release_notes as string | null | undefined) ?? cached.ota_release_notes ?? null,
+    deposit_window_enabled:
+      data.deposit_window_enabled === undefined
+        ? cached.deposit_window_enabled ?? true
+        : Boolean(data.deposit_window_enabled),
+    deposit_start_time: normalizeHHMM(
+      (data.deposit_start_time as string | null | undefined) ?? cached.deposit_start_time,
+      '07:00'
+    ),
+    deposit_end_time: normalizeHHMM(
+      (data.deposit_end_time as string | null | undefined) ?? cached.deposit_end_time,
+      '23:30'
+    ),
   };
 }
 
@@ -2111,6 +2159,9 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         ota_apk_url: config.ota_apk_url ?? null,
         ota_web_url: config.ota_web_url ?? null,
         ota_release_notes: config.ota_release_notes ?? null,
+        deposit_window_enabled: config.deposit_window_enabled !== false,
+        deposit_start_time: normalizeHHMM(config.deposit_start_time, '07:00'),
+        deposit_end_time: normalizeHHMM(config.deposit_end_time, '23:30'),
       })
     );
   } catch {
@@ -2159,6 +2210,9 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     ota_apk_url: config.ota_apk_url?.trim() || null,
     ota_web_url: config.ota_web_url?.trim() || null,
     ota_release_notes: config.ota_release_notes?.trim() || null,
+    deposit_window_enabled: config.deposit_window_enabled !== false,
+    deposit_start_time: normalizeHHMM(config.deposit_start_time, '07:00'),
+    deposit_end_time: normalizeHHMM(config.deposit_end_time, '23:30'),
     updated_at: new Date().toISOString(),
   };
 
@@ -2544,6 +2598,14 @@ export async function createWalletDepositRequest(
   pixPayload: string,
   note?: string
 ): Promise<WalletDeposit> {
+  const cfg = await fetchPlatformConfig().catch(() => null);
+  const windowStatus = getDepositWindowStatus(cfg);
+  if (!windowStatus.isOpen) {
+    throw new Error(
+      `Horário de depósitos Pix encerrado no momento. Novos depósitos funcionam das ${windowStatus.startTime} às ${windowStatus.endTime}. Quem já tem saldo 66pay continua usando normalmente!`
+    );
+  }
+
   const cleanAmount = Number(Math.max(1, amount).toFixed(2));
   const { data, error } = await supabase
     .from('wallet_deposits')
@@ -2674,9 +2736,56 @@ export async function adminUpdateUserWalletBalance(
   }
 }
 
+export async function updateMyPay66Key(userId: string, newKey: string): Promise<UserProfile> {
+  const clean = newKey.trim().replace(/\s+/g, '');
+  if (clean.length < 4 || clean.length > 64) {
+    throw new Error('Informe uma Chave 66pay válida entre 4 e 64 caracteres.');
+  }
+
+  const { error: rpcErr } = await supabase.rpc('update_my_pay66_key', {
+    p_new_key: clean,
+  });
+
+  if (rpcErr) {
+    const rpcMsg = String(rpcErr.message || '');
+    const missingRpc =
+      rpcErr.code === '42883' ||
+      rpcErr.code === 'PGRST202' ||
+      rpcMsg.toLowerCase().includes('could not find the function');
+    if (!missingRpc) {
+      throw new Error(rpcMsg);
+    }
+
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ pay66_key: clean, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (updErr) {
+      if (updErr.code === '23505') {
+        throw new Error('Esta Chave 66pay já está em uso por outro usuário.');
+      }
+      throw new Error(updErr.message);
+    }
+  }
+
+  const refreshed = await fetchUserProfileById(userId);
+  if (!refreshed) throw new Error('Erro ao recarregar perfil após salvar Chave 66pay.');
+  return refreshed;
+}
+
+function extractPay66Token(rawInput: string): string {
+  const clean = rawInput.trim();
+  if (clean.toUpperCase().startsWith('66PAY|')) {
+    const parts = clean.split('|');
+    return (parts[1] || parts[2] || clean).trim();
+  }
+  return clean;
+}
+
 export async function lookupWalletRecipient(query: string): Promise<WalletRecipientMatch[]> {
   const clean = query.trim();
   if (clean.length < 3) return [];
+  const token = extractPay66Token(clean);
 
   const { data, error } = await supabase.rpc('lookup_wallet_recipient', {
     p_query: clean,
@@ -2690,24 +2799,28 @@ export async function lookupWalletRecipient(query: string): Promise<WalletRecipi
       phone: String(r.phone || ''),
       role: (r.role as WalletRecipientMatch['role']) || 'passenger',
       avatar_url: r.avatar_url ? String(r.avatar_url) : null,
+      pay66_key: r.pay66_key ? String(r.pay66_key) : null,
     }));
   }
 
   // Fallback direct query on profiles if RPC isn't deployed yet
-  const digits = clean.replace(/\D/g, '');
+  const digits = token.replace(/\D/g, '');
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
   let q = supabase
     .from('profiles')
-    .select('id,full_name,email,phone,role,avatar_url')
+    .select('id,full_name,email,phone,role,avatar_url,pay66_key')
     .neq('role', 'admin')
     .eq('is_anonymized', false)
-    .limit(5);
+    .limit(6);
 
-  if (clean.includes('@')) {
-    q = q.ilike('email', `%${clean.toLowerCase()}%`);
+  if (isUuid) {
+    q = q.eq('id', token);
+  } else if (token.includes('@')) {
+    q = q.or(`email.ilike.%${token.toLowerCase()}%,pay66_key.ilike.%${token}%`);
   } else if (digits.length >= 4) {
-    q = q.or(`phone.ilike.%${digits}%,cpf.ilike.%${digits}%`);
+    q = q.or(`phone.ilike.%${digits}%,cpf.ilike.%${digits}%,pay66_key.ilike.%${token}%`);
   } else {
-    q = q.ilike('full_name', `%${clean}%`);
+    q = q.or(`full_name.ilike.%${token}%,pay66_key.ilike.%${token}%`);
   }
 
   const { data: fallback } = await q;
@@ -2718,6 +2831,7 @@ export async function lookupWalletRecipient(query: string): Promise<WalletRecipi
     phone: String(r.phone || ''),
     role: (r.role as WalletRecipientMatch['role']) || 'passenger',
     avatar_url: r.avatar_url ? String(r.avatar_url) : null,
+    pay66_key: r.pay66_key ? String(r.pay66_key) : null,
   }));
 }
 
@@ -2726,7 +2840,7 @@ export async function transferirSaldo66(
   valor: number,
   observacao?: string
 ): Promise<WalletTransaction | null> {
-  const cleanTarget = destinatario.trim();
+  const cleanTarget = extractPay66Token(destinatario);
   const cleanAmount = Number(Math.max(0, valor).toFixed(2));
   if (!cleanTarget) {
     throw new Error('Informe o destinatário da transferência 66 Pay.');

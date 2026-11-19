@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import jsQR from 'jsqr';
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Banknote,
+  Camera,
   Check,
   CheckCircle2,
   Clock,
@@ -13,6 +15,7 @@ import {
   Info,
   KeyRound,
   Lock,
+  Pencil,
   Plus,
   QrCode,
   Receipt,
@@ -33,9 +36,11 @@ import {
   fetchMyWalletWithdrawals,
   fetchUserProfileById,
   fetchWalletTransactions,
+  getDepositWindowStatus,
   lookupWalletRecipient,
   requestWalletWithdrawal,
   transferirSaldo66,
+  updateMyPay66Key,
 } from '../lib/mobilityApi';
 import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import { supabase } from '../lib/supabase';
@@ -115,13 +120,21 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const isDriver = currentUser.role === 'driver';
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const depositWindow = useMemo(
+    () => getDepositWindowStatus(platformConfig, new Date(nowTick)),
+    [platformConfig, nowTick]
+  );
+
   const [depositSecurityAccepted, setDepositSecurityAccepted] = useState(false);
   const [showDepositSecurityGate, setShowDepositSecurityGate] = useState(
-    () => initialTab === 'deposit'
+    () => initialTab === 'deposit' && getDepositWindowStatus(platformConfig).isOpen
   );
   const [tab, setTab] = useState<WalletModalTab>(() => {
     if (initialTab === 'withdraw' && !isDriver) return 'home';
-    if (initialTab === 'deposit') return 'home';
+    if (initialTab === 'deposit') {
+      return getDepositWindowStatus(platformConfig).isOpen ? 'home' : 'deposit';
+    }
     return initialTab;
   });
   const [hideBalance, setHideBalance] = useState<boolean>(() => {
@@ -141,13 +154,28 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   });
   const [noteInput, setNoteInput] = useState('');
 
-  // Transfer P2P state
+  // Chave 66pay editor state
+  const defaultFallback66Key = `66-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+  const [editingPay66Key, setEditingPay66Key] = useState(false);
+  const [pay66KeyInput, setPay66KeyInput] = useState(
+    () => currentUser.pay66_key || defaultFallback66Key
+  );
+  const [savingPay66Key, setSavingPay66Key] = useState(false);
+
+  // Transfer P2P state + QR Scanner
   const [recipientQuery, setRecipientQuery] = useState('');
   const [recipientMatches, setRecipientMatches] = useState<WalletRecipientMatch[]>([]);
   const [searchingRecipient, setSearchingRecipient] = useState(false);
   const [selectedRecipient, setSelectedRecipient] = useState<WalletRecipientMatch | null>(null);
   const [transferAmountInput, setTransferAmountInput] = useState('10.00');
   const [transferNote, setTransferNote] = useState('');
+  const [showTransferQrScanner, setShowTransferQrScanner] = useState(false);
+  const [qrScanError, setQrScanError] = useState<string | null>(null);
+  const [qrScanReady, setQrScanReady] = useState(false);
+  const transferVideoRef = useRef<HTMLVideoElement | null>(null);
+  const transferCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const transferStreamRef = useRef<MediaStream | null>(null);
+  const transferRafRef = useRef<number | null>(null);
 
   // Driver withdrawal state
   const [withdrawAmountInput, setWithdrawAmountInput] = useState(() =>
@@ -173,6 +201,17 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<WalletTransaction | null>(null);
   const [lastTransferReceiptTx, setLastTransferReceiptTx] = useState<WalletTransaction | null>(null);
 
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (currentUser.pay66_key && !editingPay66Key) {
+      setPay66KeyInput(currentUser.pay66_key);
+    }
+  }, [currentUser.pay66_key, editingPay66Key]);
+
   const toggleHideBalance = () => {
     setHideBalance((prev) => {
       const next = !prev;
@@ -189,7 +228,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     setError(null);
     setSuccessMsg(null);
     setLastTransferReceiptTx(null);
-    if (nextTab === 'deposit' && !depositSecurityAccepted) {
+    if (nextTab === 'deposit' && depositWindow.isOpen && !depositSecurityAccepted) {
       setShowDepositSecurityGate(true);
       return;
     }
@@ -277,6 +316,145 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       window.clearTimeout(timer);
     };
   }, [recipientQuery, tab, currentUser.id]);
+
+  const stopTransferQrCamera = useCallback(() => {
+    if (transferRafRef.current !== null) {
+      window.cancelAnimationFrame(transferRafRef.current);
+      transferRafRef.current = null;
+    }
+    if (transferStreamRef.current) {
+      try {
+        transferStreamRef.current.getTracks().forEach((track) => track.stop());
+      } catch {
+        // Ignore stop errors
+      }
+      transferStreamRef.current = null;
+    }
+    setQrScanReady(false);
+  }, []);
+
+  useEffect(() => {
+    if (!showTransferQrScanner) {
+      stopTransferQrCamera();
+      return;
+    }
+
+    let cancelled = false;
+    let locked = false;
+    setQrScanError(null);
+
+    const startScanner = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setQrScanError('Câmera indisponível neste navegador. Digite a Chave 66pay manualmente.');
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        transferStreamRef.current = stream;
+        if (transferVideoRef.current) {
+          transferVideoRef.current.srcObject = stream;
+          await transferVideoRef.current.play().catch(() => {});
+        }
+        setQrScanReady(true);
+
+        const BarcodeDetectorCtor = (
+          window as unknown as {
+            BarcodeDetector?: new (opts?: { formats?: string[] }) => {
+              detect: (source: HTMLVideoElement | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>>;
+            };
+          }
+        ).BarcodeDetector;
+        const nativeDetector = BarcodeDetectorCtor
+          ? (() => {
+              try {
+                return new BarcodeDetectorCtor({ formats: ['qr_code'] });
+              } catch {
+                return null;
+              }
+            })()
+          : null;
+
+        let lastAt = 0;
+        const scanLoop = async () => {
+          if (cancelled || locked) return;
+          const video = transferVideoRef.current;
+          const now = Date.now();
+          if (video && video.readyState >= 2 && video.videoWidth > 0 && now - lastAt >= 220) {
+            lastAt = now;
+            try {
+              let detected: string | null = null;
+              const canvas = transferCanvasRef.current;
+              if (canvas) {
+                const w = Math.min(480, video.videoWidth);
+                const h = Math.max(1, Math.round(video.videoHeight * (w / video.videoWidth)));
+                if (canvas.width !== w || canvas.height !== h) {
+                  canvas.width = w;
+                  canvas.height = h;
+                }
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                if (ctx) {
+                  ctx.drawImage(video, 0, 0, w, h);
+                  const imgData = ctx.getImageData(0, 0, w, h);
+                  const code = jsQR(imgData.data, w, h, { inversionAttempts: 'dontInvert' });
+                  if (code?.data) detected = code.data;
+                }
+              }
+              if (!detected && nativeDetector) {
+                const found = await nativeDetector.detect(video).catch(() => []);
+                if (found.length > 0 && found[0]?.rawValue) detected = found[0].rawValue;
+              }
+
+              if (detected && !locked) {
+                locked = true;
+                stopTransferQrCamera();
+                setShowTransferQrScanner(false);
+                const matches = await lookupWalletRecipient(detected).catch(() => []);
+                const target = matches.find((m) => m.id !== currentUser.id);
+                if (target) {
+                  setSelectedRecipient(target);
+                  setRecipientMatches([]);
+                  setRecipientQuery(target.pay66_key || target.full_name);
+                  setSuccessMsg(`QR Code 66pay lido! Destinatário: ${target.full_name}.`);
+                } else {
+                  setRecipientQuery(detected);
+                  setError('QR Code lido, mas nenhum usuário 66pay ativo foi localizado.');
+                }
+                return;
+              }
+            } catch {
+              // Ignore single-frame glitch
+            }
+          }
+          if (!cancelled) {
+            transferRafRef.current = window.requestAnimationFrame(() => {
+              void scanLoop();
+            });
+          }
+        };
+
+        transferRafRef.current = window.requestAnimationFrame(() => {
+          void scanLoop();
+        });
+      } catch {
+        if (!cancelled) {
+          setQrScanError('Não foi possível acessar a câmera. Informe a Chave 66pay no campo de busca.');
+        }
+      }
+    };
+
+    void startScanner();
+    return () => {
+      cancelled = true;
+      stopTransferQrCamera();
+    };
+  }, [showTransferQrScanner, currentUser.id, stopTransferQrCamera]);
 
   const { formattedTimer, cycle } = usePixSecurityRotation(90);
 
@@ -388,7 +566,28 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const canTransferDirect =
     Boolean(selectedRecipient) ||
     recipientQuery.trim().includes('@') ||
+    recipientQuery.trim().toUpperCase().startsWith('66-') ||
+    recipientQuery.trim().toUpperCase().startsWith('66PAY|') ||
     recipientQuery.replace(/\D/g, '').length >= 10;
+
+  const handleSavePay66Key = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+    setSavingPay66Key(true);
+    try {
+      const updated = await updateMyPay66Key(currentUser.id, pay66KeyInput);
+      onUserUpdated(updated);
+      setEditingPay66Key(false);
+      setSuccessMsg(
+        `Chave 66pay "${updated.pay66_key}" cadastrada! Seu QR Code 66pay foi atualizado automaticamente.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar sua Chave 66pay.');
+    } finally {
+      setSavingPay66Key(false);
+    }
+  };
 
   const handleSubmitTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -671,15 +870,27 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             <div className="flex items-center justify-between gap-2 rounded-2xl bg-white/5 border border-white/10 px-3 py-2 text-[11px]">
               <span className="flex items-center gap-1.5 text-neutral-300 font-bold truncate">
                 <KeyRound className="h-3.5 w-3.5 text-[#FFD100] shrink-0" />
-                Chave 66pay: <strong className="font-mono-num text-[#FFD100]">{myPay66Key}</strong>
+                Chave 66pay: <strong className="font-mono-num text-[#FFD100] truncate">{myPay66Key}</strong>
               </span>
-              <button
-                type="button"
-                onClick={() => copyValue(myPay66Key, '66pay')}
-                className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-extrabold text-white hover:bg-white/20 shrink-0"
-              >
-                {copiedMy66Pay ? 'Copiada!' : 'Copiar'}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchTab('qrcode');
+                    setEditingPay66Key(true);
+                  }}
+                  className="rounded-lg bg-[#FFD100]/20 border border-[#FFD100]/40 px-2 py-1 text-[10px] font-extrabold text-[#FFD100] hover:bg-[#FFD100]/30"
+                >
+                  Alterar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyValue(myPay66Key, '66pay')}
+                  className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-extrabold text-white hover:bg-white/20"
+                >
+                  {copiedMy66Pay ? 'Copiada!' : 'Copiar'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -837,8 +1048,53 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </div>
           )}
 
-          {/* TAB: DEPOSIT PIX (Only accessible after 66pay security shield acceptance) */}
-          {tab === 'deposit' && depositSecurityAccepted && (
+          {/* TAB: DEPOSIT PIX (Blocked outside operating hours; existing balance stays 100% usable 24h) */}
+          {tab === 'deposit' && !depositWindow.isOpen && (
+            <div className="space-y-4 rounded-3xl bg-white dark:bg-[#1A1D24] p-5 border border-amber-300 dark:border-amber-800/70">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-[#FFD100]">
+                  <Clock className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-[#FFD100]">
+                    Horário de Depósitos Pix
+                  </p>
+                  <h4 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
+                    Depósitos disponíveis das {depositWindow.startTime} às {depositWindow.endTime}
+                  </h4>
+                  <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                    No momento novos depósitos via Pix estão pausados porque a confirmação administrativa funciona das{' '}
+                    <strong className="font-mono-num">{depositWindow.startTime}</strong> às{' '}
+                    <strong className="font-mono-num">{depositWindow.endTime}</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-3.5 text-xs text-emerald-900 dark:text-emerald-200 leading-relaxed">
+                <strong>Seu saldo atual 66pay ({formatBRL(currentUser.wallet_balance || 0)}) continua ativo 24h:</strong>{' '}
+                quem já depositou pode pagar corridas e fazer transferências normalmente. Se estiver sem saldo agora, peça sua corrida escolhendo pagamento em <strong>Dinheiro</strong>.
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => switchTab('transfer')}
+                  className="min-h-[46px] rounded-2xl bg-[#FFD100] text-xs font-extrabold text-neutral-950 active:scale-95 transition"
+                >
+                  Transferir Saldo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchTab('home')}
+                  className="min-h-[46px] rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-xs font-extrabold text-neutral-900 dark:text-white active:scale-95 transition"
+                >
+                  Voltar ao Início
+                </button>
+              </div>
+            </div>
+          )}
+
+          {tab === 'deposit' && depositWindow.isOpen && depositSecurityAccepted && (
             <form onSubmit={handleSubmitDeposit} className="space-y-4 rounded-3xl bg-white dark:bg-[#1A1D24] p-4 border border-neutral-200 dark:border-neutral-800">
               <div>
                 <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100 mb-2">
@@ -1001,9 +1257,19 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100 mb-1.5">
-                  1. Destinatário (e-mail, telefone ou nome)
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100">
+                    1. Destinatário (Chave 66pay, QR Code, e-mail ou telefone)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowTransferQrScanner(true)}
+                    className="inline-flex items-center gap-1 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950 active:scale-95 transition"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                    Ler QR 66pay
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3.5 focus-within:border-neutral-950 dark:focus-within:border-[#FFD100]">
                   <Search className="h-4 w-4 text-neutral-400 shrink-0" />
                   <input
@@ -1013,7 +1279,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       setRecipientQuery(e.target.value);
                       setSelectedRecipient(null);
                     }}
-                    placeholder={t.transfer_search_placeholder}
+                    placeholder="Chave 66pay, e-mail, telefone ou nome"
                     className="min-h-[46px] flex-1 bg-transparent text-xs font-semibold text-neutral-950 dark:text-white outline-none"
                   />
                   {recipientQuery && (
@@ -1167,19 +1433,19 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </form>
           )}
 
-          {/* TAB: QR CODE 66PAY */}
+          {/* TAB: QR CODE 66PAY + REGISTRO DE CHAVE 66PAY */}
           {tab === 'qrcode' && (
             <div className="space-y-4 rounded-3xl bg-white dark:bg-[#1A1D24] p-5 border border-neutral-200 dark:border-neutral-800 text-center">
               <div>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFD100]/25 px-3 py-1 text-[11px] font-extrabold text-neutral-950 dark:text-[#FFD100]">
                   <QrCode className="h-3.5 w-3.5" />
-                  Receber na Carteira 66pay
+                  QR Code Automático 66pay
                 </span>
                 <h4 className="mt-2 font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   Seu Código de Recebimento 66pay
                 </h4>
                 <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  Compartilhe seu QR Code ou Chave 66pay para receber corridas e transferências instantâneas sem taxas.
+                  Gerado automaticamente com a sua Chave 66pay para transferências instantâneas dentro do app (sem depender de banco externo).
                 </p>
               </div>
 
@@ -1187,26 +1453,104 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 <PixQrSvg payload={my66PayQrPayload} size={160} />
               </div>
 
-              <div className="rounded-2xl border border-[#FFD100]/40 bg-[#FFD100]/10 p-3.5 text-left">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
-                  Chave Única 66pay
-                </p>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <p className="font-mono-num text-sm font-black text-neutral-950 dark:text-[#FFD100] truncate">
-                    {myPay66Key}
+              <div className="rounded-2xl border border-[#FFD100]/40 bg-[#FFD100]/10 p-3.5 text-left space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
+                    Minha Chave 66pay Ativa
                   </p>
                   <button
                     type="button"
-                    onClick={() => copyValue(myPay66Key, '66pay')}
-                    className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                    onClick={() => {
+                      setPay66KeyInput(myPay66Key);
+                      setEditingPay66Key((prev) => !prev);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-extrabold text-neutral-950 dark:text-[#FFD100] underline"
                   >
-                    {copiedMy66Pay ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copiedMy66Pay ? 'Copiado!' : 'Copiar Chave'}
+                    <Pencil className="h-3 w-3" />
+                    {editingPay66Key ? 'Cancelar' : 'Cadastrar / Alterar Chave'}
                   </button>
                 </div>
-                <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
-                  Conta vinculada: {my66PayIdentifier}
-                </p>
+
+                {!editingPay66Key ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-mono-num text-sm font-black text-neutral-950 dark:text-[#FFD100] truncate">
+                        {myPay66Key}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => copyValue(myPay66Key, '66pay')}
+                        className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                      >
+                        {copiedMy66Pay ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedMy66Pay ? 'Copiado!' : 'Copiar Chave'}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
+                      Conta vinculada: {my66PayIdentifier}
+                    </p>
+                  </>
+                ) : (
+                  <form onSubmit={handleSavePay66Key} className="space-y-2.5 pt-1">
+                    <div className="flex flex-wrap gap-1.5">
+                      {currentUser.phone && (
+                        <button
+                          type="button"
+                          onClick={() => setPay66KeyInput(currentUser.phone.replace(/\s+/g, ''))}
+                          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                        >
+                          Usar Telefone
+                        </button>
+                      )}
+                      {currentUser.email && (
+                        <button
+                          type="button"
+                          onClick={() => setPay66KeyInput(currentUser.email.trim().toLowerCase())}
+                          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                        >
+                          Usar E-mail
+                        </button>
+                      )}
+                      {currentUser.cpf && (
+                        <button
+                          type="button"
+                          onClick={() => setPay66KeyInput(currentUser.cpf.replace(/\D/g, ''))}
+                          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                        >
+                          Usar CPF
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPay66KeyInput(
+                            `66-${Math.random().toString(36).slice(2, 10).toUpperCase()}`
+                          )
+                        }
+                        className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                      >
+                        Chave Aleatória
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      minLength={4}
+                      maxLength={64}
+                      value={pay66KeyInput}
+                      onChange={(e) => setPay66KeyInput(e.target.value)}
+                      placeholder="Ex: seu@email.com, telefone, CPF ou @apelido"
+                      className="min-h-[44px] w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 font-mono-num text-xs font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={savingPay66Key || pay66KeyInput.trim().length < 4}
+                      className="min-h-[42px] w-full rounded-xl bg-neutral-950 dark:bg-[#FFD100] text-xs font-extrabold text-[#FFD100] dark:text-neutral-950 disabled:opacity-50"
+                    >
+                      {savingPay66Key ? 'Salvando Chave...' : 'Salvar Chave & Atualizar QR Code'}
+                    </button>
+                  </form>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -1559,6 +1903,49 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 Voltar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showTransferQrScanner && (
+        <div className="fixed inset-0 z-[1310] flex items-end sm:items-center justify-center bg-black/85 p-0 sm:p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-[#14171D] text-white border border-[#FFD100]/40 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <QrCode className="h-5 w-5 text-[#FFD100]" />
+                <h4 className="font-display text-base font-extrabold">Ler QR Code 66pay</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTransferQrScanner(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-neutral-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-black border-2 border-[#FFD100]/60 flex items-center justify-center">
+              <video ref={transferVideoRef} playsInline muted className="h-full w-full object-cover" />
+              <canvas ref={transferCanvasRef} className="hidden" />
+              {!qrScanError && (
+                <div className="pointer-events-none absolute inset-6 rounded-2xl border-2 border-[#FFD100] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+              )}
+              {!qrScanReady && !qrScanError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/85 text-xs text-neutral-300 p-4 text-center">
+                  <Camera className="h-7 w-7 text-[#FFD100] animate-pulse" />
+                  <span>Abrindo câmera...</span>
+                </div>
+              )}
+              {qrScanError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/90 p-4 text-center text-xs text-neutral-300">
+                  <p>{qrScanError}</p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-center text-[11px] text-neutral-400">
+              Aponte para o QR Code 66pay do usuário que vai receber a transferência.
+            </p>
           </div>
         </div>
       )}

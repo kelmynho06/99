@@ -199,17 +199,18 @@ export function useRealtimeMobility(
 
                 // Passenger receives immediate sound + PT-BR voice + local notification on status changes
                 if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
-                  const driverFirstName = enriched.driver?.full_name?.split(' ')[0] || 'seu parceiro';
+                  const driverDisplayName =
+                    enriched.driver?.full_name?.trim() || 'seu parceiro';
                   if (enriched.status === 'accepted') {
                     void playSoundCue('accepted');
                     speakPtBr(
                       isDelivery
-                        ? `O entregador ${driverFirstName} aceitou a sua entrega.`
-                        : `O motorista ${driverFirstName} aceitou a sua corrida.`
+                        ? `O entregador ${driverDisplayName} aceitou a sua entrega e está indo para a coleta.`
+                        : `O motorista ${driverDisplayName} aceitou a sua corrida e está a caminho.`
                     );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entregador aceitou seu pedido!' : 'Motorista a caminho!',
-                      body: `${enriched.driver?.full_name || 'Parceiro'} aceitou sua solicitação.`,
+                      body: `${driverDisplayName} aceitou sua solicitação.`,
                       playSound: false,
                     });
                   } else if (enriched.status === 'arrived') {
@@ -220,15 +221,15 @@ export function useRealtimeMobility(
                         : '';
                     speakPtBr(
                       isDelivery
-                        ? `O entregador chegou no local de coleta.${pinSpeech}`
-                        : `Seu motorista chegou no ponto de embarque.${pinSpeech}`
+                        ? `O entregador ${driverDisplayName} chegou no local de coleta.${pinSpeech}`
+                        : `O motorista ${driverDisplayName} chegou no ponto de embarque.${pinSpeech}`
                     );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entregador chegou para a coleta!' : 'Seu motorista chegou!',
                       body:
                         !isDelivery || enriched.require_pin !== false
-                          ? `Informe o código PIN ${enriched.pin_code} ao encontrar.`
-                          : 'Encontre seu entregador no ponto combinado.',
+                          ? `Informe o código PIN ${enriched.pin_code} ao encontrar ${driverDisplayName}.`
+                          : `Encontre ${driverDisplayName} no ponto combinado.`,
                       playSound: false,
                     });
                   } else if (enriched.status === 'in_progress') {
@@ -244,14 +245,20 @@ export function useRealtimeMobility(
                     });
                   } else if (enriched.status === 'completed') {
                     void playSoundCue('completed');
+                    const needs66PayQr =
+                      enriched.payment_method === 'wallet' && enriched.payment_status === 'pending';
                     speakPtBr(
-                      isDelivery
+                      needs66PayQr
+                        ? `Você chegou ao destino. Escaneie o QR Code 66pay na tela de ${driverDisplayName} para concluir o pagamento.`
+                        : isDelivery
                         ? 'Entrega concluída com sucesso.'
-                        : 'Você chegou ao seu destino. Obrigado por viajar conosco.'
+                        : 'Você chegou ao seu destino. Obrigado por viajar com a 66 Mobilidade.'
                     );
                     triggerLocalNotification({
                       title: isDelivery ? 'Entrega concluída!' : 'Você chegou ao destino!',
-                      body: 'Avalie a experiência no aplicativo.',
+                      body: needs66PayQr
+                        ? `Leia o QR Code 66pay de ${driverDisplayName} para liberar o pagamento.`
+                        : 'Avalie a experiência no aplicativo.',
                       playSound: false,
                     });
                   } else if (enriched.status === 'cancelled') {

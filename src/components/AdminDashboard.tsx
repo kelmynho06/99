@@ -521,7 +521,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const drvName = r.driver?.full_name || 'o motorista';
         const val = Number(r.final_fare ?? r.estimated_fare ?? 0).toFixed(2).replace('.', ',');
         queueMessages.push(
-          `${drvName} está esperando confirmação Pix da corrida de ${val} reais.`
+          `Administrador, estamos aguardando a confirmação da corrida Pix de ${drvName} no valor de ${val} reais.`
         );
       }
     }
@@ -533,7 +533,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const cliName = dep.user?.full_name || 'um cliente';
         const val = Number(dep.amount || 0).toFixed(2).replace('.', ',');
         queueMessages.push(
-          `${cliName} está esperando confirmação de depósito Pix no valor de ${val} reais.`
+          `Administrador, estamos aguardando a confirmação do depósito Pix de ${cliName} no valor de ${val} reais.`
         );
       }
     }
@@ -545,7 +545,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const uName = w.user?.full_name || 'um parceiro';
         const val = Number(w.amount || 0).toFixed(2).replace('.', ',');
         queueMessages.push(
-          `${uName} solicitou saque Pix de ${val} reais.`
+          `Administrador, estamos aguardando a confirmação do saque Pix de ${uName} no valor de ${val} reais.`
         );
       }
     }
@@ -554,7 +554,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const k = `support:${s.userId}:${s.createdAt}`;
       if (!announcedAlertIdsRef.current.has(k)) {
         announcedAlertIdsRef.current.add(k);
-        queueMessages.push(`${s.senderName} enviou uma mensagem no suporte.`);
+        queueMessages.push(
+          `Administrador, ${s.senderName} enviou uma mensagem no suporte aguardando retorno.`
+        );
       }
     }
 
@@ -564,7 +566,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, [awaitingPixRides, pendingDeposits, pendingWithdrawals, supportAlerts, adminPrefs.voice_enabled]);
 
-  // Gentle periodic voice reminder (~35s) while unresolved Admin alerts remain
+  // Voice escalation & periodic wait-time monitor: warns specifically when an item reaches >= 5 minutes
   useEffect(() => {
     const totalPending =
       awaitingPixRides.length +
@@ -573,23 +575,106 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       supportAlerts.length;
     if (totalPending === 0 || !adminPrefs.voice_enabled) return;
 
-    const timer = window.setInterval(() => {
+    const lastUrgentSpeakAtByKey = new Map<string, number>();
+
+    const checkAndSpeak = () => {
+      const now = Date.now();
+      const urgentMsgs: string[] = [];
+
+      for (const dep of pendingDeposits) {
+        const createdMs = new Date(dep.created_at).getTime();
+        const elapsedMin = Number.isFinite(createdMs)
+          ? Math.max(0, Math.floor((now - createdMs) / 60000))
+          : 0;
+        const k = `deposit:${dep.id}`;
+        const lastAt = lastUrgentSpeakAtByKey.get(k) || 0;
+        if (elapsedMin >= 5 && now - lastAt >= 55_000) {
+          lastUrgentSpeakAtByKey.set(k, now);
+          const cliName = dep.user?.full_name || 'um cliente';
+          const val = Number(dep.amount || 0).toFixed(2).replace('.', ',');
+          urgentMsgs.push(
+            `Administrador, já faz ${elapsedMin} minutos que estamos aguardando a confirmação do depósito de ${cliName} no valor de ${val} reais.`
+          );
+        }
+      }
+
+      for (const r of awaitingPixRides) {
+        const refIso = r.pix_declared_at || r.completed_at || r.created_at;
+        const createdMs = new Date(refIso).getTime();
+        const elapsedMin = Number.isFinite(createdMs)
+          ? Math.max(0, Math.floor((now - createdMs) / 60000))
+          : 0;
+        const k = `pix_ride:${r.id}`;
+        const lastAt = lastUrgentSpeakAtByKey.get(k) || 0;
+        if (elapsedMin >= 5 && now - lastAt >= 55_000) {
+          lastUrgentSpeakAtByKey.set(k, now);
+          const drvName = r.driver?.full_name || 'o motorista';
+          const val = Number(r.final_fare ?? r.estimated_fare ?? 0).toFixed(2).replace('.', ',');
+          urgentMsgs.push(
+            `Administrador, já faz ${elapsedMin} minutos que estamos aguardando a confirmação da corrida Pix de ${drvName} no valor de ${val} reais.`
+          );
+        }
+      }
+
+      for (const w of pendingWithdrawals) {
+        const createdMs = new Date(w.created_at).getTime();
+        const elapsedMin = Number.isFinite(createdMs)
+          ? Math.max(0, Math.floor((now - createdMs) / 60000))
+          : 0;
+        const k = `withdraw:${w.id}`;
+        const lastAt = lastUrgentSpeakAtByKey.get(k) || 0;
+        if (elapsedMin >= 5 && now - lastAt >= 55_000) {
+          lastUrgentSpeakAtByKey.set(k, now);
+          const uName = w.user?.full_name || 'um parceiro';
+          const val = Number(w.amount || 0).toFixed(2).replace('.', ',');
+          urgentMsgs.push(
+            `Administrador, já faz ${elapsedMin} minutos que estamos aguardando a confirmação do saque de ${uName} no valor de ${val} reais.`
+          );
+        }
+      }
+
+      for (const s of supportAlerts) {
+        const createdMs = new Date(s.createdAt).getTime();
+        const elapsedMin = Number.isFinite(createdMs)
+          ? Math.max(0, Math.floor((now - createdMs) / 60000))
+          : 0;
+        const k = `support:${s.userId}:${s.createdAt}`;
+        const lastAt = lastUrgentSpeakAtByKey.get(k) || 0;
+        if (elapsedMin >= 5 && now - lastAt >= 55_000) {
+          lastUrgentSpeakAtByKey.set(k, now);
+          urgentMsgs.push(
+            `Administrador, já faz ${elapsedMin} minutos que ${s.senderName} aguarda resposta no suporte.`
+          );
+        }
+      }
+
+      if (urgentMsgs.length > 0) {
+        void playSoundCue('offer');
+        speakPtBr(urgentMsgs.slice(0, 2).join(' '), true);
+        return;
+      }
+
       const parts: string[] = [];
       if (awaitingPixRides.length > 0) parts.push(`${awaitingPixRides.length} corrida Pix`);
       if (pendingDeposits.length > 0) parts.push(`${pendingDeposits.length} depósito`);
       if (pendingWithdrawals.length > 0) parts.push(`${pendingWithdrawals.length} saque`);
       if (supportAlerts.length > 0) parts.push(`${supportAlerts.length} chamado de suporte`);
       if (parts.length > 0) {
-        speakPtBr(`Atenção administrador: ${parts.join(', ')} aguardando confirmação.`, false);
+        speakPtBr(
+          `Administrador, estamos aguardando a confirmação de ${parts.join(', ')}.`,
+          false
+        );
       }
-    }, 35_000);
+    };
+
+    const timer = window.setInterval(checkAndSpeak, 30_000);
 
     return () => window.clearInterval(timer);
   }, [
-    awaitingPixRides.length,
-    pendingDeposits.length,
-    pendingWithdrawals.length,
-    supportAlerts.length,
+    awaitingPixRides,
+    pendingDeposits,
+    pendingWithdrawals,
+    supportAlerts,
     adminPrefs.voice_enabled,
   ]);
 
@@ -3816,6 +3901,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5 space-y-3">
+                  <label className="flex items-center justify-between cursor-pointer gap-2">
+                    <div>
+                      <p className="text-xs font-extrabold text-neutral-950">
+                        Horário Automático de Depósitos Pix (66pay)
+                      </p>
+                      <p className="text-[11px] text-neutral-600">
+                        Pausa novos depósitos fora do horário comercial (quem já tem saldo usa 24h normalmente).
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={platformConfig.deposit_window_enabled !== false}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          deposit_window_enabled: e.target.checked,
+                        }))
+                      }
+                      className="h-5 w-5 accent-neutral-950 shrink-0"
+                    />
+                  </label>
+
+                  {platformConfig.deposit_window_enabled !== false && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                          Abertura (Início)
+                        </label>
+                        <input
+                          type="time"
+                          value={platformConfig.deposit_start_time || '07:00'}
+                          onChange={(e) =>
+                            setPlatformConfig((prev) => ({
+                              ...prev,
+                              deposit_start_time: e.target.value,
+                            }))
+                          }
+                          className="min-h-[42px] w-full rounded-xl border border-neutral-200 bg-white px-3 font-mono-num text-xs font-extrabold text-neutral-950 outline-none focus:border-neutral-950"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-neutral-700 mb-1">
+                          Encerramento (Fim)
+                        </label>
+                        <input
+                          type="time"
+                          value={platformConfig.deposit_end_time || '23:30'}
+                          onChange={(e) =>
+                            setPlatformConfig((prev) => ({
+                              ...prev,
+                              deposit_end_time: e.target.value,
+                            }))
+                          }
+                          className="min-h-[42px] w-full rounded-xl border border-neutral-200 bg-white px-3 font-mono-num text-xs font-extrabold text-neutral-950 outline-none focus:border-neutral-950"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <label className="flex items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-3.5 py-3 cursor-pointer">
                   <div>
                     <p className="text-xs font-extrabold text-neutral-950">Modo Manutenção</p>
@@ -4220,7 +4366,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Incremental — Apenas Alterações e Tabelas Novas
                   </h3>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Contém somente o que foi adicionado/alterado (Seções 1–8: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, status <span className="font-mono-num">'paid'</span>, trava de segurança 66pay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem apagar saldos ou recriar tabelas antigas.
+                    Contém somente o que foi adicionado/alterado (Seções 1–9: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">update_my_pay66_key</span>, <span className="font-mono-num">deposit_window_enabled/start_time/end_time</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, status <span className="font-mono-num">'paid'</span>, trava de segurança 66pay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem apagar saldos ou recriar tabelas antigas.
                   </p>
                 </div>
                 <button
