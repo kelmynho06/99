@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bike, Car, Package, ShieldCheck, Star, X } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
 import { resolveBrandLogo } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
-import { submitRideRating } from '../lib/mobilityApi';
+import {
+  fetchUserProfileById,
+  resolveDocumentDisplayUrl,
+  submitRideRating,
+} from '../lib/mobilityApi';
 import type { PlatformConfig, Ride, UserProfile } from '../types/mobility';
 import { AvatarImage } from './AvatarImage';
 
@@ -25,12 +29,50 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   const { t } = useTranslation();
   const [stars, setStars] = useState(5);
   const [submitting, setSubmitting] = useState(false);
+  const [fetchedTarget, setFetchedTarget] = useState<UserProfile | null>(null);
+  const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState<string | null>(null);
 
   const isPassengerEvaluatingDriver = currentUser.id === ride.passenger_id;
-  const targetUser = isPassengerEvaluatingDriver ? ride.driver : ride.passenger;
+  const embeddedTarget = isPassengerEvaluatingDriver ? ride.driver : ride.passenger;
   const targetId = isPassengerEvaluatingDriver ? ride.driver_id : ride.passenger_id;
+  const targetUser = fetchedTarget || embeddedTarget || null;
   const isDelivery =
     ride.category === 'delivery_moto' || ride.category === 'delivery_car';
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!targetId) return;
+    const needsProfileFetch =
+      !embeddedTarget?.full_name ||
+      !embeddedTarget?.avatar_url ||
+      (isPassengerEvaluatingDriver && !embeddedTarget?.driver);
+
+    if (needsProfileFetch) {
+      fetchUserProfileById(targetId)
+        .then(async (fresh) => {
+          if (cancelled || !fresh) return;
+          setFetchedTarget(fresh);
+          if (fresh.avatar_url) {
+            const resolved = await resolveDocumentDisplayUrl(fresh.avatar_url).catch(
+              () => fresh.avatar_url || null
+            );
+            if (!cancelled) setResolvedAvatarUrl(resolved);
+          }
+        })
+        .catch(() => {});
+    } else if (embeddedTarget?.avatar_url) {
+      resolveDocumentDisplayUrl(embeddedTarget.avatar_url)
+        .then((url) => {
+          if (!cancelled) setResolvedAvatarUrl(url);
+        })
+        .catch(() => {
+          if (!cancelled) setResolvedAvatarUrl(embeddedTarget.avatar_url || null);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [targetId, embeddedTarget, isPassengerEvaluatingDriver]);
 
   const roleBadgeLabel = isPassengerEvaluatingDriver
     ? isDelivery
@@ -46,6 +88,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
   const targetFullName =
     targetUser?.full_name || roleBadgeLabel;
+  const targetAvatarSrc = resolvedAvatarUrl || targetUser?.avatar_url || null;
   const driverMeta = isPassengerEvaluatingDriver ? targetUser?.driver : undefined;
   const brandLogo = resolveBrandLogo({ app_logo_url: appConfig.logo_url } as PlatformConfig);
 
@@ -97,7 +140,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
           <div className="flex items-center gap-3 text-left rounded-2xl bg-white dark:bg-neutral-900 p-3 border border-neutral-200/80 dark:border-neutral-700 shadow-xs">
             <AvatarImage
-              src={targetUser?.avatar_url}
+              src={targetAvatarSrc}
               name={targetFullName}
               className="h-16 w-16 rounded-2xl object-cover border-2 border-[#2DD4BF] shrink-0 shadow-xs"
               fallbackClassName="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#047857] text-[#6EE7B7] font-extrabold text-xl shrink-0"

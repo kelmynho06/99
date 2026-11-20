@@ -4,6 +4,8 @@ import {
   ArrowUp,
   Banknote,
   Bell,
+  Bike,
+  Car,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -25,7 +27,9 @@ import {
   Menu,
   MessageSquare,
   Navigation,
+  Package,
   Phone,
+  Plus,
   Power,
   QrCode,
   Receipt,
@@ -68,11 +72,14 @@ import {
   fetchRideByIdEnriched,
   fetchUserProfileById,
   fetchWalletTransactions,
+  getDriverVehiclesList,
   markAllNotificationsRead,
   markNotificationRead,
   markRideArrived,
   reportRideUnpaid,
+  rideMatchesDriverVehicle,
   startRideWithPin,
+  switchDriverActiveVehicle,
   toggleDriverOnlineStatus,
 } from '../lib/mobilityApi';
 import { logAuditEvent } from '../lib/audit';
@@ -109,7 +116,7 @@ import type {
   WalletTransaction,
   WeatherInfo,
 } from '../types/mobility';
-import { AccountSettingsModal } from './AccountSettingsModal';
+import { AccountSettingsModal, type SettingsSection } from './AccountSettingsModal';
 import { AvatarImage } from './AvatarImage';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
@@ -176,6 +183,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('menu');
+  const [switchingVehicleId, setSwitchingVehicleId] = useState<string | null>(null);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletInitialTab, setWalletInitialTab] = useState<WalletModalTab>('withdraw');
@@ -184,6 +193,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
     setWalletInitialTab(tab);
     setWalletOpen(true);
   };
+
+  const { vehicles: driverVehicles, activeVehicleId } = useMemo(
+    () => getDriverVehiclesList(currentUser),
+    [currentUser]
+  );
 
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [togglingOnline, setTogglingOnline] = useState(false);
@@ -378,14 +392,25 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
   const incomingRide = useMemo(() => {
     if (!isOnline || activeRide || currentUser.status !== 'active') return null;
+    const activeVehicleType = currentUser.driver?.vehicle_type;
     return (
       rides.find(
-        (r) => r.status === 'searching' && !declinedRideIds.includes(r.id)
+        (r) =>
+          r.status === 'searching' &&
+          !declinedRideIds.includes(r.id) &&
+          rideMatchesDriverVehicle(r.category, activeVehicleType)
       ) || null
     );
-  }, [isOnline, activeRide, currentUser.status, rides, declinedRideIds]);
+  }, [
+    isOnline,
+    activeRide,
+    currentUser.status,
+    currentUser.driver?.vehicle_type,
+    rides,
+    declinedRideIds,
+  ]);
 
-  // Voice-only alert + gentle vibration while incoming ride alert is on screen
+  // Repeating voice assistant + vibration while incoming ride alert is on screen
   useEffect(() => {
     if (!incomingRide) return;
     if (!incomingRide.passenger?.full_name || !incomingRide.passenger?.avatar_url) {
@@ -399,8 +424,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
     const fareVoice = `${incomingRide.estimated_fare.toFixed(2).replace('.', ',')} reais`;
     const distVoice = `${(incomingRide.distance_km || 0.6).toFixed(1).replace('.', ',')} quilômetros`;
     const spokenMessage = isDel
-      ? `Nova entrega disponível! Coleta em ${incomingRide.origin_address}, destino ${incomingRide.destination_address}, distância de ${distVoice}, valor de ${fareVoice}.`
-      : `Nova corrida disponível! Embarque em ${incomingRide.origin_address}, destino ${incomingRide.destination_address}, distância de ${distVoice}, valor de ${fareVoice}.`;
+      ? `Você está recebendo uma solicitação de uma entrega. Valor de ${fareVoice}, trajeto de ${distVoice}.`
+      : `Você está recebendo uma solicitação de uma corrida. Valor de ${fareVoice}, trajeto de ${distVoice}.`;
 
     const stopAlarm = startContinuousRideAlarm(
       isDel
@@ -851,7 +876,38 @@ export const DriverView: React.FC<DriverViewProps> = ({
     onEmitLocation(currentUser.id, nextLat, nextLng, heading);
   };
 
+  const handleSwitchActiveVehicle = async (vehicleId: string) => {
+    if (activeRide || switchingVehicleId || vehicleId === activeVehicleId) return;
+    setStatusError(null);
+    setSwitchingVehicleId(vehicleId);
+    try {
+      const updated = await switchDriverActiveVehicle(currentUser, vehicleId);
+      onUserUpdated(updated);
+      const nextLabel =
+        updated.driver?.vehicle_type === 'moto'
+          ? 'Moto'
+          : updated.driver?.vehicle_type === 'delivery'
+          ? 'Entregador'
+          : 'Carro';
+      speakPtBr(
+        `Veículo ativo alterado para ${nextLabel}, ${updated.driver?.vehicle_model || ''}.`,
+        true
+      );
+    } catch (err) {
+      setStatusError(
+        err instanceof Error ? err.message : 'Não foi possível trocar o veículo ativo.'
+      );
+    } finally {
+      setSwitchingVehicleId(null);
+    }
+  };
+
   const handleAcceptRide = async (rideId: string) => {
+    const candidate = rides.find((r) => r.id === rideId);
+    if (candidate && !rideMatchesDriverVehicle(candidate.category, currentUser.driver?.vehicle_type)) {
+      setStatusError('Esta solicitação não corresponde ao veículo ativo selecionado.');
+      return;
+    }
     setStatusError(null);
     setActionLoading(true);
     try {
@@ -1222,7 +1278,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
       amount: fare,
       type: 'ride_earning',
       description: `Corrida #${ride.id.slice(-4)} recebida via BorealPay`,
-      auth_code: `66PAY-${ride.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+      auth_code: `BPAY-${ride.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
       sender_name: ride.passenger?.full_name || 'Passageiro Boreal Mobilidade',
       recipient_name: currentUser.full_name,
       recipient_key: myPay66Key,
@@ -1851,7 +1907,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     {isOnline ? t.waiting_rides_region : t.tap_connect_hint}
                   </p>
                   <p className="mt-1.5 text-xs font-bold text-[#334E4A] dark:text-neutral-300 font-mono-num">
-                    {currentUser.driver?.vehicle_model} · {currentUser.driver?.vehicle_plate}
+                    {currentUser.driver?.vehicle_type === 'moto'
+                      ? 'Moto'
+                      : currentUser.driver?.vehicle_type === 'delivery'
+                      ? 'Entregador'
+                      : 'Carro'}{' '}
+                    · {currentUser.driver?.vehicle_model} · {currentUser.driver?.vehicle_plate}
                   </p>
                 </div>
                 <button
@@ -1866,6 +1927,73 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 >
                   {isOnline ? t.pause : t.connect}
                 </button>
+              </div>
+
+              {/* Active Vehicle Switcher (Strict Filtering: Moto only sees Moto, Carro only sees Carro) */}
+              <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-700 bg-[#F7FBFA] dark:bg-neutral-800/80 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-extrabold text-[#0F2421] dark:text-white">
+                    Veículo Ativo (Filtro de Chamadas)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsInitialSection('vehicle');
+                      setSettingsOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-[#ECFDF5] dark:bg-emerald-950/60 border border-[#6EE7B7]/60 dark:border-emerald-700 px-2.5 py-1 text-[10px] font-extrabold text-[#047857] dark:text-[#6EE7B7]"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Veículos
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+                  {driverVehicles.map((veh) => {
+                    const selected = veh.id === activeVehicleId;
+                    const VehIcon =
+                      veh.vehicle_type === 'moto'
+                        ? Bike
+                        : veh.vehicle_type === 'delivery'
+                        ? Package
+                        : Car;
+                    const vehKind =
+                      veh.vehicle_type === 'moto'
+                        ? 'Moto'
+                        : veh.vehicle_type === 'delivery'
+                        ? 'Entrega'
+                        : 'Carro';
+                    return (
+                      <button
+                        key={veh.id}
+                        type="button"
+                        disabled={Boolean(switchingVehicleId)}
+                        onClick={() => void handleSwitchActiveVehicle(veh.id)}
+                        className={`flex min-h-[42px] shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition ${
+                          selected
+                            ? 'border-[#047857] bg-[#047857] text-white dark:border-[#2DD4BF] dark:bg-[#2DD4BF] dark:text-[#0F2421] shadow-xs'
+                            : 'border-[#D4EDE7] dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[#0F2421] dark:text-neutral-200'
+                        }`}
+                      >
+                        <VehIcon className="h-4 w-4 shrink-0" />
+                        <div className="min-w-0 leading-tight">
+                          <span className="block text-[11px] font-extrabold whitespace-nowrap">
+                            {vehKind} · {veh.vehicle_plate}
+                          </span>
+                          <span
+                            className={`block text-[10px] truncate max-w-[130px] ${
+                              selected
+                                ? 'text-emerald-100 dark:text-[#0F2421]/80'
+                                : 'text-[#334E4A] dark:text-neutral-400'
+                            }`}
+                          >
+                            {veh.vehicle_model}
+                          </span>
+                        </div>
+                        {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {relevantEvents.length > 0 && (
@@ -2124,15 +2252,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </div>
             </div>
 
-            {/* Highlighted Aurora Fare Card */}
-            <div className="rounded-3xl aurora-surface-flow p-5 text-center shadow-lg border border-[#2DD4BF]/40">
+            {/* High-Contrast Dark Emerald Aurora Fare Card */}
+            <div className="rounded-3xl bg-[#071513] p-5 text-center shadow-xl border-2 border-[#2DD4BF]">
               <p className="text-xs font-extrabold uppercase tracking-wider text-[#6EE7B7]">
-                Valor da Corrida
+                {isDeliveryCategory(incomingRide.category) ? 'Valor da Entrega' : 'Valor da Corrida'}
               </p>
               <p className="mt-1 font-display text-5xl font-extrabold text-white font-mono-num tracking-tight">
                 {formatBRL(incomingRide.estimated_fare)}
               </p>
-              <p className="mt-1.5 text-xs font-bold text-emerald-100">
+              <p className="mt-1.5 text-xs font-bold text-[#A7F3D0]">
                 {incomingRide.distance_km} km de trajeto estimado
               </p>
             </div>
@@ -2683,6 +2811,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
+                  setSettingsInitialSection('menu');
                   setSettingsOpen(true);
                 }}
                 className="flex items-center gap-3 text-left"
@@ -2841,6 +2970,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setSettingsInitialSection('menu');
                   setSettingsOpen(true);
                   setMenuOpen(false);
                 }}
@@ -3338,8 +3468,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {settingsOpen && (
         <AccountSettingsModal
+          key={settingsInitialSection}
           currentUser={currentUser}
           platformConfig={platformConfig}
+          initialSection={settingsInitialSection}
           onUserUpdated={onUserUpdated}
           onAccountDeleted={onLogout}
           onOpenWallet={() => openDriverWallet('withdraw')}
@@ -3347,7 +3479,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
             setSettingsOpen(false);
             setSupportChatOpen(true);
           }}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsInitialSection('menu');
+          }}
         />
       )}
 

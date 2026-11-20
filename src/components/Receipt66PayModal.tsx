@@ -53,7 +53,7 @@ function parseCounterparty(tx: WalletTransaction, currentUser: UserProfile): {
   const note = parts.slice(1).join(' · ');
   const fallbackMyKey =
     currentUser.pay66_key ||
-    `66-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    `BOREAL-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 
   if (tx.sender_name || tx.recipient_name) {
     return {

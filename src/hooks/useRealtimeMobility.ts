@@ -12,6 +12,7 @@ import {
   fetchRideMessages,
   fetchUserProfileById,
   pushDriverLocation,
+  rideMatchesDriverVehicle,
 } from '../lib/mobilityApi';
 import { formatBRL } from '../lib/geo';
 import { speakPtBr, syncPlatformSounds } from '../lib/sound';
@@ -166,20 +167,21 @@ export function useRealtimeMobility(
                 const isDelivery =
                   enriched.category === 'delivery_moto' || enriched.category === 'delivery_car';
 
-                // Driver / Motoboy online receives single deduped local notification (+ voice if minimized) for new ride/delivery
+                // Driver / Motoboy online receives single deduped local notification (+ voice if minimized) ONLY when ride matches active vehicle
                 if (
                   u.role === 'driver' &&
                   u.status === 'active' &&
                   u.driver?.is_online &&
                   payload.eventType === 'INSERT' &&
-                  enriched.status === 'searching'
+                  enriched.status === 'searching' &&
+                  rideMatchesDriverVehicle(enriched.category, u.driver.vehicle_type)
                 ) {
                   const fareVoice = Number(enriched.estimated_fare || 0).toFixed(2).replace('.', ',');
                   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
                     speakPtBr(
                       isDelivery
-                        ? `Nova entrega disponível! Coleta em ${enriched.origin_address}, destino ${enriched.destination_address}, valor de ${fareVoice} reais.`
-                        : `Nova corrida disponível! Embarque em ${enriched.origin_address}, destino ${enriched.destination_address}, valor de ${fareVoice} reais.`
+                        ? `Você está recebendo uma solicitação de uma entrega. Valor de ${fareVoice} reais. Coleta em ${enriched.origin_address}.`
+                        : `Você está recebendo uma solicitação de uma corrida. Valor de ${fareVoice} reais. Embarque em ${enriched.origin_address}.`
                     );
                   }
                   triggerLocalNotification({

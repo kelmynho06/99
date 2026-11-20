@@ -2679,7 +2679,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                                     amount: -(activeRide.final_fare ?? activeRide.estimated_fare),
                                     type: 'ride_debit',
                                     description: `Corrida BorealPay #${activeRide.id.slice(-4)} · ${activeRide.destination_address}`,
-                                    auth_code: `66PAY-${activeRide.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+                                    auth_code: `BPAY-${activeRide.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
                                     sender_name: currentUser.full_name,
                                     recipient_name: drvName,
                                     recipient_key:
@@ -3721,7 +3721,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                                   amount: -(r.final_fare ?? r.estimated_fare),
                                   type: 'ride_debit',
                                   description: `Corrida BorealPay #${r.id.slice(-4)} · ${r.destination_address}`,
-                                  auth_code: `66PAY-${r.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+                                  auth_code: `BPAY-${r.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
                                   sender_name: currentUser.full_name,
                                   recipient_name: r.driver?.full_name || 'Motorista BorealPay',
                                   recipient_key:

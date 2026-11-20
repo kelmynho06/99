@@ -2,9 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Bell,
+  Bike,
   Briefcase,
   Camera,
   Car,
+  Check,
   ChevronRight,
   CreditCard,
   DownloadCloud,
@@ -14,6 +16,8 @@ import {
   Home,
   Lock,
   Moon,
+  Package,
+  Plus,
   Shield,
   ShieldCheck,
   Star,
@@ -38,6 +42,8 @@ import {
   anonymizeUserAccount,
   changeUserPassword,
   compressImageFileToDataUrl,
+  getDriverVehiclesList,
+  saveDriverVehiclesAndSelect,
   updateUserLanguagePref,
   updateUserProfileSettings,
 } from '../lib/mobilityApi';
@@ -55,6 +61,7 @@ import {
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
+  DriverVehicle,
   PaymentMethod,
   PlatformConfig,
   SavedAddress,
@@ -68,17 +75,7 @@ import { OtaUpdateModal } from './OtaUpdateModal';
 import { PermissionsPromptModal } from './PermissionsPromptModal';
 import { PWAInstallButton } from './PWAInstallButton';
 
-interface AccountSettingsModalProps {
-  currentUser: UserProfile;
-  platformConfig?: PlatformConfig;
-  onUserUpdated: (user: UserProfile) => void;
-  onAccountDeleted: () => void;
-  onOpenWallet?: () => void;
-  onOpenSupport?: () => void;
-  onClose: () => void;
-}
-
-type SettingsSection =
+export type SettingsSection =
   | 'menu'
   | 'profile'
   | 'password'
@@ -87,9 +84,21 @@ type SettingsSection =
   | 'prefs'
   | 'privacy';
 
+interface AccountSettingsModalProps {
+  currentUser: UserProfile;
+  platformConfig?: PlatformConfig;
+  initialSection?: SettingsSection;
+  onUserUpdated: (user: UserProfile) => void;
+  onAccountDeleted: () => void;
+  onOpenWallet?: () => void;
+  onOpenSupport?: () => void;
+  onClose: () => void;
+}
+
 export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   currentUser,
   platformConfig,
+  initialSection = 'menu',
   onUserUpdated,
   onAccountDeleted,
   onOpenWallet,
@@ -97,7 +106,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
-  const [section, setSection] = useState<SettingsSection>('menu');
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
 
@@ -126,7 +135,16 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     Array<{ target: 'home' | 'work' | 'favorite'; address: string; subtitle: string; lat: number; lng: number }>
   >([]);
 
-  // Driver vehicle & Pix
+  // Driver multi-vehicle & Pix
+  const initialVehData = getDriverVehiclesList(currentUser);
+  const [vehiclesList, setVehiclesList] = useState<DriverVehicle[]>(initialVehData.vehicles);
+  const [activeVehicleId, setActiveVehicleId] = useState<string>(initialVehData.activeVehicleId);
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [newVehType, setNewVehType] = useState<'car' | 'moto' | 'delivery'>('moto');
+  const [newVehModel, setNewVehModel] = useState('');
+  const [newVehPlate, setNewVehPlate] = useState('');
+  const [newVehColor, setNewVehColor] = useState('');
+
   const [vehicleType, setVehicleType] = useState<'car' | 'moto' | 'delivery'>(
     currentUser.driver?.vehicle_type || 'car'
   );
@@ -169,6 +187,129 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   useEffect(() => {
     setAvatarUrl(currentUser.avatar_url || null);
   }, [currentUser.avatar_url]);
+
+  useEffect(() => {
+    const next = getDriverVehiclesList(currentUser);
+    setVehiclesList(next.vehicles);
+    setActiveVehicleId(next.activeVehicleId);
+    if (currentUser.driver) {
+      setVehicleType(currentUser.driver.vehicle_type);
+      setVehicleModel(currentUser.driver.vehicle_model);
+      setVehiclePlate(currentUser.driver.vehicle_plate);
+      setVehicleColor(currentUser.driver.vehicle_color);
+      setPixKey(currentUser.driver.pix_key);
+    }
+  }, [currentUser]);
+
+  const handleSelectSavedVehicle = async (veh: DriverVehicle) => {
+    setFeedback(null);
+    setSaving(true);
+    try {
+      const updated = await saveDriverVehiclesAndSelect(
+        currentUser.id,
+        vehiclesList,
+        veh.id,
+        pixKey
+      );
+      onUserUpdated(updated);
+      setActiveVehicleId(veh.id);
+      setVehicleType(veh.vehicle_type);
+      setVehicleModel(veh.vehicle_model);
+      setVehiclePlate(veh.vehicle_plate);
+      setVehicleColor(veh.vehicle_color);
+      setFeedback({
+        type: 'ok',
+        msg: `Veículo ativo alterado para ${
+          veh.vehicle_type === 'moto'
+            ? 'Moto'
+            : veh.vehicle_type === 'delivery'
+            ? 'Entregador'
+            : 'Carro'
+        } (${veh.vehicle_model}). Você receberá apenas solicitações compatíveis.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Erro ao trocar veículo.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddNewVehicle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVehModel.trim() || !newVehPlate.trim() || !newVehColor.trim()) {
+      setFeedback({ type: 'err', msg: 'Preencha modelo, placa e cor do novo veículo.' });
+      return;
+    }
+    setFeedback(null);
+    setSaving(true);
+    try {
+      const created: DriverVehicle = {
+        id: `veh-${Date.now().toString(36)}`,
+        vehicle_type: newVehType,
+        vehicle_model: newVehModel.trim(),
+        vehicle_plate: newVehPlate.trim().toUpperCase(),
+        vehicle_color: newVehColor.trim(),
+      };
+      const nextList = [...vehiclesList, created];
+      const updated = await saveDriverVehiclesAndSelect(
+        currentUser.id,
+        nextList,
+        created.id,
+        pixKey
+      );
+      onUserUpdated(updated);
+      setVehiclesList(nextList);
+      setActiveVehicleId(created.id);
+      setVehicleType(created.vehicle_type);
+      setVehicleModel(created.vehicle_model);
+      setVehiclePlate(created.vehicle_plate);
+      setVehicleColor(created.vehicle_color);
+      setNewVehModel('');
+      setNewVehPlate('');
+      setNewVehColor('');
+      setShowAddVehicle(false);
+      setFeedback({
+        type: 'ok',
+        msg: `Novo veículo (${created.vehicle_model}) cadastrado e ativado com sucesso!`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Erro ao cadastrar veículo.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveSavedVehicle = async (vehId: string) => {
+    if (vehiclesList.length <= 1) return;
+    setFeedback(null);
+    setSaving(true);
+    try {
+      const nextList = vehiclesList.filter((v) => v.id !== vehId);
+      const nextActive =
+        vehId === activeVehicleId ? nextList[0].id : activeVehicleId;
+      const updated = await saveDriverVehiclesAndSelect(
+        currentUser.id,
+        nextList,
+        nextActive,
+        pixKey
+      );
+      onUserUpdated(updated);
+      setFeedback({ type: 'ok', msg: 'Veículo removido da sua conta.' });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Erro ao remover veículo.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleLanguageChange = async (langCode: string) => {
     const next = saveUserPreferences({ language: langCode });
@@ -917,76 +1058,247 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           )}
 
           {section === 'vehicle' && (
-            <form onSubmit={handleSaveProfile} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">Categoria</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'car' as const, label: 'Carro' },
-                    { id: 'moto' as const, label: 'Moto' },
-                    { id: 'delivery' as const, label: 'Entregador' },
-                  ].map((vt) => (
-                    <button
-                      key={vt.id}
-                      type="button"
-                      onClick={() => setVehicleType(vt.id)}
-                      className={`min-h-[42px] rounded-xl border text-xs font-bold ${
-                        vehicleType === vt.id
-                          ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
-                          : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
-                      }`}
-                    >
-                      {vt.label}
-                    </button>
-                  ))}
+            <div className="space-y-4">
+              {/* Registered Vehicles Switcher */}
+              <div className="rounded-2xl border border-[#2DD4BF]/40 bg-[#ECFDF5]/60 dark:bg-emerald-950/25 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
+                      Meus Veículos Cadastrados ({vehiclesList.length})
+                    </p>
+                    <p className="text-[11px] text-[#334E4A] dark:text-neutral-300">
+                      Você só recebe chamadas compatíveis com o veículo ativo.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddVehicle((v) => !v)}
+                    className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {showAddVehicle ? 'Fechar' : 'Novo Veículo'}
+                  </button>
                 </div>
+
+                <div className="space-y-2">
+                  {vehiclesList.map((veh) => {
+                    const isActive = veh.id === activeVehicleId;
+                    const Icon =
+                      veh.vehicle_type === 'moto'
+                        ? Bike
+                        : veh.vehicle_type === 'delivery'
+                        ? Package
+                        : Car;
+                    const typeLabel =
+                      veh.vehicle_type === 'moto'
+                        ? 'Moto (Corridas & Entregas Moto)'
+                        : veh.vehicle_type === 'delivery'
+                        ? 'Entregador (Entregas)'
+                        : 'Carro (Pop, Negocia & Entregas Carro)';
+                    return (
+                      <div
+                        key={veh.id}
+                        className={`flex items-center justify-between gap-2 rounded-2xl border p-3 transition ${
+                          isActive
+                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-white dark:bg-neutral-900 shadow-xs'
+                            : 'border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                              isActive
+                                ? 'bg-[#047857] text-white dark:bg-[#2DD4BF] dark:text-[#0F2421]'
+                                : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300'
+                            }`}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-extrabold text-[#0F2421] dark:text-white truncate">
+                              {veh.vehicle_model || 'Veículo'} ·{' '}
+                              <span className="font-mono-num">{veh.vehicle_plate}</span>
+                            </p>
+                            <p className="text-[10px] text-[#334E4A] dark:text-neutral-400 truncate">
+                              {typeLabel} · {veh.vehicle_color}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isActive ? (
+                            <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800 dark:text-emerald-300">
+                              <Check className="h-3 w-3" />
+                              Ativo
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void handleSelectSavedVehicle(veh)}
+                              className="min-h-[34px] rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-2.5 text-[11px] font-extrabold text-white dark:text-[#0F2421] disabled:opacity-50"
+                            >
+                              Usar este
+                            </button>
+                          )}
+                          {vehiclesList.length > 1 && (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void handleRemoveSavedVehicle(veh.id)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                              aria-label="Remover veículo"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {showAddVehicle && (
+                  <form
+                    onSubmit={handleAddNewVehicle}
+                    className="rounded-2xl border border-[#2DD4BF] bg-white dark:bg-neutral-900 p-3.5 space-y-2.5"
+                  >
+                    <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
+                      Cadastrar Novo Veículo
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'car' as const, label: 'Carro' },
+                        { id: 'moto' as const, label: 'Moto' },
+                        { id: 'delivery' as const, label: 'Entregador' },
+                      ].map((vt) => (
+                        <button
+                          key={vt.id}
+                          type="button"
+                          onClick={() => setNewVehType(vt.id)}
+                          className={`min-h-[38px] rounded-xl border text-xs font-bold ${
+                            newVehType === vt.id
+                              ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
+                              : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+                          }`}
+                        >
+                          {vt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={newVehModel}
+                      onChange={(e) => setNewVehModel(e.target.value)}
+                      placeholder="Modelo (Ex: Honda CG 160 / Onix)"
+                      className="min-h-[42px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={newVehPlate}
+                        onChange={(e) => setNewVehPlate(e.target.value.toUpperCase())}
+                        placeholder="Placa (ABC1D23)"
+                        className="min-h-[42px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 font-mono-num text-xs uppercase text-neutral-950 dark:text-white"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={newVehColor}
+                        onChange={(e) => setNewVehColor(e.target.value)}
+                        placeholder="Cor"
+                        className="min-h-[42px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="aurora-accent-flow min-h-[42px] w-full rounded-xl text-xs font-extrabold text-white"
+                    >
+                      {saving ? t.saving : 'Adicionar e Ativar Veículo'}
+                    </button>
+                  </form>
+                )}
               </div>
-              <input
-                type="text"
-                required
-                value={vehicleModel}
-                onChange={(e) => setVehicleModel(e.target.value)}
-                placeholder="Modelo"
-                className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
-              />
-              <div className="grid grid-cols-2 gap-2.5">
+
+              <form onSubmit={handleSaveProfile} className="space-y-3">
+                <p className="text-xs font-extrabold text-neutral-800 dark:text-neutral-200">
+                  Editar Veículo Ativo & Chave Pix
+                </p>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    Categoria do Veículo Ativo
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'car' as const, label: 'Carro' },
+                      { id: 'moto' as const, label: 'Moto' },
+                      { id: 'delivery' as const, label: 'Entregador' },
+                    ].map((vt) => (
+                      <button
+                        key={vt.id}
+                        type="button"
+                        onClick={() => setVehicleType(vt.id)}
+                        className={`min-h-[42px] rounded-xl border text-xs font-bold ${
+                          vehicleType === vt.id
+                            ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
+                            : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+                        }`}
+                      >
+                        {vt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <input
                   type="text"
                   required
-                  value={vehiclePlate}
-                  onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                  placeholder="Placa"
-                  className="min-h-[46px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 font-mono-num text-sm uppercase"
+                  value={vehicleModel}
+                  onChange={(e) => setVehicleModel(e.target.value)}
+                  placeholder="Modelo"
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
                 />
-                <input
-                  type="text"
-                  required
-                  value={vehicleColor}
-                  onChange={(e) => setVehicleColor(e.target.value)}
-                  placeholder="Cor"
-                  className="min-h-[46px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Chave Pix para repasses
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={pixKey}
-                  onChange={(e) => setPixKey(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 font-mono-num text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={saving}
-                className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-extrabold text-white"
-              >
-                {saving ? t.saving : 'Atualizar Veículo & Pix'}
-              </button>
-            </form>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    required
+                    value={vehiclePlate}
+                    onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
+                    placeholder="Placa"
+                    className="min-h-[46px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 font-mono-num text-sm uppercase"
+                  />
+                  <input
+                    type="text"
+                    required
+                    value={vehicleColor}
+                    onChange={(e) => setVehicleColor(e.target.value)}
+                    placeholder="Cor"
+                    className="min-h-[46px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    Chave Pix para repasses
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={pixKey}
+                    onChange={(e) => setPixKey(e.target.value)}
+                    className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 font-mono-num text-sm"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-extrabold text-white"
+                >
+                  {saving ? t.saving : 'Atualizar Veículo & Pix'}
+                </button>
+              </form>
+            </div>
           )}
 
           {section === 'password' && (

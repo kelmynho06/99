@@ -1177,8 +1177,8 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Suporta payload QR "66PAY|<uuid>|<pay66_key>|<email>|<nome>"
-  IF UPPER(v_raw) LIKE '66PAY|%' THEN
+  -- Suporta payload QR "BOREALPAY|<uuid>|..." e legado "66PAY|<uuid>|..."
+  IF UPPER(v_raw) LIKE '66PAY|%' OR UPPER(v_raw) LIKE 'BOREALPAY|%' THEN
     v_parts := string_to_array(v_raw, '|');
     v_token := COALESCE(NULLIF(TRIM(v_parts[2]), ''), NULLIF(TRIM(v_parts[3]), ''), v_raw);
   ELSE
@@ -1703,7 +1703,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF UPPER(v_raw) LIKE '66PAY|%' THEN
+  IF UPPER(v_raw) LIKE '66PAY|%' OR UPPER(v_raw) LIKE 'BOREALPAY|%' THEN
     v_parts := string_to_array(v_raw, '|');
     v_clean := COALESCE(NULLIF(TRIM(v_parts[2]), ''), NULLIF(TRIM(v_parts[3]), ''), v_raw);
   ELSE
@@ -1782,7 +1782,7 @@ BEGIN
     RAISE EXCEPTION 'Informe destinatário válido e valor mínimo de R$ 1,00.';
   END IF;
 
-  IF UPPER(v_raw) LIKE '66PAY|%' THEN
+  IF UPPER(v_raw) LIKE '66PAY|%' OR UPPER(v_raw) LIKE 'BOREALPAY|%' THEN
     v_parts := string_to_array(v_raw, '|');
     v_clean := COALESCE(NULLIF(TRIM(v_parts[2]), ''), NULLIF(TRIM(v_parts[3]), ''), v_raw);
   ELSE
@@ -2085,6 +2085,32 @@ BEGIN
   RETURN jsonb_build_object('ok', TRUE, 'fee', v_fee, 'refund', v_refund);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ============================================================================
+-- 10. Multi-Veículos por Motorista & Compatibilidade BorealPay (BOREAL- / BOREALPAY|)
+-- ============================================================================
+ALTER TABLE public.driver_profiles
+  ADD COLUMN IF NOT EXISTS vehicles JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS active_vehicle_id TEXT;
+
+UPDATE public.driver_profiles
+SET vehicles = jsonb_build_array(
+  jsonb_build_object(
+    'id', 'veh-' || SUBSTRING(REPLACE(user_id::TEXT, '-', ''), 1, 8),
+    'vehicle_type', COALESCE(vehicle_type, 'car'),
+    'vehicle_model', COALESCE(NULLIF(TRIM(vehicle_model), ''), CASE WHEN vehicle_type = 'moto' THEN 'Moto Parceira' WHEN vehicle_type = 'delivery' THEN 'Entrega Parceira' ELSE 'Carro Parceiro' END),
+    'vehicle_plate', COALESCE(vehicle_plate, ''),
+    'vehicle_color', COALESCE(vehicle_color, 'Prata'),
+    'created_at', COALESCE(updated_at, NOW())
+  )
+),
+active_vehicle_id = COALESCE(active_vehicle_id, 'veh-' || SUBSTRING(REPLACE(user_id::TEXT, '-', ''), 1, 8))
+WHERE jsonb_array_length(COALESCE(vehicles, '[]'::jsonb)) = 0;
+
+UPDATE public.profiles
+SET pay66_key = 'BOREAL-' || UPPER(SUBSTRING(REPLACE(id::TEXT, '-', ''), 1, 8))
+WHERE pay66_key IS NULL OR TRIM(pay66_key) = '';
+
 
 
 

@@ -60,42 +60,35 @@ export function startContinuousRideAlarm(
   let stopped = false;
   void unlockAudioContext();
 
-  try {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(70);
-    }
-  } catch {
-    // Ignore vibration errors
-  }
-
-  const voicePrompt =
-    spokenMessage ||
-    (isDelivery
-      ? `${title}. Nova entrega disponível para você.`
-      : `${title}. Nova corrida disponível para você.`);
-  speakPtBr(voicePrompt, true);
-
-  let repeated = 0;
-  const voiceTimer = window.setInterval(() => {
-    if (stopped) return;
-    repeated += 1;
-    if (repeated > 1) {
-      window.clearInterval(voiceTimer);
-      return;
-    }
+  const triggerVibration = () => {
     try {
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-        navigator.vibrate(60);
+        navigator.vibrate([280, 120, 280]);
       }
     } catch {
       // Ignore vibration errors
     }
+  };
+
+  triggerVibration();
+
+  const voicePrompt =
+    spokenMessage ||
+    (isDelivery
+      ? `${title}. Você está recebendo uma solicitação de uma entrega.`
+      : `${title}. Você está recebendo uma solicitação de uma corrida.`);
+  speakPtBr(voicePrompt, true);
+
+  const voiceTimer = window.setInterval(() => {
+    if (stopped) return;
+    triggerVibration();
     speakPtBr(voicePrompt, false);
-  }, 8500);
+  }, 7000);
 
   return () => {
     stopped = true;
     window.clearInterval(voiceTimer);
+    stopSpeech();
     try {
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         navigator.vibrate(0);

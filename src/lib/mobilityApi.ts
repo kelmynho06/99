@@ -5,6 +5,7 @@ import type {
   Coupon,
   DirectMessage,
   DriverDetails,
+  DriverVehicle,
   GeoPoint,
   NotificationCategory,
   NotificationTargetScope,
@@ -144,8 +145,138 @@ export const DEFAULT_PRICING_LIST: PricingSetting[] = [
   },
 ];
 
+const DRIVER_VEHICLES_CACHE_PREFIX = 'boreal_driver_vehicles_v1_';
+
+export function rideMatchesDriverVehicle(
+  category: RideCategory,
+  vehicleType?: 'car' | 'moto' | 'delivery' | null
+): boolean {
+  if (!vehicleType) return false;
+  if (vehicleType === 'moto') {
+    return category === 'moto' || category === 'delivery_moto';
+  }
+  if (vehicleType === 'car') {
+    return category === 'pop' || category === 'negocia' || category === 'delivery_car';
+  }
+  if (vehicleType === 'delivery') {
+    return category === 'delivery_moto' || category === 'delivery_car';
+  }
+  return false;
+}
+
+function readCachedDriverVehicles(
+  userId: string
+): { vehicles: DriverVehicle[]; activeVehicleId: string | null } | null {
+  if (!userId || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${DRIVER_VEHICLES_CACHE_PREFIX}${userId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      vehicles?: DriverVehicle[];
+      activeVehicleId?: string | null;
+    };
+    if (!Array.isArray(parsed.vehicles) || parsed.vehicles.length === 0) return null;
+    return {
+      vehicles: parsed.vehicles,
+      activeVehicleId: parsed.activeVehicleId || parsed.vehicles[0]?.id || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedDriverVehicles(
+  userId: string,
+  vehicles: DriverVehicle[],
+  activeVehicleId: string | null
+): void {
+  if (!userId || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      `${DRIVER_VEHICLES_CACHE_PREFIX}${userId}`,
+      JSON.stringify({ vehicles, activeVehicleId })
+    );
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function normalizeDriverVehiclesFromRow(row: Record<string, unknown>): {
+  vehicles: DriverVehicle[];
+  activeVehicleId: string;
+} {
+  const userId = String(row.user_id || '');
+  const baseVehicle: DriverVehicle = {
+    id: 'veh-1',
+    vehicle_type: (row.vehicle_type as 'car' | 'moto' | 'delivery') || 'car',
+    vehicle_model: String(row.vehicle_model || ''),
+    vehicle_plate: String(row.vehicle_plate || ''),
+    vehicle_color: String(row.vehicle_color || ''),
+  };
+
+  let list: DriverVehicle[] = [];
+  if (Array.isArray(row.vehicles) && row.vehicles.length > 0) {
+    list = (row.vehicles as Array<Record<string, unknown>>)
+      .map((v, idx): DriverVehicle => {
+        const vType: DriverVehicle['vehicle_type'] =
+          v.vehicle_type === 'moto' || v.vehicle_type === 'delivery' ? v.vehicle_type : 'car';
+        return {
+          id: String(v.id || `veh-${idx + 1}`),
+          vehicle_type: vType,
+          vehicle_model: String(v.vehicle_model || ''),
+          vehicle_plate: String(v.vehicle_plate || '').toUpperCase(),
+          vehicle_color: String(v.vehicle_color || ''),
+        };
+      })
+      .filter((v) => v.vehicle_model || v.vehicle_plate);
+  }
+
+  if (list.length === 0) {
+    const cached = readCachedDriverVehicles(userId);
+    if (cached && cached.vehicles.length > 0) {
+      list = cached.vehicles;
+    }
+  }
+
+  if (list.length === 0) {
+    list = [baseVehicle];
+  }
+
+  const rowActiveId = row.active_vehicle_id ? String(row.active_vehicle_id) : null;
+  const cachedActiveId = readCachedDriverVehicles(userId)?.activeVehicleId || null;
+  let active =
+    list.find((v) => v.id === (rowActiveId || cachedActiveId)) ||
+    list.find(
+      (v) =>
+        v.vehicle_type === baseVehicle.vehicle_type &&
+        v.vehicle_plate.toUpperCase() === baseVehicle.vehicle_plate.toUpperCase()
+    ) ||
+    list[0];
+
+  if (
+    baseVehicle.vehicle_model &&
+    (active.vehicle_type !== baseVehicle.vehicle_type ||
+      active.vehicle_plate.toUpperCase() !== baseVehicle.vehicle_plate.toUpperCase())
+  ) {
+    const matchingExisting = list.find(
+      (v) =>
+        v.vehicle_type === baseVehicle.vehicle_type &&
+        v.vehicle_plate.toUpperCase() === baseVehicle.vehicle_plate.toUpperCase()
+    );
+    if (matchingExisting) {
+      active = matchingExisting;
+    } else {
+      active = { ...baseVehicle, id: active.id || 'veh-1' };
+      list = list.map((v) => (v.id === active.id ? active : v));
+    }
+  }
+
+  return { vehicles: list, activeVehicleId: active.id };
+}
+
 function mapDbDriver(row: Record<string, unknown> | null | undefined): DriverDetails | null {
   if (!row) return null;
+  const { vehicles, activeVehicleId } = normalizeDriverVehiclesFromRow(row);
   return {
     user_id: String(row.user_id || ''),
     cnh_url: String(row.cnh_url || ''),
@@ -163,6 +294,8 @@ function mapDbDriver(row: Record<string, unknown> | null | undefined): DriverDet
     completion_rate: Number(row.completion_rate ?? 100),
     rejection_reason: row.rejection_reason ? String(row.rejection_reason) : null,
     updated_at: String(row.updated_at || new Date().toISOString()),
+    vehicles,
+    active_vehicle_id: activeVehicleId,
   };
 }
 
@@ -208,7 +341,7 @@ export function mapDbProfile(
     reserved_balance: Number(row.reserved_balance ?? 0),
     pay66_key: row.pay66_key
       ? String(row.pay66_key)
-      : `66-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      : `BOREAL-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
     pending_debt_amount: Number(row.pending_debt_amount ?? 0),
     pending_debt_note: row.pending_debt_note ? String(row.pending_debt_note) : null,
     is_anonymized: Boolean(row.is_anonymized ?? false),
@@ -683,20 +816,39 @@ export async function registerUser(payload: RegisterPayload): Promise<{
       payload.crlv_url || ''
     );
 
-    const { error: drvErr } = await supabase.from('driver_profiles').upsert({
-      user_id: userId,
-      cnh_url: cnhStored,
-      crlv_url: crlvStored,
+    const initialVehicle: DriverVehicle = {
+      id: 'veh-1',
       vehicle_type: payload.vehicle_type || 'car',
       vehicle_model: (payload.vehicle_model || '').trim(),
       vehicle_plate: (payload.vehicle_plate || '').trim().toUpperCase(),
       vehicle_color: (payload.vehicle_color || '').trim(),
+    };
+    writeCachedDriverVehicles(userId, [initialVehicle], initialVehicle.id);
+
+    const drvPayload: Record<string, unknown> = {
+      user_id: userId,
+      cnh_url: cnhStored,
+      crlv_url: crlvStored,
+      vehicle_type: initialVehicle.vehicle_type,
+      vehicle_model: initialVehicle.vehicle_model,
+      vehicle_plate: initialVehicle.vehicle_plate,
+      vehicle_color: initialVehicle.vehicle_color,
       pix_key: (payload.pix_key || '').trim(),
       is_online: false,
       current_lat: -23.55052,
       current_lng: -46.633308,
       heading: 0,
-    });
+      vehicles: [initialVehicle],
+      active_vehicle_id: initialVehicle.id,
+    };
+
+    let { error: drvErr } = await supabase.from('driver_profiles').upsert(drvPayload);
+    if (drvErr && (drvErr.code === '42703' || drvErr.code === 'PGRST204')) {
+      delete drvPayload.vehicles;
+      delete drvPayload.active_vehicle_id;
+      const retry = await supabase.from('driver_profiles').upsert(drvPayload);
+      drvErr = retry.error;
+    }
 
     if (drvErr) {
       throw new Error(`Erro ao salvar veículo/documentos: ${drvErr.message}`);
@@ -2044,25 +2196,142 @@ export async function updateUserProfileSettings(
   if (error) throw new Error(error.message);
 
   if (currentUser.role === 'driver' && currentUser.driver) {
-    const { error: drvErr } = await supabase
+    const nextType = patch.vehicle_type || currentUser.driver.vehicle_type;
+    const nextModel = (patch.vehicle_model ?? currentUser.driver.vehicle_model).trim();
+    const nextPlate = (patch.vehicle_plate ?? currentUser.driver.vehicle_plate)
+      .trim()
+      .toUpperCase();
+    const nextColor = (patch.vehicle_color ?? currentUser.driver.vehicle_color).trim();
+    const { vehicles: currentVehicles, activeVehicleId } = getDriverVehiclesList(currentUser);
+    const updatedVehicles = currentVehicles.map((v) =>
+      v.id === activeVehicleId
+        ? {
+            ...v,
+            vehicle_type: nextType,
+            vehicle_model: nextModel,
+            vehicle_plate: nextPlate,
+            vehicle_color: nextColor,
+          }
+        : v
+    );
+    writeCachedDriverVehicles(currentUser.id, updatedVehicles, activeVehicleId);
+
+    const drvUpdate: Record<string, unknown> = {
+      vehicle_type: nextType,
+      vehicle_model: nextModel,
+      vehicle_plate: nextPlate,
+      vehicle_color: nextColor,
+      pix_key: (patch.pix_key ?? currentUser.driver.pix_key).trim(),
+      vehicles: updatedVehicles,
+      active_vehicle_id: activeVehicleId,
+      updated_at: new Date().toISOString(),
+    };
+    let { error: drvErr } = await supabase
       .from('driver_profiles')
-      .update({
-        vehicle_type: patch.vehicle_type || currentUser.driver.vehicle_type,
-        vehicle_model: (patch.vehicle_model ?? currentUser.driver.vehicle_model).trim(),
-        vehicle_plate: (patch.vehicle_plate ?? currentUser.driver.vehicle_plate)
-          .trim()
-          .toUpperCase(),
-        vehicle_color: (patch.vehicle_color ?? currentUser.driver.vehicle_color).trim(),
-        pix_key: (patch.pix_key ?? currentUser.driver.pix_key).trim(),
-        updated_at: new Date().toISOString(),
-      })
+      .update(drvUpdate)
       .eq('user_id', currentUser.id);
+    if (drvErr && (drvErr.code === '42703' || drvErr.code === 'PGRST204')) {
+      delete drvUpdate.vehicles;
+      delete drvUpdate.active_vehicle_id;
+      const retry = await supabase
+        .from('driver_profiles')
+        .update(drvUpdate)
+        .eq('user_id', currentUser.id);
+      drvErr = retry.error;
+    }
     if (drvErr) throw new Error(drvErr.message);
   }
 
   const updated = await fetchUserProfileById(currentUser.id);
   if (!updated) throw new Error('Erro ao recarregar perfil.');
   return updated;
+}
+
+export function getDriverVehiclesList(user: UserProfile): {
+  vehicles: DriverVehicle[];
+  activeVehicleId: string;
+} {
+  const drv = user.driver;
+  if (!drv) {
+    return { vehicles: [], activeVehicleId: 'veh-1' };
+  }
+  if (drv.vehicles && drv.vehicles.length > 0) {
+    const activeId =
+      drv.active_vehicle_id && drv.vehicles.some((v) => v.id === drv.active_vehicle_id)
+        ? drv.active_vehicle_id
+        : drv.vehicles[0].id;
+    return { vehicles: drv.vehicles, activeVehicleId: activeId };
+  }
+  const fallback: DriverVehicle = {
+    id: 'veh-1',
+    vehicle_type: drv.vehicle_type,
+    vehicle_model: drv.vehicle_model,
+    vehicle_plate: drv.vehicle_plate,
+    vehicle_color: drv.vehicle_color,
+  };
+  return { vehicles: [fallback], activeVehicleId: fallback.id };
+}
+
+export async function saveDriverVehiclesAndSelect(
+  userId: string,
+  vehicles: DriverVehicle[],
+  activeVehicleId: string,
+  pixKey?: string
+): Promise<UserProfile> {
+  if (vehicles.length === 0) {
+    throw new Error('É necessário manter pelo menos um veículo cadastrado.');
+  }
+  const cleaned = vehicles.map((v, idx) => ({
+    id: v.id || `veh-${idx + 1}`,
+    vehicle_type: v.vehicle_type,
+    vehicle_model: v.vehicle_model.trim(),
+    vehicle_plate: v.vehicle_plate.trim().toUpperCase(),
+    vehicle_color: v.vehicle_color.trim(),
+  }));
+  const active = cleaned.find((v) => v.id === activeVehicleId) || cleaned[0];
+  writeCachedDriverVehicles(userId, cleaned, active.id);
+
+  const patch: Record<string, unknown> = {
+    vehicle_type: active.vehicle_type,
+    vehicle_model: active.vehicle_model,
+    vehicle_plate: active.vehicle_plate,
+    vehicle_color: active.vehicle_color,
+    vehicles: cleaned,
+    active_vehicle_id: active.id,
+    updated_at: new Date().toISOString(),
+  };
+  if (pixKey !== undefined) {
+    patch.pix_key = pixKey.trim();
+  }
+
+  let { error } = await supabase
+    .from('driver_profiles')
+    .update(patch)
+    .eq('user_id', userId);
+  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+    delete patch.vehicles;
+    delete patch.active_vehicle_id;
+    const retry = await supabase
+      .from('driver_profiles')
+      .update(patch)
+      .eq('user_id', userId);
+    error = retry.error;
+  }
+  if (error) throw new Error(error.message);
+
+  const refreshed = await fetchUserProfileById(userId);
+  if (!refreshed) throw new Error('Erro ao atualizar veículo ativo.');
+  return refreshed;
+}
+
+export async function switchDriverActiveVehicle(
+  currentUser: UserProfile,
+  vehicleId: string
+): Promise<UserProfile> {
+  const { vehicles } = getDriverVehiclesList(currentUser);
+  const target = vehicles.find((v) => v.id === vehicleId);
+  if (!target) throw new Error('Veículo selecionado não encontrado.');
+  return saveDriverVehiclesAndSelect(currentUser.id, vehicles, target.id);
 }
 
 export async function changeUserPassword(newPassword: string): Promise<void> {
@@ -2850,7 +3119,8 @@ export async function updateMyPay66Key(userId: string, newKey: string): Promise<
 
 function extractPay66Token(rawInput: string): string {
   const clean = rawInput.trim();
-  if (clean.toUpperCase().startsWith('66PAY|')) {
+  const upper = clean.toUpperCase();
+  if (upper.startsWith('66PAY|') || upper.startsWith('BOREALPAY|')) {
     const parts = clean.split('|');
     return (parts[1] || parts[2] || clean).trim();
   }
@@ -2861,9 +3131,10 @@ export async function lookupWalletRecipient(query: string): Promise<WalletRecipi
   const clean = query.trim();
   if (clean.length < 3) return [];
   const token = extractPay66Token(clean);
+  const rpcQuery = clean.toUpperCase().startsWith('BOREALPAY|') ? token : clean;
 
   const { data, error } = await supabase.rpc('lookup_wallet_recipient', {
-    p_query: clean,
+    p_query: rpcQuery,
   });
 
   if (!error && Array.isArray(data)) {
@@ -3347,15 +3618,15 @@ export async function adminGrantCouponToUsers(
   return Number(data ?? 0);
 }
 
-// --- TRANSFERÊNCIA 66PAY NA CORRIDA (QR CODE / CHAVE 66PAY DO MOTORISTA) ---
+// --- TRANSFERÊNCIA BOREALPAY NA CORRIDA (QR CODE / CHAVE BOREALPAY DO MOTORISTA) ---
 
 export function buildDriver66PayQrPayload(driver: UserProfile): string {
   const key =
     driver.pay66_key ||
-    `66-${driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    `BOREAL-${driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   const cleanName = (driver.full_name || 'Motorista').replace(/\|/g, ' ').trim();
   const cleanEmail = (driver.email || '').replace(/\|/g, '').trim();
-  return `66PAY|${driver.id}|${key}|${cleanEmail}|${cleanName}`;
+  return `BOREALPAY|${driver.id}|${key}|${cleanEmail}|${cleanName}`;
 }
 
 export async function lookup66PayDriver(
@@ -3365,13 +3636,15 @@ export async function lookup66PayDriver(
   if (!clean) return null;
 
   let token = clean;
-  if (clean.toUpperCase().startsWith('66PAY|')) {
+  const upper = clean.toUpperCase();
+  if (upper.startsWith('66PAY|') || upper.startsWith('BOREALPAY|')) {
     const parts = clean.split('|');
     token = (parts[1] || parts[2] || '').trim();
   }
 
+  const rpcKeyArg = upper.startsWith('BOREALPAY|') ? token : clean;
   const { data: rpcData, error: rpcErr } = await supabase.rpc('lookup_66pay_driver', {
-    p_key: clean,
+    p_key: rpcKeyArg,
   });
 
   if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
@@ -3380,7 +3653,7 @@ export async function lookup66PayDriver(
       id: String(row.id),
       full_name: String(row.full_name || 'Motorista'),
       pay66_key: String(
-        row.pay66_key || `66-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
+        row.pay66_key || `BOREAL-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
       ),
       avatar_url: row.avatar_url ? String(row.avatar_url) : null,
       phone: row.phone ? String(row.phone) : '',
@@ -3406,7 +3679,7 @@ export async function lookup66PayDriver(
       return {
         id: String(prof.id),
         full_name: String(prof.full_name || 'Motorista'),
-        pay66_key: `66-${String(prof.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+        pay66_key: `BOREAL-${String(prof.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
         avatar_url: prof.avatar_url ? String(prof.avatar_url) : null,
         phone: prof.phone ? String(prof.phone) : '',
         vehicle_model: drv?.vehicle_model ? String(drv.vehicle_model) : null,
@@ -3434,7 +3707,7 @@ export async function process66PayRideTransfer(
       already_paid: Boolean(res.already_paid ?? false),
       ride_id: String(res.ride_id || rideId),
       amount: Number(res.amount ?? 0),
-      auth_code: String(res.auth_code || `66PAY-${rideId.slice(0, 8).toUpperCase()}`),
+      auth_code: String(res.auth_code || `BPAY-${rideId.slice(0, 8).toUpperCase()}`),
       tx_id: String(res.tx_id || rideId),
       created_at: String(res.created_at || new Date().toISOString()),
       sender_name: String(res.sender_name || 'Cliente'),
@@ -3460,17 +3733,17 @@ export async function process66PayRideTransfer(
     ok: true,
     ride_id: rideId,
     amount: Number((ride?.final_fare ?? ride?.estimated_fare ?? 0).toFixed(2)),
-    auth_code: `66PAY-${rideId.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+    auth_code: `BPAY-${rideId.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
     tx_id: rideId,
     created_at: new Date().toISOString(),
     sender_name: ride?.passenger?.full_name || 'Cliente',
     sender_key:
       ride?.passenger?.pay66_key ||
-      `66-${(ride?.passenger_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      `BOREAL-${(ride?.passenger_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
     recipient_name: ride?.driver?.full_name || 'Motorista',
     recipient_key:
       ride?.driver?.pay66_key ||
-      `66-${driverId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      `BOREAL-${driverId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
   };
 }
 

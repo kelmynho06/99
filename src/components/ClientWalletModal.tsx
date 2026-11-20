@@ -155,8 +155,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   });
   const [noteInput, setNoteInput] = useState('');
 
-  // Chave 66pay editor state
-  const defaultFallback66Key = `66-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+  // Chave BorealPay editor state
+  const defaultFallback66Key = `BOREAL-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   const [editingPay66Key, setEditingPay66Key] = useState(false);
   const [pay66KeyInput, setPay66KeyInput] = useState(
     () => currentUser.pay66_key || defaultFallback66Key
@@ -486,13 +486,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     [platformConfig, numericAmount, currentUser.id, cycle]
   );
 
-  // Identificador e Chave exclusiva 66pay
+  // Identificador e Chave exclusiva BorealPay
   const myPay66Key =
     currentUser.pay66_key ||
-    `66-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    `BOREAL-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   const my66PayIdentifier = currentUser.email || currentUser.phone || currentUser.id;
   const my66PayQrPayload = useMemo(
-    () => `66PAY|${currentUser.id}|${myPay66Key}|${currentUser.email}|${currentUser.full_name}`,
+    () => `BOREALPAY|${currentUser.id}|${myPay66Key}|${currentUser.email}|${currentUser.full_name}`,
     [currentUser.id, myPay66Key, currentUser.email, currentUser.full_name]
   );
 
@@ -567,8 +567,9 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const canTransferDirect =
     Boolean(selectedRecipient) ||
     recipientQuery.trim().includes('@') ||
-    recipientQuery.trim().toUpperCase().startsWith('66-') ||
     recipientQuery.trim().toUpperCase().startsWith('BOREAL-') ||
+    recipientQuery.trim().toUpperCase().startsWith('BOREALPAY|') ||
+    recipientQuery.trim().toUpperCase().startsWith('66-') ||
     recipientQuery.trim().toUpperCase().startsWith('66PAY|') ||
     recipientQuery.replace(/\D/g, '').length >= 10;
 

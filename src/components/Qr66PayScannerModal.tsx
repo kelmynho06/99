@@ -34,7 +34,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
           full_name: ride.driver.full_name,
           pay66_key:
             ride.driver.pay66_key ||
-            `66-${ride.driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            `BOREAL-${ride.driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
           avatar_url: ride.driver.avatar_url,
           phone: ride.driver.phone,
           vehicle_model: ride.driver.driver?.vehicle_model || null,
@@ -355,7 +355,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
                 type="text"
                 value={manualKey}
                 onChange={(e) => setManualKey(e.target.value)}
-                placeholder={matchedDriver?.pay66_key || 'Ex: 66-A1B2C3D4'}
+                placeholder={matchedDriver?.pay66_key || 'Ex: BOREAL-A1B2C3D4'}
                 className="min-h-[46px] flex-1 rounded-xl border border-[#DCEEE8] dark:border-white/15 bg-[#F7FBFA] dark:bg-white/5 px-3 font-mono-num text-sm font-bold outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
               <button

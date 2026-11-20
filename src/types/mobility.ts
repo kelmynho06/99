@@ -96,6 +96,14 @@ export interface WeatherInfo {
   city: string;
 }
 
+export interface DriverVehicle {
+  id: string;
+  vehicle_type: 'car' | 'moto' | 'delivery';
+  vehicle_model: string;
+  vehicle_plate: string;
+  vehicle_color: string;
+}
+
 export interface DriverDetails {
   user_id: string;
   cnh_url: string;
@@ -113,6 +121,8 @@ export interface DriverDetails {
   completion_rate: number;
   rejection_reason?: string | null;
   updated_at: string;
+  vehicles?: DriverVehicle[];
+  active_vehicle_id?: string | null;
 }
 
 export interface UserProfile {
