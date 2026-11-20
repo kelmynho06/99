@@ -99,12 +99,12 @@ export const RatingModal: React.FC<RatingModalProps> = ({
             <AvatarImage
               src={targetUser?.avatar_url}
               name={targetFullName}
-              className="h-16 w-16 rounded-2xl object-cover border-2 border-[#FFD100] shrink-0 shadow-xs"
-              fallbackClassName="flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-950 text-[#FFD100] font-extrabold text-xl shrink-0"
+              className="h-16 w-16 rounded-2xl object-cover border-2 border-[#2DD4BF] shrink-0 shadow-xs"
+              fallbackClassName="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#047857] text-[#6EE7B7] font-extrabold text-xl shrink-0"
             />
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-2 py-0.5 text-[10px] font-extrabold text-neutral-950 uppercase">
+                <span className="inline-flex items-center gap-1 rounded-lg bg-[#ECFDF5] dark:bg-emerald-950/60 px-2 py-0.5 text-[10px] font-extrabold text-[#047857] dark:text-[#6EE7B7] uppercase border border-[#6EE7B7]/50">
                   {isDelivery ? (
                     <Package className="h-3 w-3" />
                   ) : driverMeta?.vehicle_type === 'moto' ? (
@@ -118,7 +118,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
                 </span>
                 {typeof targetUser?.rating_avg === 'number' && (
                   <span className="inline-flex items-center gap-0.5 text-[11px] font-mono-num font-bold text-neutral-700 dark:text-neutral-300">
-                    <Star className="h-3 w-3 fill-[#FFD100] text-[#F59E0B]" />
+                    <Star className="h-3 w-3 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
                     {targetUser.rating_avg.toFixed(1)}
                   </span>
                 )}
@@ -134,7 +134,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
                     {driverMeta.vehicle_color} {driverMeta.vehicle_model}
                   </span>
                   {driverMeta.vehicle_plate && (
-                    <span className="rounded-md bg-neutral-950 dark:bg-neutral-800 px-1.5 py-0.5 font-mono-num text-[10px] font-extrabold text-[#FFD100] border border-neutral-800">
+                    <span className="rounded-md bg-[#0F2421] dark:bg-neutral-800 px-1.5 py-0.5 font-mono-num text-[10px] font-extrabold text-[#6EE7B7] border border-[#047857]/40">
                       {driverMeta.vehicle_plate}
                     </span>
                   )}
@@ -156,7 +156,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
                 <Star
                   className={`h-8 w-8 transition ${
                     n <= stars
-                      ? 'fill-[#FFD100] text-[#F59E0B] drop-shadow-xs'
+                      ? 'fill-[#2DD4BF] text-[#047857] drop-shadow-xs'
                       : 'text-neutral-300 dark:text-neutral-600'
                   }`}
                 />
@@ -172,7 +172,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
           type="button"
           onClick={submitRating}
           disabled={submitting}
-          className="mt-5 min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm transition active:scale-[0.98]"
+          className="aurora-accent-flow mt-5 min-h-[50px] w-full rounded-2xl text-sm font-extrabold text-white shadow-sm transition active:scale-[0.98]"
         >
           {submitting ? t.saving : t.submit_rating}
         </button>

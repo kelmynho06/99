@@ -4,7 +4,7 @@ import { buildPixEmvPayload, formatBRL } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
 import { declarePixPaid } from '../lib/mobilityApi';
 import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
-import { playRideAcceptedChime } from '../lib/sound';
+import { speakPtBr } from '../lib/sound';
 import type { PlatformConfig, Ride } from '../types/mobility';
 
 interface PixPaymentModalProps {
@@ -75,7 +75,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   useEffect(() => {
     if (!isPaid || celebratedRef.current) return;
     celebratedRef.current = true;
-    void playRideAcceptedChime();
+    speakPtBr('Pagamento confirmado com sucesso.', true);
     const timer = window.setTimeout(() => {
       onClose();
     }, 2600);
@@ -115,24 +115,24 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
-      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl max-h-[92vh] overflow-y-auto border border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
+    <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-[#0F2421]/65 p-0 sm:p-4 backdrop-blur-xs">
+      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#0D1A18] p-6 shadow-2xl max-h-[92vh] overflow-y-auto border border-[#DCEEE8] dark:border-emerald-950">
+        <div className="flex items-center justify-between pb-3 border-b border-[#EDF6F3] dark:border-emerald-950">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#047857] to-[#0D9488] text-white">
               <QrCode className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
+              <h3 className="font-display text-lg font-extrabold text-[#0F2421] dark:text-white">
                 {ride.status === 'completed' ? t.pay_with_pix : 'Pix Copia e Cola'}
               </h3>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">{platformConfig.platform_pix_receiver}</p>
+              <p className="text-xs text-[#5F7D78] dark:text-neutral-400">{platformConfig.platform_pix_receiver}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F1F8F6] dark:bg-neutral-800 text-[#334E4A] dark:text-neutral-200"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
@@ -141,7 +141,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
         {/* Payment Confirmation Status Badge */}
         <div className="mt-3 flex justify-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold bg-[#F0FDFA] dark:bg-teal-950/40 text-[#0F766E] dark:text-[#2DD4BF] border border-[#99F6E4] dark:border-teal-800/60">
             <Clock className="h-3.5 w-3.5" />
             {isDeclared
               ? 'Aviso enviado · Aguardando confirmação do Admin'
@@ -150,12 +150,12 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         </div>
 
         <div className="mt-3 text-center">
-          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Valor total a transferir</p>
-          <p className="mt-0.5 font-mono-num text-3xl font-extrabold text-neutral-950 dark:text-white">
+          <p className="text-xs font-semibold text-[#5F7D78] dark:text-neutral-400">Valor total a transferir</p>
+          <p className="mt-0.5 font-mono-num text-3xl font-extrabold text-[#0F2421] dark:text-white">
             {formatBRL(amount)}
           </p>
           {Boolean(ride.pending_debt_included && ride.pending_debt_included > 0) && (
-            <p className="mt-1 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+            <p className="mt-1 text-[11px] font-bold text-[#0F766E] dark:text-[#2DD4BF]">
               Inclui débito pendente anterior: {formatBRL(ride.pending_debt_included || 0)}
             </p>
           )}
@@ -195,7 +195,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
               <button
                 type="button"
                 onClick={() => copyText(pixPayload, 'code')}
-                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3 text-xs font-bold text-[#FFD100] dark:text-neutral-950"
+                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-[#047857] px-3 text-xs font-bold text-white"
               >
                 {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copiedCode ? 'Código copiado!' : 'Copiar Código'}
@@ -206,30 +206,30 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
               rows={2}
               value={pixPayload}
               onClick={(e) => e.currentTarget.select()}
-              className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2 font-mono text-[11px] text-neutral-800 dark:text-neutral-200 outline-none resize-none"
+              className="w-full rounded-xl border border-[#DCEEE8] dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2 font-mono text-[11px] text-[#0F2421] dark:text-neutral-200 outline-none resize-none"
             />
           </div>
 
-          <div className="border-t border-neutral-200 dark:border-neutral-700 pt-2.5 flex items-center justify-between gap-2">
+          <div className="border-t border-[#DCEEE8] dark:border-neutral-700 pt-2.5 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400">Chave Pix da Plataforma</p>
-              <p className="font-mono-num text-xs font-extrabold text-neutral-950 dark:text-white truncate">
+              <p className="text-[11px] font-bold text-[#5F7D78] dark:text-neutral-400">Chave Pix da Plataforma</p>
+              <p className="font-mono-num text-xs font-extrabold text-[#0F2421] dark:text-white truncate">
                 {platformConfig.platform_pix_key}
               </p>
             </div>
             <button
               type="button"
               onClick={() => copyText(platformConfig.platform_pix_key, 'key')}
-              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 text-xs font-bold text-neutral-900 dark:text-neutral-100"
+              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border border-[#C9E8DF] dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 text-xs font-bold text-[#0F2421] dark:text-neutral-100"
             >
-              {copiedKey ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedKey ? <Check className="h-3.5 w-3.5 text-[#047857]" /> : <Copy className="h-3.5 w-3.5" />}
               {copiedKey ? 'Copiada' : 'Copiar chave'}
             </button>
           </div>
         </div>
 
-        <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 px-3.5 py-2.5 text-xs text-amber-900 dark:text-amber-200">
-          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800/60 px-3.5 py-2.5 text-xs text-[#065F46] dark:text-emerald-200">
+          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#047857] dark:text-[#6EE7B7]" />
           <span>
             Pagamento centralizado para {platformConfig.platform_pix_receiver}. Após pagar no app do
             seu banco, toque abaixo para avisar o Administrador e liberar o motorista.
@@ -247,7 +247,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             type="button"
             disabled={submitting}
             onClick={confirmPixPaid}
-            className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
+            className="min-h-[52px] w-full rounded-2xl bg-[#047857] text-base font-extrabold text-white shadow-sm hover:bg-[#065F46] active:scale-[0.98] transition disabled:opacity-50"
           >
             {submitting
               ? 'Enviando aviso...'

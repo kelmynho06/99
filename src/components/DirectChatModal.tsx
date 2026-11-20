@@ -126,22 +126,22 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
   return (
     <div className="fixed inset-0 z-[1250] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
       <div className="flex h-[84vh] sm:h-[580px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-center justify-between bg-neutral-950 px-5 py-4 text-white">
+        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#6EE7B7]/50 px-5 py-4 text-[#0F2421] dark:text-white">
           <div className="flex items-center gap-3 min-w-0">
             {isAdmin ? (
               <AvatarImage
                 src={threadUser.avatar_url}
                 name={threadUser.full_name}
-                className="h-10 w-10 rounded-full object-cover border border-[#FFD100] shrink-0"
-                fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold"
+                className="h-10 w-10 rounded-full object-cover border border-[#047857] dark:border-[#2DD4BF] shrink-0"
+                fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#047857] text-white font-extrabold"
               />
             ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold">
+              <div className="aurora-accent-flow flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white font-extrabold">
                 <Headphones className="h-5 w-5" />
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-[#FFD100] flex items-center gap-1">
+              <p className="text-[11px] font-bold text-[#047857] dark:text-[#6EE7B7] flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {isAdmin ? 'Chat Direto · Super Admin' : 'Atendimento Oficial · Administração'}
               </p>
@@ -154,7 +154,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 dark:bg-white/10 text-[#0F2421] dark:text-white"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
@@ -181,7 +181,7 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
                   <div
                     className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-xs ${
                       mine
-                        ? 'bg-[#FFD100] text-neutral-950 font-semibold rounded-br-sm'
+                        ? 'bg-[#047857] text-white font-semibold rounded-br-sm'
                         : 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-bl-sm'
                     }`}
                   >
@@ -231,12 +231,12 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Escreva sua mensagem..."
-              className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+              className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
             />
             <button
               type="submit"
               disabled={!text.trim() || sending}
-              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 disabled:opacity-40"
+              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] disabled:opacity-40"
               aria-label="Enviar mensagem"
             >
               <Send className="h-5 w-5" />

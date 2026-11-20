@@ -14,7 +14,7 @@ interface LegalDocsModalProps {
 
 export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
   initialTab = 'terms',
-  siteName = '66 Mobilidade',
+  siteName = 'Boreal Mobilidade',
   requireAcceptanceButton = false,
   onAcceptAll,
   onClose,
@@ -28,7 +28,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950">
+            <div className="aurora-accent-flow flex h-10 w-10 items-center justify-center rounded-xl text-white">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
@@ -67,7 +67,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
                 onClick={() => setActiveTab(item.id)}
                 className={`flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-xs font-bold whitespace-nowrap transition ${
                   active
-                    ? 'bg-neutral-950 text-[#FFD100] dark:bg-[#FFD100] dark:text-neutral-950'
+                    ? 'bg-[#047857] text-white dark:bg-[#2DD4BF] dark:text-[#0F2421]'
                     : 'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                 }`}
               >
@@ -223,7 +223,7 @@ export const LegalDocsModal: React.FC<LegalDocsModalProps> = ({
                 onAcceptAll();
                 onClose();
               }}
-              className="flex min-h-[46px] w-full sm:w-auto items-center justify-center gap-2 rounded-2xl bg-[#FFD100] px-6 text-sm font-extrabold text-neutral-950 shadow-sm"
+              className="aurora-accent-flow flex min-h-[46px] w-full sm:w-auto items-center justify-center gap-2 rounded-2xl px-6 text-sm font-extrabold text-white shadow-sm"
             >
               <Check className="h-4 w-4" />
               Li e Aceito os Termos de Segurança e Privacidade

@@ -63,7 +63,7 @@ function StatusBadge({
 }
 
 export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
-  siteName = '66 Mobilidade',
+  siteName = 'Boreal Mobilidade',
   onClose,
 }) => {
   const { t } = useTranslation();
@@ -151,7 +151,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950">
+            <div className="aurora-accent-flow flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
@@ -182,7 +182,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               onClick={() => setStep(idx as 0 | 1 | 2 | 3)}
               className={`rounded-xl py-2 px-1 text-center transition border ${
                 step === idx
-                  ? 'bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 border-neutral-950 dark:border-[#FFD100]'
+                  ? 'bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] border-[#047857] dark:border-[#2DD4BF]'
                   : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
               }`}
             >
@@ -222,7 +222,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 setStep(1);
               }}
               disabled={requesting}
-              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421]"
             >
               <Bell className="h-4 w-4" />
               Permitir Notificações e Avançar
@@ -261,7 +261,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 setStep(2);
               }}
               disabled={requesting}
-              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421]"
             >
               <MapPin className="h-4 w-4" />
               Ativar GPS Contínuo e Avançar
@@ -304,7 +304,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 setStep(3);
               }}
               disabled={requesting}
-              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421]"
             >
               <Camera className="h-4 w-4" />
               Autorizar Câmera / Galeria e Avançar
@@ -314,10 +314,10 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
 
         {/* Step 4: Native Android Battery Optimization & Background Floating Bubble */}
         {step === 3 && (
-          <div className="space-y-3 rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50/70 dark:bg-amber-950/30 p-4">
+          <div className="space-y-3 rounded-2xl border border-[#6EE7B7] dark:border-emerald-800 bg-[#ECFDF5]/70 dark:bg-emerald-950/30 p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950">
+                <div className="aurora-accent-flow flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white">
                   <BatteryCharging className="h-6 w-6" />
                 </div>
                 <div>
@@ -325,7 +325,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                     Segundo Plano, Bateria &amp; Balão Flutuante
                   </h4>
                   <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                    O balão redondo da <strong>66</strong> aparece <strong>somente fora do app</strong>{' '}
+                    O balão redondo da <strong>Boreal</strong> aparece <strong>somente fora do app</strong>{' '}
                     (quando você minimizar) para voltar com 1 toque sem gastar bateria.
                   </p>
                 </div>
@@ -361,11 +361,11 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
             ) : (
               <div className="rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-3 space-y-2 text-xs">
                 <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">1</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#047857] text-white text-[10px]">1</span>
                   <span>No APK Android: Configurações &gt; Aplicativos &gt; {siteName}</span>
                 </div>
                 <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] text-[10px]">2</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#047857] text-white text-[10px]">2</span>
                   <span>Em Bateria, marque &ldquo;Irrestrito&rdquo; (Sem restrições)</span>
                 </div>
                 <div className="flex items-center gap-2 font-extrabold text-emerald-700 dark:text-emerald-400">
@@ -394,7 +394,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 type="button"
                 disabled={requesting}
                 onClick={handleGrantAll}
-                className="min-h-[48px] flex-1 rounded-2xl bg-[#FFD100] text-xs sm:text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
+                className="aurora-accent-flow min-h-[48px] flex-1 rounded-2xl text-xs sm:text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-50"
               >
                 {requesting ? t.saving : t.perm_activate_all}
               </button>
@@ -412,7 +412,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               type="button"
               disabled={requesting}
               onClick={handleGrantAll}
-              className="min-h-[50px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition disabled:opacity-50"
+              className="aurora-accent-flow min-h-[50px] w-full rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-50"
             >
               {requesting ? t.saving : t.perm_finish_enter}
             </button>

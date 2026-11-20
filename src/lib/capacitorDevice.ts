@@ -2,7 +2,6 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import type { DevicePermissionsState, PermissionGrantState } from '../types/mobility';
-import { playOfferAlertSound } from './sound';
 import { getUserPreferences } from './userPrefs';
 
 export interface DeviceCoords {
@@ -19,8 +18,34 @@ function toSpeedKmh(rawSpeed: number | null | undefined): number {
   return Math.round(rawSpeed * 3.6);
 }
 
+const VOICE_ALERT_CHANNEL_ID = 'mobilidade66_voice_alerts';
+const recentNotifDedupeMap = new Map<string, number>();
 let notificationsInitialized = false;
 let nextNotificationId = 1000;
+
+function hashDedupeKeyToId(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(hash) % 900000) + 1000;
+}
+
+function shouldSkipDuplicateNotification(dedupeKey?: string, cooldownMs = 9000): boolean {
+  if (!dedupeKey) return false;
+  const now = Date.now();
+  const prev = recentNotifDedupeMap.get(dedupeKey);
+  if (prev && now - prev < cooldownMs) {
+    return true;
+  }
+  recentNotifDedupeMap.set(dedupeKey, now);
+  if (recentNotifDedupeMap.size > 150) {
+    for (const [k, ts] of recentNotifDedupeMap.entries()) {
+      if (now - ts > 60_000) recentNotifDedupeMap.delete(k);
+    }
+  }
+  return false;
+}
 
 export async function initLocalNotifications(): Promise<void> {
   if (notificationsInitialized) return;
@@ -32,16 +57,18 @@ export async function initLocalNotifications(): Promise<void> {
       if (perm.display !== 'granted') {
         await LocalNotifications.requestPermissions();
       }
-      await LocalNotifications.createChannel({
-        id: 'velo99_rides',
-        name: 'Corridas e Entregas 66 Mobilidade',
-        description: 'Alertas imediatos de status, mensagens e eventos',
-        importance: 5,
-        visibility: 1,
-        vibration: true,
-        lights: true,
-        lightColor: '#FFD100',
-      });
+      if (Capacitor.getPlatform() === 'android') {
+        await LocalNotifications.createChannel({
+          id: VOICE_ALERT_CHANNEL_ID,
+          name: 'Boreal Mobilidade · Alertas por Voz',
+          description: 'Alertas visuais discretos enquanto a assistente de voz fala',
+          importance: 4,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: '#0D9488',
+        }).catch(() => {});
+      }
     } catch {
       // Ignore if running in unsupported WebView
     }
@@ -56,19 +83,18 @@ export async function triggerLocalNotification(input: {
   title: string;
   body: string;
   playSound?: boolean;
+  dedupeKey?: string;
+  vibrate?: boolean;
 }): Promise<void> {
   const prefs = getUserPreferences();
-  const { title, body, playSound = true } = input;
-
-  if (playSound && prefs.sounds_enabled) {
-    playOfferAlertSound();
-  }
+  const { title, body, dedupeKey, vibrate = true } = input;
 
   if (!prefs.notifications_enabled) return;
+  if (shouldSkipDuplicateNotification(dedupeKey)) return;
 
-  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+  if (vibrate && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
     try {
-      navigator.vibrate([180, 90, 220]);
+      navigator.vibrate(70);
     } catch {
       // Ignore vibration errors
     }
@@ -77,17 +103,19 @@ export async function triggerLocalNotification(input: {
   if (Capacitor.isNativePlatform()) {
     try {
       await initLocalNotifications();
-      nextNotificationId = (nextNotificationId % 900000) + 1;
+      const id = dedupeKey
+        ? hashDedupeKeyToId(dedupeKey)
+        : (nextNotificationId = (nextNotificationId % 900000) + 1);
       await LocalNotifications.schedule({
         notifications: [
           {
-            id: nextNotificationId,
+            id,
             title,
             body,
-            channelId: 'velo99_rides',
+            channelId: Capacitor.getPlatform() === 'android' ? VOICE_ALERT_CHANNEL_ID : undefined,
             schedule: { at: new Date(Date.now() + 80) },
             smallIcon: 'ic_launcher',
-            iconColor: '#FFD100',
+            iconColor: '#0D9488',
           },
         ],
       });
@@ -98,20 +126,25 @@ export async function triggerLocalNotification(input: {
   }
 
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    const webOptions: NotificationOptions = {
+      body,
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      tag: dedupeKey || 'mobilidade66-alert',
+      silent: true,
+    };
+
     try {
-      new Notification(title, { body, icon: '/icon-192.png' });
-    } catch {
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-        navigator.serviceWorker.ready
-          .then((reg) =>
-            reg.showNotification(title, {
-              body,
-              icon: '/icon-192.png',
-              badge: '/icon-192.png',
-            })
-          )
-          .catch(() => {});
+        const reg = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+        if (reg && typeof reg.showNotification === 'function') {
+          await reg.showNotification(title, webOptions);
+          return;
+        }
       }
+      new Notification(title, webOptions);
+    } catch {
+      // Ignore notification restrictions
     }
   }
 }

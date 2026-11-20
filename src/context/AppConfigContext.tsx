@@ -18,11 +18,35 @@ interface AppConfigContextValue {
 }
 
 const DEFAULT_APP_CONFIG: AppConfig = {
-  app_name: '66 Mobilidade',
+  app_name: 'Boreal Mobilidade',
   logo_url: null,
-  primary_color: '#FFD100',
-  secondary_color: '#111827',
+  primary_color: '#047857',
+  secondary_color: '#0F2421',
 };
+
+function upgradeLegacyAppName(name?: unknown): string {
+  const clean = String(name || '').trim();
+  if (!clean || clean === '66 Mobilidade' || clean === 'Velo99' || clean === 'Velo99 Mobilidade') {
+    return 'Boreal Mobilidade';
+  }
+  return clean;
+}
+
+function upgradeLegacyPrimaryColor(color?: unknown): string {
+  const clean = String(color || '').trim();
+  if (!clean || clean.toUpperCase() === '#FFD100' || clean.toUpperCase() === '#FFDD00') {
+    return '#047857';
+  }
+  return clean;
+}
+
+function upgradeLegacySecondaryColor(color?: unknown): string {
+  const clean = String(color || '').trim();
+  if (!clean || clean.toUpperCase() === '#111827') {
+    return '#0F2421';
+  }
+  return clean;
+}
 
 function readInitialCachedConfig(): AppConfig {
   try {
@@ -30,15 +54,15 @@ function readInitialCachedConfig(): AppConfig {
     if (!raw) return DEFAULT_APP_CONFIG;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
-      app_name: String(parsed.site_name || parsed.app_name || '66 Mobilidade'),
+      app_name: upgradeLegacyAppName(parsed.site_name || parsed.app_name),
       logo_url:
         typeof parsed.app_logo_url === 'string'
           ? parsed.app_logo_url
           : typeof parsed.logo_url === 'string'
           ? parsed.logo_url
           : null,
-      primary_color: String(parsed.primary_color || '#FFD100'),
-      secondary_color: String(parsed.secondary_color || '#111827'),
+      primary_color: upgradeLegacyPrimaryColor(parsed.primary_color),
+      secondary_color: upgradeLegacySecondaryColor(parsed.secondary_color),
     };
   } catch {
     return DEFAULT_APP_CONFIG;
@@ -54,7 +78,7 @@ const AppConfigContext = createContext<AppConfigContextValue>({
 
 function syncHeadMetadata(cfg: AppConfig) {
   if (typeof document === 'undefined') return;
-  const brand = cfg.app_name.trim() || '66 Mobilidade';
+  const brand = cfg.app_name.trim() || 'Boreal Mobilidade';
   document.title = `${brand} — Corridas e Entregas`;
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
@@ -65,10 +89,10 @@ function syncHeadMetadata(cfg: AppConfig) {
     themeMeta.setAttribute('content', cfg.primary_color);
   }
 
-  document.documentElement.style.setProperty('--brand-primary', cfg.primary_color || '#FFD100');
+  document.documentElement.style.setProperty('--brand-primary', cfg.primary_color || '#047857');
   document.documentElement.style.setProperty(
     '--brand-secondary',
-    cfg.secondary_color || '#111827'
+    cfg.secondary_color || '#0F2421'
   );
 
   const resolvedIcon = cfg.logo_url || DEFAULT_BRAND_LOGO;

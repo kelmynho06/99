@@ -47,10 +47,11 @@ import {
 } from 'lucide-react';
 import { logAuditEvent } from '../lib/audit';
 import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
-import { getCurrentGpsPosition, triggerLocalNotification } from '../lib/capacitorDevice';
+import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import {
   type AddressSuggestion,
   fetchLocalWeather,
+  fetchNearbyPickupCandidates,
   fetchNearbyPopularPlaces,
   fetchRouteGeometry,
   formatBRL,
@@ -80,7 +81,7 @@ import {
   loadOfflineActiveRideCache,
   saveOfflineActiveRideCache,
 } from '../lib/offlineNavigation';
-import { playRideAcceptedChime, unlockAudioContext } from '../lib/sound';
+import { speakPtBr, unlockAudioContext } from '../lib/sound';
 import { supabase } from '../lib/supabase';
 import type {
   AppNotification,
@@ -100,6 +101,7 @@ import type {
 } from '../types/mobility';
 import { AccountSettingsModal } from './AccountSettingsModal';
 import { AvatarImage } from './AvatarImage';
+import { BorealLogoMark } from './BorealBrandAssets';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
@@ -193,6 +195,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
   const [destSuggestions, setDestSuggestions] = useState<AddressSuggestion[]>([]);
+  const [nearbyPickupOptions, setNearbyPickupOptions] = useState<AddressSuggestion[]>([]);
   const [nearbyPlaces, setNearbyPlaces] = useState<AddressSuggestion[]>([]);
   const [loadingNearby, setLoadingNearby] = useState(false);
   const [searchingAddress, setSearchingAddress] = useState(false);
@@ -222,6 +225,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelNowMs, setCancelNowMs] = useState<number>(() => Date.now());
+  const [cancelNotice, setCancelNotice] = useState<{ text: string; isFree: boolean } | null>(null);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [supportChatOpen, setSupportChatOpen] = useState(false);
@@ -255,6 +259,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const sessionStartedAtRef = useRef<number>(Date.now());
   const justCompletedRideIdRef = useRef<string | null>(null);
   const prevRideStatusMapRef = useRef<Record<string, Ride['status']>>({});
+  const spokenNearDestIdsRef = useRef<Set<string>>(new Set());
 
   const markRatingHandled = useCallback(
     (rideId: string) => {
@@ -278,7 +283,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const prevDriverSampleRef = useRef<{ lat: number; lng: number; ts: number } | null>(null);
   const fetchedRideRouteStageRef = useRef<string | null>(null);
 
-  const siteName = platformConfig.site_name || '66 Mobilidade';
+  const siteName = platformConfig.site_name || 'Boreal Mobilidade';
   const brandLogoUrl = resolveBrandLogo(platformConfig);
   const pendingDebt = Number(currentUser.pending_debt_amount || 0);
 
@@ -404,29 +409,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     return { remainingFreeSec, extraSec, waitingFee, isCharging: extraSec > 0 };
   }, [activeRide, waitNowMs]);
 
-  // Play pleasant chime + strong vibration + local notification on ride acceptance
+  // Track completion transitions for immediate post-ride rating modal (pop-ups & voice handled centrally in useRealtimeMobility)
   useEffect(() => {
     const prevMap = prevRideStatusMapRef.current;
     const nextMap: Record<string, Ride['status']> = {};
     for (const r of myRides) {
       nextMap[r.id] = r.status;
       const prevStatus = prevMap[r.id];
-      if (prevStatus === 'searching' && r.status === 'accepted') {
-        void playRideAcceptedChime();
-        try {
-          if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-            navigator.vibrate([180, 80, 180, 80, 280, 100, 420]);
-          }
-        } catch {
-          // Ignore vibration restriction
-        }
-        const isDel = r.category === 'delivery_moto' || r.category === 'delivery_car';
-        void triggerLocalNotification({
-          title: isDel ? 'Entregador a caminho!' : 'Motorista encontrado!',
-          body: `${r.driver?.full_name || 'Parceiro'} aceitou sua solicitação e está indo até você.`,
-          playSound: false,
-        });
-      }
       if (
         prevStatus &&
         prevStatus !== 'completed' &&
@@ -474,12 +463,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       return;
     }
     setGpsFixed(true);
-    const [addr, w] = await Promise.all([
+    const [addr, w, nearbyCandidates] = await Promise.all([
       reverseGeocode(pos.lat, pos.lng),
       fetchLocalWeather(pos.lat, pos.lng),
+      fetchNearbyPickupCandidates(pos.lat, pos.lng).catch(() => []),
     ]);
     setOrigin({ lat: pos.lat, lng: pos.lng, address: addr });
     setOriginQuery(addr);
+    setNearbyPickupOptions(nearbyCandidates);
     if (w) setWeather(w);
     void preloadLocalGeoIndex(pos.lat, pos.lng);
     void loadNearbyForCoords(pos.lat, pos.lng);
@@ -729,6 +720,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     if (pickOnMapMode === 'origin') {
       setOrigin({ lat, lng, address: addr });
       setOriginQuery(addr);
+      fetchNearbyPickupCandidates(lat, lng)
+        .then(setNearbyPickupOptions)
+        .catch(() => {});
     } else if (pickOnMapMode === 'destination') {
       setDestination({ lat, lng, address: addr });
       setDestQuery(addr);
@@ -769,7 +763,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     unlockAudioContext();
     if (paymentMethod === 'wallet' && !hasEnoughWalletBalance) {
       setErrorMsg(
-        `Saldo 66pay insuficiente (${formatBRL(walletBalance)}). Deposite via Pix na 66pay ou escolha Dinheiro.`
+        `Saldo BorealPay insuficiente (${formatBRL(walletBalance)}). Deposite via Pix na BorealPay ou escolha Dinheiro.`
       );
       return;
     }
@@ -842,6 +836,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       const updated = await cancelRideWithPolicy(activeRide, drvCoords);
       if (updated) onRideUpsert(updated);
       setCancelConfirmOpen(false);
+      setCancelNotice(
+        estimate.feeAmount === 0
+          ? { text: 'Sua corrida foi cancelada sem taxa.', isFree: true }
+          : {
+              text: `Corrida cancelada · Taxa de ${formatBRL(estimate.feeAmount)} aplicada.`,
+              isFree: false,
+            }
+      );
+      window.setTimeout(() => setCancelNotice(null), 4500);
       void logAuditEvent({
         user: currentUser,
         event_type: 'ride_cancelled',
@@ -992,6 +995,37 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       lng: activeDriverPos.lng,
       ts: now,
     };
+
+    if (
+      activeRide.status === 'in_progress' &&
+      !spokenNearDestIdsRef.current.has(activeRide.id)
+    ) {
+      const distDestKm = haversineKm(
+        activeDriverPos.lat,
+        activeDriverPos.lng,
+        activeRide.destination_lat,
+        activeRide.destination_lng
+      );
+      if (distDestKm <= 0.25) {
+        spokenNearDestIdsRef.current.add(activeRide.id);
+        const isDel =
+          activeRide.category === 'delivery_moto' || activeRide.category === 'delivery_car';
+        if (isDel) {
+          speakPtBr('Seu entregador está chegando ao destino final.', true);
+        } else if (activeRide.category === 'moto') {
+          speakPtBr(
+            'Você está chegando ao seu destino. Lembre-se de pegar o seu celular e objetos pessoais antes de sair da moto.',
+            true
+          );
+        } else {
+          speakPtBr(
+            'Você está chegando ao seu destino. Lembre-se de pegar o seu celular e objetos pessoais antes de sair do carro.',
+            true
+          );
+        }
+      }
+    }
+
     const decay = window.setTimeout(() => setDriverSpeedKmh(0), 5000);
     return () => window.clearTimeout(decay);
   }, [activeDriverPos?.lat, activeDriverPos?.lng, activeRide]);
@@ -1075,7 +1109,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         onRecenter={detectMyGps}
       />
 
-      {/* FULL-SCREEN "66 ENTREGA" HUB WHEN DELIVERY TAB IS SELECTED ON IDLE */}
+      {/* FULL-SCREEN "BOREAL ENTREGA" HUB WHEN DELIVERY TAB IS SELECTED ON IDLE */}
       {!activeRide &&
         !destination &&
         !unpaidCompletedRide &&
@@ -1083,8 +1117,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         !pickOnMapMode &&
         !addressScreenOpen &&
         homeTab === 'delivery' && (
-          <div className="fixed inset-0 z-[580] flex flex-col bg-[#FFD100]">
-            {/* Yellow Top Header matching screenshot */}
+          <div className="fixed inset-0 z-[580] flex flex-col aurora-surface-flow">
+            {/* Aurora Boreal Top Header */}
             <div className="flex items-center justify-between gap-3 px-4 pt-safe py-3.5">
               <button
                 type="button"
@@ -1096,13 +1130,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     src={currentUser.avatar_url}
                     name={currentUser.full_name}
                     className="h-11 w-11 rounded-full object-cover border-2 border-white shadow-xs"
-                    fallbackClassName="flex h-11 w-11 items-center justify-center rounded-full bg-[#DBEAFE] text-[#3B82F6] border-2 border-white font-display text-base font-extrabold shadow-xs"
+                    fallbackClassName="flex h-11 w-11 items-center justify-center rounded-full bg-[#ECFDF5] text-[#047857] border-2 border-[#6EE7B7] font-display text-base font-extrabold shadow-xs"
                   />
                   {unreadNotificationsCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-[#FFD100]" />
+                    <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-white" />
                   )}
                 </div>
-                <span className="font-display text-xl font-extrabold text-neutral-950 truncate">
+                <span className="font-display text-xl font-extrabold text-[#0F2421] truncate">
                   Olá, {currentUser.full_name.split(' ')[0]}!
                 </span>
               </button>
@@ -1114,7 +1148,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     setNotificationsOpen(true);
                     void loadNotificationsAndCoupons();
                   }}
-                  className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-950 shadow-xs active:scale-95 transition"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/90 border border-[#2DD4BF]/35 text-[#0F2421] shadow-xs active:scale-95 transition"
                   aria-label="Notificações"
                 >
                   <Bell className="h-5 w-5" />
@@ -1127,7 +1161,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setMenuOpen(true)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-950 shadow-xs active:scale-95 transition"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 border border-[#2DD4BF]/35 text-[#0F2421] shadow-xs active:scale-95 transition"
                   aria-label="Abrir menu"
                 >
                   <Menu className="h-5 w-5" />
@@ -1136,19 +1170,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
 
             {/* White Rounded Sheet Body */}
-            <div className="flex-1 overflow-y-auto rounded-t-[28px] bg-white dark:bg-neutral-950 px-5 pt-7 pb-32 shadow-2xl">
+            <div className="flex-1 overflow-y-auto rounded-t-[28px] bg-white dark:bg-[#081513] px-5 pt-7 pb-32 shadow-2xl border-t border-[#2DD4BF]/35">
               <div className="mx-auto max-w-md space-y-6">
                 {/* Headline + Brand Arrow Lockup */}
                 <div className="text-center space-y-2">
-                  <p className="text-xs font-extrabold tracking-widest text-neutral-700 dark:text-neutral-300 uppercase">
+                  <p className="text-xs font-extrabold tracking-widest text-[#334E4A] dark:text-[#6EE7B7] uppercase">
                     VOCÊ PRECISA,
                   </p>
-                  <div className="inline-flex items-center justify-center gap-2">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFD100] text-white shadow-xs">
-                      <ArrowRight className="h-5 w-5 stroke-[3] text-neutral-950" />
-                    </span>
-                    <h2 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950 dark:text-white">
-                      66 <span className="font-semibold">Entrega</span>
+                  <div className="inline-flex items-center justify-center gap-2.5">
+                    <BorealLogoMark className="h-9 w-9 rounded-xl shadow-xs" />
+                    <h2 className="font-display text-3xl font-extrabold tracking-tight text-[#0F2421] dark:text-white">
+                      Boreal <span className="font-semibold text-[#047857] dark:text-[#6EE7B7]">Entrega</span>
                     </h2>
                   </div>
                 </div>
@@ -1164,7 +1196,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       setAddressTab('search');
                       setAddressScreenOpen(true);
                     }}
-                    className="group flex flex-col items-center justify-center rounded-3xl bg-neutral-50 dark:bg-neutral-900 p-4 border border-neutral-100 dark:border-neutral-800 hover:border-[#FFD100] active:scale-[0.98] transition"
+                    className="group flex flex-col items-center justify-center rounded-3xl bg-[#F7FBFA] dark:bg-[#0F2421] p-4 border border-[#CCFBF1] dark:border-teal-900 hover:border-[#047857] active:scale-[0.98] transition"
                   >
                     <div className="relative flex h-24 w-full items-center justify-center">
                       <img
@@ -1172,11 +1204,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         alt="Entrega Moto"
                         className="h-20 w-28 object-contain"
                       />
-                      <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#D99B66] text-amber-950 shadow-sm border border-white">
+                      <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm border border-[#6EE7B7]">
                         <Package className="h-4 w-4" />
                       </span>
                     </div>
-                    <span className="mt-1 text-xs font-extrabold text-neutral-900 dark:text-white">
+                    <span className="mt-1 text-xs font-extrabold text-[#0F2421] dark:text-white">
                       Moto Entrega
                     </span>
                   </button>
@@ -1190,7 +1222,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       setAddressTab('search');
                       setAddressScreenOpen(true);
                     }}
-                    className="group flex flex-col items-center justify-center rounded-3xl bg-neutral-50 dark:bg-neutral-900 p-4 border border-neutral-100 dark:border-neutral-800 hover:border-[#FFD100] active:scale-[0.98] transition"
+                    className="group flex flex-col items-center justify-center rounded-3xl bg-[#F7FBFA] dark:bg-[#0F2421] p-4 border border-[#CCFBF1] dark:border-teal-900 hover:border-[#047857] active:scale-[0.98] transition"
                   >
                     <div className="relative flex h-24 w-full items-center justify-center">
                       <img
@@ -1198,11 +1230,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         alt="Entrega Carro"
                         className="h-20 w-28 object-contain"
                       />
-                      <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#D99B66] text-amber-950 shadow-sm border border-white">
+                      <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm border border-[#6EE7B7]">
                         <Package className="h-4 w-4" />
                       </span>
                     </div>
-                    <span className="mt-1 text-xs font-extrabold text-neutral-900 dark:text-white">
+                    <span className="mt-1 text-xs font-extrabold text-[#0F2421] dark:text-white">
                       Carro Entrega
                     </span>
                   </button>
@@ -1300,12 +1332,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <ArrowLeft className="h-5 w-5" />
             </button>
 
-            <div className="pointer-events-auto flex min-w-0 flex-1 items-center justify-between gap-2 rounded-full bg-white dark:bg-neutral-900 px-3.5 py-2 shadow-lg border border-neutral-200 dark:border-neutral-700">
+            <div className="pointer-events-auto flex min-w-0 flex-1 items-center justify-between gap-2 rounded-full bg-white/95 dark:bg-[#0F2421]/95 px-3.5 py-2 shadow-lg border border-[#2DD4BF]/35">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FFD100]">
-                  <span className="h-2 w-2 rounded-full bg-neutral-950" />
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#34D399]">
+                  <span className="h-2 w-2 rounded-full bg-[#065F46]" />
                 </span>
-                <span className="truncate text-xs sm:text-sm font-bold text-neutral-900 dark:text-white">
+                <span className="truncate text-xs sm:text-sm font-bold text-[#0F2421] dark:text-white">
                   {activeRide.status === 'in_progress'
                     ? activeRide.destination_address
                     : activeRide.origin_address}
@@ -1314,7 +1346,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSheetMinimized(false)}
-                className="shrink-0 border-l border-neutral-200 dark:border-neutral-700 pl-2.5 text-xs font-extrabold text-neutral-950 dark:text-[#FFD100]"
+                className="shrink-0 border-l border-[#CCFBF1] dark:border-teal-800 pl-2.5 text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7]"
               >
                 {activeRide.status === 'in_progress'
                   ? durationMin > 0
@@ -1375,13 +1407,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => setPickOnMapMode(null)}
-                className="flex min-h-[44px] items-center gap-2 rounded-full bg-neutral-950 px-4 text-xs font-bold text-[#FFD100] shadow-lg"
+                className="aurora-accent-flow flex min-h-[44px] items-center gap-2 rounded-full px-4 text-xs font-bold text-white shadow-lg"
               >
                 <MapPin className="h-4 w-4" />
                 Toque no mapa ({pickOnMapMode === 'origin' ? 'Embarque' : 'Destino'}) · Cancelar
               </button>
             ) : destination && !activeRide ? (
-              <div className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-xs font-extrabold text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 font-mono-num">
+              <div className="flex items-center gap-2 rounded-full bg-white/95 dark:bg-[#0F2421] px-4 py-2 text-xs font-extrabold text-[#0F2421] dark:text-white shadow-lg border border-[#2DD4BF]/40 font-mono-num">
                 <span>
                   {distanceKm} km · {durationMin} min
                 </span>
@@ -1390,17 +1422,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIdleCleanMap((v) => !v)}
-                className="flex min-h-[42px] items-center gap-1.5 rounded-full bg-white dark:bg-neutral-900 px-3.5 text-xs font-extrabold text-neutral-900 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+                className="flex min-h-[42px] items-center gap-1.5 rounded-full bg-white/95 dark:bg-[#0F2421] px-3.5 text-xs font-extrabold text-[#0F2421] dark:text-white shadow-lg border border-[#2DD4BF]/35 active:scale-95 transition"
                 title={idleCleanMap ? t.show_panel : t.clean_map}
               >
                 {idleCleanMap ? (
                   <>
-                    <Eye className="h-4 w-4 text-neutral-950 dark:text-[#FFD100]" />
+                    <Eye className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                     <span>{t.where_to}</span>
                   </>
                 ) : (
                   <>
-                    <EyeOff className="h-4 w-4 text-neutral-600 dark:text-neutral-300" />
+                    <EyeOff className="h-4 w-4 text-[#334E4A] dark:text-neutral-300" />
                     <span>{t.clean_map}</span>
                   </>
                 )}
@@ -1413,7 +1445,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 setNotificationsOpen(true);
                 void loadNotificationsAndCoupons();
               }}
-              className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
+              className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/95 dark:bg-[#0F2421] text-[#0F2421] dark:text-white shadow-lg border border-[#2DD4BF]/35 active:scale-95 transition"
               aria-label="Notificações"
               title="Notificações"
             >
@@ -1430,18 +1462,18 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
         {/* TOP SEARCH CARD ("Para onde vamos?") — SHOWN ON IDLE RIDES TAB */}
         {!activeRide && !destination && !idleCleanMap && !pickOnMapMode && homeTab === 'rides' && (
-          <div className="pointer-events-auto mx-auto max-w-lg rounded-3xl bg-white dark:bg-neutral-900 p-3.5 shadow-2xl border border-neutral-200 dark:border-neutral-800 space-y-2.5">
+          <div className="aurora-border-glow pointer-events-auto mx-auto max-w-lg rounded-3xl bg-white/95 dark:bg-[#0F2421]/95 backdrop-blur-md p-3.5 shadow-2xl space-y-2.5">
             <div className="flex items-center justify-between gap-2 px-1">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 min-w-0">
-                <MapPin className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#334E4A] dark:text-neutral-300 min-w-0">
+                <MapPin className="h-3.5 w-3.5 text-[#047857] dark:text-[#2DD4BF] shrink-0" />
                 <span className="truncate">
                   {gpsFixed
                     ? weather?.city || origin.address || platformConfig.platform_city
                     : t.detecting_gps}
                 </span>
                 {weather && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-[11px] font-extrabold text-neutral-950 dark:text-amber-200 font-mono-num shrink-0">
-                    <Thermometer className="h-3 w-3 text-amber-700 dark:text-amber-400" />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFEFF] dark:bg-cyan-950/60 border border-[#2DD4BF]/40 px-2 py-0.5 text-[11px] font-extrabold text-[#0F2421] dark:text-cyan-200 font-mono-num shrink-0">
+                    <Thermometer className="h-3 w-3 text-[#0891B2] dark:text-[#2DD4BF]" />
                     {weather.temperatureC}°C
                   </span>
                 )}
@@ -1449,12 +1481,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => openWallet('deposit')}
-                className="inline-flex items-center gap-1.5 rounded-full bg-neutral-950 dark:bg-neutral-800 px-3 py-1 text-[11px] font-extrabold text-[#FFD100] shrink-0 active:scale-95 transition border border-neutral-800 dark:border-neutral-700"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF5] dark:bg-teal-950/70 px-3 py-1 text-[11px] font-extrabold text-[#065F46] dark:text-[#6EE7B7] shrink-0 active:scale-95 transition border border-[#34D399]/60"
                 title={t.wallet_title}
               >
-                <Wallet className="h-3.5 w-3.5" />
+                <Wallet className="h-3.5 w-3.5 text-[#047857] dark:text-[#6EE7B7]" />
                 <span className="font-mono-num">{t.wallet_balance}: {formatBRL(walletBalance)}</span>
-                <span className="text-white/80">· +{t.deposit}</span>
+                <span className="text-[#047857] dark:text-[#2DD4BF]">· +{t.deposit}</span>
               </button>
             </div>
 
@@ -1483,12 +1515,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             )}
 
             {unpaidCompletedWalletRide && (
-              <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#FFD100] bg-neutral-950 px-3 py-2.5 text-white shadow-sm">
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#2DD4BF] bg-[#ECFDF5] dark:bg-teal-950/60 px-3 py-2.5 text-[#0F2421] dark:text-white shadow-sm">
                 <div className="min-w-0">
-                  <p className="text-xs font-extrabold text-[#FFD100]">
-                    Corrida finalizada · Confirmar pagamento 66pay
+                  <p className="text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7]">
+                    Corrida finalizada · Confirmar pagamento BorealPay
                   </p>
-                  <p className="text-[11px] text-neutral-300 font-mono-num">
+                  <p className="text-[11px] text-[#334E4A] dark:text-neutral-300 font-mono-num">
                     {formatBRL(
                       unpaidCompletedWalletRide.final_fare ?? unpaidCompletedWalletRide.estimated_fare
                     )}{' '}
@@ -1498,20 +1530,20 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setQrScannerRide(unpaidCompletedWalletRide)}
-                  className="min-h-[38px] shrink-0 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950"
+                  className="aurora-accent-flow min-h-[38px] shrink-0 rounded-xl px-3 text-xs font-extrabold text-white"
                 >
-                  Ler QR 66pay
+                  Ler QR BorealPay
                 </button>
               </div>
             )}
 
             {!unpaidCompletedWalletRide && unpaidCompletedPixRide && (
-              <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#2DD4BF]/60 bg-[#ECFEFF] dark:bg-cyan-950/40 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs font-extrabold text-neutral-950 dark:text-white">
+                  <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
                     Corrida finalizada · Pagamento Pix pendente
                   </p>
-                  <p className="text-[11px] text-neutral-700 dark:text-neutral-300 font-mono-num">
+                  <p className="text-[11px] text-[#334E4A] dark:text-neutral-300 font-mono-num">
                     {formatBRL(
                       unpaidCompletedPixRide.final_fare ?? unpaidCompletedPixRide.estimated_fare
                     )}
@@ -1520,7 +1552,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPixModalRide(unpaidCompletedPixRide)}
-                  className="min-h-[38px] shrink-0 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950"
+                  className="aurora-accent-flow min-h-[38px] shrink-0 rounded-xl px-3 text-xs font-extrabold text-white"
                 >
                   Pagar Pix
                 </button>
@@ -1528,12 +1560,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             )}
 
             {!unpaidCompletedWalletRide && !unpaidCompletedPixRide && unpaidCompletedCashRide && (
-              <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#2DD4BF]/60 bg-[#ECFDF5] dark:bg-teal-950/40 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs font-extrabold text-neutral-950 dark:text-white">
+                  <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
                     Corrida finalizada · Pagamento em Dinheiro
                   </p>
-                  <p className="text-[11px] text-neutral-700 dark:text-neutral-300">
+                  <p className="text-[11px] text-[#334E4A] dark:text-neutral-300">
                     Pague {formatBRL(unpaidCompletedCashRide.final_fare ?? unpaidCompletedCashRide.estimated_fare)} ao motorista ou escolha outra opção abaixo.
                   </p>
                 </div>
@@ -1545,17 +1577,83 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         prev.filter((id) => id !== unpaidCompletedCashRide.id)
                       )
                     }
-                    className="min-h-[36px] shrink-0 rounded-xl bg-[#FFD100] px-2.5 text-[11px] font-extrabold text-neutral-950"
+                    className="aurora-accent-flow min-h-[36px] shrink-0 rounded-xl px-2.5 text-[11px] font-extrabold text-white"
                   >
                     Opções
                   </button>
                 ) : (
-                  <Clock className="h-4 w-4 text-amber-700 dark:text-amber-400 shrink-0 animate-pulse" />
+                  <Clock className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0 animate-pulse" />
                 )}
               </div>
             )}
 
-            {/* PRIMARY TOP SEARCH TRIGGER */}
+            {/* EXACT GPS EMBARQUE + 1-TAP NEARBY PLACE CHIPS */}
+            {gpsFixed && (
+              <div className="space-y-1.5 px-0.5">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSearchField('origin');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  >
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 ring-2 ring-emerald-500/25" />
+                    <span className="truncate font-bold text-[#0F2421] dark:text-neutral-200">
+                      Embarque: {origin.address || t.current_location}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSearchField('origin');
+                      setAddressTab('search');
+                      setAddressScreenOpen(true);
+                    }}
+                    className="shrink-0 text-[11px] font-extrabold text-[#047857] dark:text-[#6EE7B7] hover:underline"
+                  >
+                    Editar
+                  </button>
+                </div>
+
+                {nearbyPickupOptions.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                    {nearbyPickupOptions.map((opt, idx) => {
+                      const shortName = opt.address.split('·')[0].trim();
+                      const isSelected = origin.address
+                        .toLowerCase()
+                        .startsWith(shortName.toLowerCase());
+                      return (
+                        <button
+                          key={`${opt.lat}-${opt.lng}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            setOrigin({
+                              lat: opt.lat,
+                              lng: opt.lng,
+                              address: opt.address,
+                            });
+                            setOriginQuery(opt.address);
+                          }}
+                          className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
+                            isSelected
+                              ? 'border-[#047857] bg-[#ECFDF5] dark:bg-emerald-950/50 text-[#065F46] dark:text-emerald-200'
+                              : 'border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-[#081513] text-[#334E4A] dark:text-neutral-200 hover:border-[#047857]'
+                          }`}
+                        >
+                          <MapPin className="h-3 w-3 shrink-0 text-[#047857] dark:text-[#6EE7B7]" />
+                          <span className="max-w-[140px] truncate">{shortName}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PRIMARY TOP SEARCH TRIGGER (AURORA BOREAL LIGHT WAVE) */}
             <button
               type="button"
               onClick={() => {
@@ -1563,12 +1661,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 setAddressTab('search');
                 setAddressScreenOpen(true);
               }}
-              className="flex min-h-[50px] w-full items-center gap-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 px-3.5 text-left hover:bg-neutral-200/70 dark:hover:bg-neutral-700 active:scale-[0.99] transition"
+              className="aurora-search-trigger flex min-h-[52px] w-full items-center gap-3 rounded-2xl px-3.5 text-left"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 shrink-0">
+              <span className="aurora-accent-flow flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm shrink-0">
                 <Search className="h-4 w-4" />
               </span>
-              <span className="font-display text-base sm:text-lg font-extrabold text-neutral-950 dark:text-white">
+              <span className="font-display text-base sm:text-lg font-extrabold text-[#0F2421] dark:text-white">
                 {t.where_to}
               </span>
             </button>
@@ -1584,14 +1682,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   setAddressTab('search');
                   setAddressScreenOpen(true);
                 }}
-                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-[#081513] py-2 px-1 text-center hover:border-[#047857]"
               >
                 <img
                   src={resolveCategoryVehicleImage('pop', platformConfig)}
                   alt={t.rides_tab}
                   className="h-7 w-9 object-contain"
                 />
-                <span className="text-[10px] font-extrabold text-neutral-900 dark:text-neutral-100 truncate w-full">{t.rides_tab}</span>
+                <span className="text-[10px] font-extrabold text-[#0F2421] dark:text-neutral-100 truncate w-full">{t.rides_tab}</span>
               </button>
 
               <button
@@ -1603,14 +1701,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   setAddressTab('search');
                   setAddressScreenOpen(true);
                 }}
-                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-[#081513] py-2 px-1 text-center hover:border-[#047857]"
               >
                 <img
                   src={resolveCategoryVehicleImage('delivery_moto', platformConfig)}
                   alt={t.deliveries_tab}
                   className="h-7 w-9 object-contain"
                 />
-                <span className="text-[10px] font-extrabold text-neutral-900 dark:text-neutral-100 truncate w-full">{t.deliveries_tab}</span>
+                <span className="text-[10px] font-extrabold text-[#0F2421] dark:text-neutral-100 truncate w-full">{t.deliveries_tab}</span>
               </button>
 
               <button
@@ -1622,10 +1720,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     setSettingsOpen(true);
                   }
                 }}
-                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-[#081513] py-2 px-1 text-center hover:border-[#047857]"
               >
-                <Home className="h-4 w-4 text-neutral-800 dark:text-neutral-200" />
-                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200 truncate w-full">{t.home_label}</span>
+                <Home className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
+                <span className="text-[10px] font-bold text-[#0F2421] dark:text-neutral-200 truncate w-full">{t.home_label}</span>
               </button>
 
               <button
@@ -1637,10 +1735,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     setSettingsOpen(true);
                   }
                 }}
-                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-[#081513] py-2 px-1 text-center hover:border-[#047857]"
               >
-                <Briefcase className="h-4 w-4 text-neutral-800 dark:text-neutral-200" />
-                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200 truncate w-full">{t.work_label}</span>
+                <Briefcase className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
+                <span className="text-[10px] font-bold text-[#0F2421] dark:text-neutral-200 truncate w-full">{t.work_label}</span>
               </button>
 
               <button
@@ -1649,17 +1747,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   setAddressTab('favorites');
                   setAddressScreenOpen(true);
                 }}
-                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 py-2 px-1 text-center hover:border-neutral-950 dark:hover:border-[#FFD100]"
+                className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-[#081513] py-2 px-1 text-center hover:border-[#047857]"
               >
-                <Star className="h-4 w-4 text-neutral-800 dark:text-neutral-200" />
-                <span className="text-[10px] font-bold text-neutral-800 dark:text-neutral-200 truncate w-full">{t.favorites_label}</span>
+                <Star className="h-4 w-4 text-[#0891B2] dark:text-[#2DD4BF]" />
+                <span className="text-[10px] font-bold text-[#0F2421] dark:text-neutral-200 truncate w-full">{t.favorites_label}</span>
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* FLOATING BOTTOM NAVIGATION PILL (Corrida | Entrega | 66pay) ON IDLE SCREEN */}
+      {/* FLOATING BOTTOM NAVIGATION PILL (Corrida | Entrega | BorealPay) ON IDLE SCREEN */}
       {!activeRide &&
         !destination &&
         !unpaidCompletedRide &&
@@ -1669,7 +1767,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           <div className="pointer-events-none fixed bottom-4 left-0 right-0 z-[610] flex justify-center px-4 pb-safe">
             <nav
               aria-label="Navegação principal"
-              className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md px-3 py-1.5 shadow-2xl border border-neutral-200/80 dark:border-neutral-800"
+              className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 dark:bg-[#0F2421]/95 backdrop-blur-md px-3 py-1.5 shadow-2xl border border-[#2DD4BF]/40"
             >
               <button
                 type="button"
@@ -1682,8 +1780,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 }}
                 className={`flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 transition active:scale-95 ${
                   homeTab === 'rides'
-                    ? 'bg-[#FFD100] text-neutral-950 shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    ? 'aurora-accent-flow text-white shadow-sm'
+                    : 'text-[#334E4A] dark:text-neutral-300 hover:bg-[#ECFDF5] dark:hover:bg-teal-950/60'
                 }`}
               >
                 <Car className="h-5 w-5" />
@@ -1703,8 +1801,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 }}
                 className={`flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 transition active:scale-95 ${
                   homeTab === 'delivery'
-                    ? 'bg-[#FFD100] text-neutral-950 shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    ? 'aurora-accent-flow text-white shadow-sm'
+                    : 'text-[#334E4A] dark:text-neutral-300 hover:bg-[#ECFDF5] dark:hover:bg-teal-950/60'
                 }`}
               >
                 <Package className="h-5 w-5" />
@@ -1716,11 +1814,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => openWallet('deposit')}
-                className="flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition active:scale-95"
+                className="flex min-w-[74px] flex-col items-center justify-center rounded-full px-3 py-1.5 text-[#047857] dark:text-[#6EE7B7] hover:bg-[#ECFDF5] dark:hover:bg-teal-950/60 transition active:scale-95"
               >
                 <DollarSign className="h-5 w-5" />
                 <span className="mt-0.5 text-[11px] font-extrabold leading-none">
-                  66pay
+                  BorealPay
                 </span>
               </button>
             </nav>
@@ -1752,7 +1850,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               onClick={() => setSheetMinimized(false)}
               className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-950 font-mono-num text-xs font-extrabold text-[#FFD100]">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#047857] font-mono-num text-xs font-extrabold text-white">
                 {isDeliveryActive && activeRide.require_pin === false ? 'OK' : activeRide.pin_code}
               </span>
               <div className="min-w-0">
@@ -1760,7 +1858,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   {activeRide.driver?.driver?.vehicle_plate || 'Veículo'} ·{' '}
                   {activeRide.driver?.full_name.split(' ')[0]}
                 </p>
-                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 truncate">
+                <p className="text-[11px] font-semibold text-[#047857] dark:text-[#6EE7B7] truncate">
                   {activeRide.status === 'arrived'
                     ? passengerWaitingStats.isCharging
                       ? `Espera +${formatBRL(passengerWaitingStats.waitingFee)}`
@@ -1785,12 +1883,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => setChatOpen(true)}
-                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-950 text-[#FFD100] active:scale-95"
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#ECFDF5] border border-[#6EE7B7] text-[#047857] active:scale-95"
                 aria-label="Abrir chat"
               >
                 <MessageSquare className="h-4 w-4" />
                 {currentChatMessages.length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#FFD100] px-1 text-[9px] font-extrabold text-neutral-950 font-mono-num">
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#047857] px-1 text-[9px] font-extrabold text-white font-mono-num">
                     {currentChatMessages.length}
                   </span>
                 )}
@@ -1798,7 +1896,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSheetMinimized(false)}
-                className="flex h-10 items-center gap-1 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950 active:scale-95"
+                className="aurora-accent-flow flex h-10 items-center gap-1 rounded-xl px-3 text-xs font-extrabold text-white active:scale-95"
                 aria-label="Expandir painel"
               >
                 <ChevronUp className="h-4 w-4" />
@@ -1881,7 +1979,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     }}
                     className={`min-h-[38px] rounded-xl text-xs font-extrabold transition ${
                       serviceTab === 'rides'
-                        ? 'bg-white dark:bg-neutral-950 text-neutral-950 dark:text-[#FFD100] shadow-xs'
+                        ? 'bg-white dark:bg-neutral-950 text-[#047857] dark:text-[#6EE7B7] shadow-xs'
                         : 'text-neutral-600 dark:text-neutral-300'
                     }`}
                   >
@@ -1897,7 +1995,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     }}
                     className={`min-h-[38px] rounded-xl text-xs font-extrabold transition ${
                       serviceTab === 'delivery'
-                        ? 'bg-white dark:bg-neutral-950 text-neutral-950 dark:text-[#FFD100] shadow-xs'
+                        ? 'bg-white dark:bg-neutral-950 text-[#047857] dark:text-[#6EE7B7] shadow-xs'
                         : 'text-neutral-600 dark:text-neutral-300'
                     }`}
                   >
@@ -1928,8 +2026,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         key={cat.category}
                         className={`rounded-2xl border-2 transition ${
                           selected
-                            ? 'border-neutral-950 dark:border-[#FFD100] bg-[#FFD100]/15'
-                            : 'border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-800/60 hover:border-neutral-300 dark:hover:border-neutral-600'
+                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#ECFDF5]/85 dark:bg-emerald-950/35'
+                            : 'border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-800/60 hover:border-[#6EE7B7] dark:hover:border-emerald-700'
                         }`}
                       >
                         <button
@@ -2001,7 +2099,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                                     Number((activeNegociaFare + 1).toFixed(2))
                                   )
                                 }
-                                className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 active:scale-95"
+                                className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] active:scale-95"
                                 aria-label="Aumentar oferta"
                               >
                                 <Plus className="h-4 w-4" />
@@ -2021,7 +2119,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       value={deliveryNotes}
                       onChange={(e) => setDeliveryNotes(e.target.value)}
                       placeholder="Instruções de coleta ou destinatário (opcional)"
-                      className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                      className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                     />
                     <label className="flex items-center justify-between rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 cursor-pointer">
                       <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
@@ -2106,12 +2204,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   </div>
                 )}
 
-                {/* Payment Method: EXCLUSIVAMENTE 66pay (Saldo na Conta) vs Dinheiro */}
+                {/* Payment Method: EXCLUSIVAMENTE BorealPay (Saldo na Conta) vs Dinheiro */}
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     {
                       id: 'wallet' as PaymentMethod,
-                      label: '66pay (Saldo na Conta)',
+                      label: 'BorealPay (Saldo na Conta)',
                       sub: `Disponível: ${formatBRL(walletBalance)}`,
                       icon: Wallet,
                     },
@@ -2134,7 +2232,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         }}
                         className={`min-h-[58px] flex flex-col items-center justify-center gap-0.5 rounded-xl border px-2.5 py-2 transition ${
                           active
-                            ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-sm'
+                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] shadow-sm'
                             : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200'
                         }`}
                       >
@@ -2144,7 +2242,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         </div>
                         <span
                           className={`text-[10px] font-mono-num font-bold ${
-                            active ? 'text-white/85 dark:text-neutral-800' : 'text-neutral-500 dark:text-neutral-400'
+                            active ? 'text-white/90 dark:text-[#0F2421]/80' : 'text-neutral-500 dark:text-neutral-400'
                           }`}
                         >
                           {pm.sub}
@@ -2155,19 +2253,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </div>
 
                 {paymentMethod === 'wallet' && !hasEnoughWalletBalance && (
-                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#6EE7B7] dark:border-emerald-800 bg-[#ECFDF5] dark:bg-emerald-950/40 px-3 py-2.5 text-xs">
                     <div className="min-w-0">
-                      <p className="font-extrabold text-amber-950 dark:text-amber-200">
-                        Saldo 66pay insuficiente ({formatBRL(walletBalance)})
+                      <p className="font-extrabold text-[#065F46] dark:text-[#6EE7B7]">
+                        Saldo BorealPay insuficiente ({formatBRL(walletBalance)})
                       </p>
-                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                      <p className="text-[11px] text-[#047857] dark:text-emerald-300">
                         {depositWindow.isOpen ? (
                           <>
                             Deposite{' '}
                             <strong className="font-mono-num">
                               {formatBRL(totalFareWithDebt - walletBalance)}
                             </strong>{' '}
-                            na carteira 66pay via Pix ou pague em Dinheiro.
+                            na carteira BorealPay via Pix ou pague em Dinheiro.
                           </>
                         ) : (
                           <>
@@ -2182,9 +2280,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       <button
                         type="button"
                         onClick={() => openWallet('deposit')}
-                        className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-[11px] font-extrabold text-[#FFD100]"
+                        className="min-h-[38px] shrink-0 rounded-xl bg-[#047857] px-3 text-[11px] font-extrabold text-white"
                       >
-                        Depositar 66pay
+                        Depositar BorealPay
                       </button>
                     ) : (
                       <button
@@ -2202,7 +2300,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   type="button"
                   onClick={handleRequestRide}
                   disabled={submitting || (paymentMethod === 'wallet' && !hasEnoughWalletBalance)}
-                  className="min-h-[52px] w-full rounded-2xl bg-[#FFD100] text-base font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition disabled:opacity-50"
+                  className="aurora-accent-flow min-h-[52px] w-full rounded-2xl text-base font-extrabold text-white shadow-md active:scale-[0.98] transition disabled:opacity-50"
                 >
                   {submitting
                     ? t.requesting_btn
@@ -2210,7 +2308,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </button>
               </div>
             ) : unpaidCompletedRide && !dismissedCompletedPayIds.includes(unpaidCompletedRide.id) ? (
-              /* POST-RIDE CHECKOUT: 66PAY QR/CHAVE OR DINHEIRO */
+              /* POST-RIDE CHECKOUT: BOREALPAY QR/CHAVE OR DINHEIRO */
               (() => {
                 const unpaidFare = Number(
                   (unpaidCompletedRide.final_fare ?? unpaidCompletedRide.estimated_fare).toFixed(2)
@@ -2234,7 +2332,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           </span>
                           <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white leading-tight">
                             {unpaidCompletedRide.payment_method === 'wallet'
-                              ? 'Confirmar pagamento 66pay'
+                              ? 'Confirmar pagamento BorealPay'
                               : 'Como você quer pagar a corrida?'}
                           </h3>
                         </div>
@@ -2265,7 +2363,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           Para: {unpaidCompletedRide.destination_address}
                         </p>
                       </div>
-                      <span className="font-mono-num text-xl font-extrabold text-neutral-950 dark:text-[#FFD100] shrink-0">
+                      <span className="font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#6EE7B7] shrink-0">
                         {formatBRL(unpaidFare)}
                       </span>
                     </div>
@@ -2277,10 +2375,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     )}
 
                     {unpaidCompletedRide.payment_method === 'wallet' && (
-                      <div className="rounded-2xl border border-[#FFD100]/60 bg-[#FFD100]/15 p-3 text-xs text-neutral-900 dark:text-amber-100">
-                        <p className="font-extrabold">Valor reservado na sua carteira 66pay</p>
+                      <div className="rounded-2xl border border-[#6EE7B7] bg-[#ECFDF5] dark:bg-emerald-950/40 p-3 text-xs text-[#0F2421] dark:text-emerald-100">
+                        <p className="font-extrabold">Valor reservado na sua carteira BorealPay</p>
                         <p className="mt-0.5 text-[11px]">
-                          Escaneie o QR Code 66pay na tela do motorista (ou informe a Chave 66pay dele) para transferir o valor e emitir seu comprovante.
+                          Escaneie o QR Code BorealPay na tela do motorista (ou informe a Chave BorealPay dele) para transferir o valor e emitir seu comprovante.
                         </p>
                       </div>
                     )}
@@ -2293,7 +2391,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                             Pagamento em Dinheiro selecionado
                           </p>
                           <p className="mt-0.5 text-emerald-800 dark:text-emerald-300">
-                            Pague <strong className="font-mono-num">{formatBRL(unpaidFare)}</strong> em dinheiro diretamente ao motorista (aguardando confirmação dele), ou conclua via QR 66pay abaixo.
+                            Pague <strong className="font-mono-num">{formatBRL(unpaidFare)}</strong> em dinheiro diretamente ao motorista (aguardando confirmação dele), ou conclua via QR BorealPay abaixo.
                           </p>
                         </div>
                       </div>
@@ -2306,13 +2404,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         onClick={() => setQrScannerRide(unpaidCompletedRide)}
                         className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-2xl border p-2 text-center transition active:scale-[0.98] disabled:opacity-55 ${
                           canPayWithWallet
-                            ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-sm'
+                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] shadow-sm'
                             : 'border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'
                         }`}
                       >
                         <QrCode className="h-5 w-5 shrink-0" />
                         <span className="text-xs font-extrabold leading-tight">
-                          Ler QR / Pagar 66pay
+                          Ler QR / Pagar BorealPay
                         </span>
                         <span className="font-mono-num text-[10px] font-bold opacity-85">
                           {unpaidCompletedRide.payment_method === 'wallet'
@@ -2340,19 +2438,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     </div>
 
                     {!canPayWithWallet && (
-                      <div className="flex items-center justify-between gap-2 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-[11px]">
-                        <span className="font-semibold text-amber-950 dark:text-amber-200">
+                      <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#6EE7B7] dark:border-emerald-800 bg-[#ECFDF5] dark:bg-emerald-950/30 px-3 py-2 text-[11px]">
+                        <span className="font-semibold text-[#065F46] dark:text-[#6EE7B7]">
                           {depositWindow.isOpen
-                            ? `Saldo 66pay insuficiente (${formatBRL(walletBalance)}).`
+                            ? `Saldo BorealPay insuficiente (${formatBRL(walletBalance)}).`
                             : `Depósitos Pix das ${depositWindow.startTime} às ${depositWindow.endTime}. Selecione Dinheiro para pagar ao motorista.`}
                         </span>
                         {depositWindow.isOpen ? (
                           <button
                             type="button"
                             onClick={() => openWallet('deposit')}
-                            className="shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1.5 font-extrabold text-[#FFD100] dark:text-neutral-950"
+                            className="shrink-0 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1.5 font-extrabold text-white dark:text-[#0F2421]"
                           >
-                            Depositar 66pay
+                            Depositar BorealPay
                           </button>
                         ) : (
                           <button
@@ -2374,7 +2472,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             /* MODERN CLEAN SEARCHING POP-UP */
             <div className="space-y-4 py-1">
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
-                <div className="h-full w-1/2 rounded-full bg-[#FFD100] animate-pulse" />
+                <div className="h-full w-1/2 rounded-full aurora-accent-flow animate-pulse" />
               </div>
 
               <div className="flex items-center justify-between gap-3">
@@ -2386,12 +2484,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {t.finding_driver_sub}
                   </p>
                 </div>
-                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800">
-                  <span className="absolute inset-0 rounded-full bg-[#FFD100]/45 animate-radar-ring" />
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#ECFDF5] dark:bg-emerald-950/60 border border-[#6EE7B7] dark:border-emerald-800">
+                  <span className="absolute inset-0 rounded-full bg-[#2DD4BF]/40 animate-radar-ring" />
                   {isDeliveryActive ? (
-                    <Package className="relative h-6 w-6 text-amber-600 dark:text-amber-400" />
+                    <Package className="relative h-6 w-6 text-[#047857] dark:text-[#6EE7B7]" />
                   ) : (
-                    <Car className="relative h-6 w-6 text-neutral-900 dark:text-[#FFD100]" />
+                    <Car className="relative h-6 w-6 text-[#047857] dark:text-[#6EE7B7]" />
                   )}
                 </div>
               </div>
@@ -2412,7 +2510,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <span className="font-mono-num text-base font-extrabold text-neutral-950 dark:text-[#FFD100] shrink-0 pl-2">
+                <span className="font-mono-num text-base font-extrabold text-[#047857] dark:text-[#6EE7B7] shrink-0 pl-2">
                   {formatBRL(activeRide.estimated_fare)}
                 </span>
               </div>
@@ -2426,7 +2524,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             </div>
           ) : (
-            /* MODERN MATCHED / LIVE TRACKING BOTTOM SHEET (SCREENSHOT-FIDELITY) */
+            /* MODERN MATCHED / LIVE TRACKING BOTTOM SHEET */
             (() => {
               const drvName = activeRide.driver?.full_name || 'Parceiro';
               const drvRating = (activeRide.driver?.rating_avg ?? 5).toFixed(1);
@@ -2460,7 +2558,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           src={activeRide.driver?.avatar_url}
                           name={drvName}
                           className="h-14 w-14 rounded-full object-cover border-2 border-white dark:border-neutral-800 shadow-sm shrink-0"
-                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg shrink-0"
+                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-extrabold text-lg shrink-0"
                         />
                         <div className="min-w-0 space-y-1">
                           <p className="text-base font-extrabold uppercase text-neutral-950 dark:text-white truncate leading-tight">
@@ -2468,15 +2566,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           </p>
                           <div className="flex items-center gap-1 text-xs font-bold text-neutral-700 dark:text-neutral-300">
                             <span className="font-mono-num">{drvRating}</span>
-                            <Star className="h-3.5 w-3.5 fill-neutral-950 dark:fill-[#FFD100] text-neutral-950 dark:text-[#FFD100]" />
+                            <Star className="h-3.5 w-3.5 fill-[#047857] dark:fill-[#6EE7B7] text-[#047857] dark:text-[#6EE7B7]" />
                             {drvTrips > 0 && (
                               <span className="text-neutral-500 dark:text-neutral-400 font-mono-num">
                                 · {drvTrips} avaliações
                               </span>
                             )}
                           </div>
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FEF9C3] dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-bold text-neutral-900 dark:text-amber-200">
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD100] text-white">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF5] dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-bold text-[#065F46] dark:text-[#6EE7B7]">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#047857] text-white">
                               <Star className="h-2.5 w-2.5 fill-white text-white" />
                             </span>
                             {isDeliveryActive ? 'Excelente entregador' : 'Excelente motorista'}
@@ -2512,7 +2610,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {/* Payment Method Row */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-lg bg-[#FFD100]/25 text-amber-600 dark:text-[#FFD100]">
+                        <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] dark:bg-emerald-950/60 text-[#047857] dark:text-[#6EE7B7]">
                           {activeRide.payment_method === 'wallet' ? (
                             <Wallet className="h-4 w-4" />
                           ) : (
@@ -2521,7 +2619,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         </span>
                         <span className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate">
                           {activeRide.payment_method === 'wallet'
-                            ? '66pay (Saldo na Conta)'
+                            ? 'BorealPay (Saldo na Conta)'
                             : activeRide.payment_method === 'pix'
                             ? 'Pix'
                             : 'Dinheiro'}
@@ -2533,16 +2631,16 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         <button
                           type="button"
                           onClick={() => setQrScannerRide(activeRide)}
-                          className="shrink-0 rounded-full bg-[#FFD100] px-3.5 py-1.5 text-xs font-extrabold text-neutral-950 shadow-xs active:scale-95"
+                          className="shrink-0 rounded-full bg-[#047857] dark:bg-[#2DD4BF] px-3.5 py-1.5 text-xs font-extrabold text-white dark:text-[#0F2421] shadow-xs active:scale-95"
                         >
-                          Ler QR 66pay
+                          Ler QR BorealPay
                         </button>
                       ) : activeRide.payment_method === 'pix' &&
                         activeRide.payment_status === 'pending' ? (
                         <button
                           type="button"
                           onClick={() => setPixModalRide(activeRide)}
-                          className="shrink-0 rounded-full bg-[#FFD100] px-3.5 py-1.5 text-xs font-extrabold text-neutral-950 shadow-xs active:scale-95"
+                          className="shrink-0 rounded-full bg-[#047857] dark:bg-[#2DD4BF] px-3.5 py-1.5 text-xs font-extrabold text-white dark:text-[#0F2421] shadow-xs active:scale-95"
                         >
                           Pagar Pix
                         </button>
@@ -2557,14 +2655,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       )}
                     </div>
 
-                    {/* Paid 66pay Receipt Banner if already settled */}
+                    {/* Paid BorealPay Receipt Banner if already settled */}
                     {activeRide.payment_method === 'wallet' &&
                       (activeRide.payment_status === 'paid' ||
                         activeRide.payment_status === 'paid_wallet') && (
                         <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
                           <span className="flex items-center gap-1.5">
                             <Wallet className="h-4 w-4" />
-                            Pago via 66pay!
+                            Pago via BorealPay!
                           </span>
                           <button
                             type="button"
@@ -2580,21 +2678,21 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                                     ride_id: activeRide.id,
                                     amount: -(activeRide.final_fare ?? activeRide.estimated_fare),
                                     type: 'ride_debit',
-                                    description: `Corrida 66pay #${activeRide.id.slice(-4)} · ${activeRide.destination_address}`,
+                                    description: `Corrida BorealPay #${activeRide.id.slice(-4)} · ${activeRide.destination_address}`,
                                     auth_code: `66PAY-${activeRide.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
                                     sender_name: currentUser.full_name,
                                     recipient_name: drvName,
                                     recipient_key:
                                       activeRide.driver?.pay66_key ||
                                       (activeRide.driver_id
-                                        ? `66-${activeRide.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-                                        : '66pay'),
+                                        ? `BOREAL-${activeRide.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+                                        : 'BorealPay'),
                                     created_at: activeRide.completed_at || activeRide.created_at,
                                   },
                                 });
                               }
                             }}
-                            className="inline-flex items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                            className="inline-flex items-center gap-1 rounded-lg bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
                           >
                             <Receipt className="h-3.5 w-3.5" />
                             Comprovante
@@ -2606,8 +2704,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     <div className="space-y-1 pt-1">
                       <div className="flex items-start gap-3">
                         <div className="flex flex-col items-center pt-1">
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD100]/45">
-                            <span className="h-2 w-2 rounded-full bg-[#FFD100] ring-2 ring-neutral-950/60" />
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#6EE7B7]/45">
+                            <span className="h-2 w-2 rounded-full bg-[#047857] ring-2 ring-[#2DD4BF]/50" />
                           </span>
                           <span className="mt-1 h-5 w-[1.5px] bg-neutral-200 dark:bg-neutral-700" />
                         </div>
@@ -2623,7 +2721,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
                       <div className="flex items-start gap-3">
                         <div className="pt-0.5">
-                          <Flag className="h-4 w-4 fill-neutral-950 text-neutral-950 dark:fill-[#FFD100] dark:text-[#FFD100]" />
+                          <Flag className="h-4 w-4 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-bold text-neutral-950 dark:text-white truncate">
@@ -2767,7 +2865,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           src={activeRide.driver?.avatar_url}
                           name={drvName}
                           className="h-14 w-14 rounded-full object-cover shrink-0"
-                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold text-lg shrink-0"
+                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-extrabold text-lg shrink-0"
                         />
                       </div>
                     </div>
@@ -2782,7 +2880,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         </span>
                         <span className="font-mono-num font-bold text-neutral-950 dark:text-white flex items-center gap-0.5 shrink-0">
                           {drvRating}
-                          <Star className="h-3.5 w-3.5 fill-neutral-950 dark:fill-[#FFD100] text-neutral-950 dark:text-[#FFD100]" />
+                          <Star className="h-3.5 w-3.5 fill-[#047857] dark:fill-[#6EE7B7] text-[#047857] dark:text-[#6EE7B7]" />
                         </span>
                         {drvTrips > 0 && (
                           <span className="text-neutral-500 dark:text-neutral-400 font-mono-num shrink-0">
@@ -2790,13 +2888,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <span className="font-mono-num text-xs font-extrabold text-neutral-950 dark:text-[#FFD100] shrink-0">
+                      <span className="font-mono-num text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7] shrink-0">
                         {formatBRL(activeRide.estimated_fare)}
                       </span>
                     </div>
 
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FEF9C3] dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-bold text-neutral-900 dark:text-amber-200">
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD100] text-white">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF5] dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-bold text-[#065F46] dark:text-[#6EE7B7]">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#047857] text-white">
                         <Star className="h-2.5 w-2.5 fill-white text-white" />
                       </span>
                       {isDeliveryActive ? 'Excelente entregador' : 'Excelente motorista'}
@@ -2849,9 +2947,9 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   {/* Payment Status Badges */}
                   {activeRide.payment_method === 'wallet' &&
                     activeRide.payment_status === 'pending' && (
-                      <div className="flex items-center justify-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 py-2 px-3 text-xs font-extrabold text-amber-900 dark:text-amber-200 text-center">
+                      <div className="flex items-center justify-center gap-2 rounded-xl bg-[#ECFDF5] dark:bg-emerald-950/40 border border-[#6EE7B7] dark:border-emerald-800 py-2 px-3 text-xs font-extrabold text-[#065F46] dark:text-[#6EE7B7] text-center">
                         <Wallet className="h-4 w-4 shrink-0" />
-                        Saldo 66pay reservado · Escaneie o QR Code do motorista ao chegar
+                        Saldo BorealPay reservado · Escaneie o QR Code do motorista ao chegar
                       </div>
                     )}
 
@@ -2860,7 +2958,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setPixModalRide(activeRide)}
-                        className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                        className="aurora-accent-flow flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                       >
                         <QrCode className="h-4 w-4" />
                         Pagar com Pix da Plataforma ({formatBRL(currentFareTotal)})
@@ -2894,16 +2992,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     <button
                       type="button"
                       onClick={handleCancelRide}
-                      className={`min-h-[48px] rounded-2xl border px-3.5 text-xs font-extrabold transition ${
-                        cancelEstimate && !cancelEstimate.isFreeGrace
-                          ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
-                          : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700'
-                      }`}
+                      className="min-h-[48px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs font-extrabold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition"
                     >
                       {cancelEstimate?.isFreeGrace
                         ? `${t.cancel} (${cancelEstimate.remainingFreeSec}s grátis)`
-                        : cancelEstimate
-                        ? `${t.cancel} (${formatBRL(cancelEstimate.feeAmount)})`
                         : t.cancel}
                     </button>
                   </div>
@@ -2935,12 +3027,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
 
             <div className="mt-3 space-y-2.5">
-              <div className="flex items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3.5 py-1.5 focus-within:border-neutral-950 dark:focus-within:border-[#FFD100]">
+              <div className="flex items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3.5 py-1.5 focus-within:border-[#047857] dark:focus-within:border-[#2DD4BF]">
                 {serviceTab === 'delivery' ? (
-                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#00BFA5] bg-white" />
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#047857] bg-white" />
                 ) : (
-                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FFD100]">
-                    <span className="h-2 w-2 rounded-full bg-neutral-950" />
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#6EE7B7]">
+                    <span className="h-2 w-2 rounded-full bg-[#047857]" />
                   </span>
                 )}
                 <input
@@ -2961,12 +3053,43 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 </button>
               </div>
 
+              {activeSearchField === 'origin' && nearbyPickupOptions.length > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {nearbyPickupOptions.map((opt, idx) => {
+                    const shortName = opt.address.split('·')[0].trim();
+                    const isSelected = origin.address
+                      .toLowerCase()
+                      .startsWith(shortName.toLowerCase());
+                    return (
+                      <button
+                        key={`modal-pickup-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          setOrigin({ lat: opt.lat, lng: opt.lng, address: opt.address });
+                          setOriginQuery(opt.address);
+                          setOriginSuggestions([]);
+                          setActiveSearchField('destination');
+                        }}
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
+                          isSelected
+                            ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200'
+                            : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200'
+                        }`}
+                      >
+                        <MapPin className="h-3 w-3 shrink-0 text-emerald-600 dark:text-[#6EE7B7]" />
+                        <span className="max-w-[160px] truncate">{shortName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
-                <div className="flex flex-1 items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-900 px-3.5 py-1.5 focus-within:border-neutral-950 dark:focus-within:border-[#FFD100] focus-within:bg-white dark:focus-within:bg-neutral-900">
+                <div className="flex flex-1 items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-900 px-3.5 py-1.5 focus-within:border-[#047857] dark:focus-within:border-[#2DD4BF] focus-within:bg-white dark:focus-within:bg-neutral-900">
                   {serviceTab === 'delivery' ? (
-                    <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#FF6B00] bg-white" />
+                    <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#0891B2] bg-white" />
                   ) : (
-                    <Flag className="h-4 w-4 shrink-0 fill-neutral-950 text-neutral-950 dark:fill-[#FFD100] dark:text-[#FFD100]" />
+                    <Flag className="h-4 w-4 shrink-0 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
                   )}
                   <input
                     type="text"
@@ -3000,7 +3123,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     setPickOnMapMode('destination');
                   }}
                   title={t.mark_on_map}
-                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-950 dark:text-[#FFD100] hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-[#ECFDF5] dark:bg-emerald-950/50 text-[#047857] dark:text-[#6EE7B7] hover:bg-[#CCFBF1] dark:hover:bg-emerald-900/60"
                 >
                   <MapPin className="h-5 w-5" />
                 </button>
@@ -3040,7 +3163,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 type="button"
                 onClick={() => setAddressTab(addressTab === 'favorites' ? 'search' : 'favorites')}
                 className={`flex min-h-[44px] items-center justify-center gap-1.5 text-xs font-bold ${
-                  addressTab === 'favorites' ? 'text-neutral-950 dark:text-[#FFD100] underline' : 'text-neutral-800 dark:text-neutral-200'
+                  addressTab === 'favorites' ? 'text-[#047857] dark:text-[#6EE7B7] underline' : 'text-neutral-800 dark:text-neutral-200'
                 }`}
               >
                 <Star className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
@@ -3079,7 +3202,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           <p className="text-sm font-bold text-neutral-950 dark:text-white truncate">
                             {item.address.split('·')[0].trim()}
                           </p>
-                          <span className="shrink-0 rounded-md bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold text-neutral-900 dark:text-amber-200">
+                          <span className="shrink-0 rounded-md bg-[#ECFDF5] dark:bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-bold text-[#065F46] dark:text-[#6EE7B7]">
                             {item.categoryLabel}
                           </span>
                         </div>
@@ -3105,7 +3228,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         setAddressScreenOpen(false);
                         setSettingsOpen(true);
                       }}
-                      className="min-h-[44px] rounded-2xl bg-[#FFD100] px-5 text-xs font-extrabold text-neutral-950"
+                      className="aurora-accent-flow min-h-[44px] rounded-2xl px-5 text-xs font-extrabold text-white"
                     >
                       Cadastrar favoritos agora
                     </button>
@@ -3181,7 +3304,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         setActiveSearchField('destination');
                         setDestQuery(chip);
                       }}
-                      className="shrink-0 rounded-full border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3 py-1.5 text-xs font-bold text-neutral-800 dark:text-neutral-200 hover:border-neutral-950 dark:hover:border-[#FFD100] active:scale-95 transition"
+                      className="shrink-0 rounded-full border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3 py-1.5 text-xs font-bold text-neutral-800 dark:text-neutral-200 hover:border-[#047857] dark:hover:border-[#2DD4BF] active:scale-95 transition"
                     >
                       {chip}
                     </button>
@@ -3193,7 +3316,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {t.nearby_places_label}
                   </span>
                   {loadingNearby && (
-                    <span className="text-[11px] font-semibold text-amber-600 dark:text-[#FFD100]">
+                    <span className="text-[11px] font-semibold text-[#047857] dark:text-[#6EE7B7]">
                       Carregando...
                     </span>
                   )}
@@ -3279,15 +3402,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <AvatarImage
                   src={currentUser.avatar_url}
                   name={currentUser.full_name}
-                  className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                  fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-900 dark:text-white font-display text-xl font-extrabold shrink-0"
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#2DD4BF] shrink-0"
+                  fallbackClassName="flex h-14 w-14 items-center justify-center rounded-full bg-[#ECFDF5] dark:bg-emerald-950 text-[#047857] dark:text-[#6EE7B7] font-display text-xl font-extrabold shrink-0"
                 />
                 <div>
                   <h3 className="font-display text-xl font-extrabold text-neutral-950 dark:text-white leading-tight">
                     {currentUser.full_name.split(' ')[0]}
                   </h3>
                   <p className="mt-0.5 text-xs font-semibold text-neutral-600 dark:text-neutral-400 flex items-center gap-1">
-                    <Star className="h-3.5 w-3.5 fill-[#FFD100] text-[#F59E0B]" />
+                    <Star className="h-3.5 w-3.5 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
                     <span className="font-mono-num font-bold text-neutral-900 dark:text-white">
                       {currentUser.rating_avg.toFixed(2).replace('.', ',')}
                     </span>
@@ -3320,15 +3443,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 setMenuOpen(false);
                 openWallet('deposit');
               }}
-              className="mt-4 flex w-full items-center justify-between rounded-2xl bg-neutral-950 dark:bg-neutral-950 px-4 py-3 text-left text-white shadow-sm border border-neutral-800"
+              className="aurora-border-glow mt-4 flex w-full items-center justify-between rounded-2xl bg-[#ECFDF5] dark:bg-emerald-950/60 px-4 py-3 text-left text-[#0F2421] dark:text-white shadow-sm border border-[#6EE7B7] dark:border-emerald-700"
             >
               <div>
-                <p className="text-[11px] font-bold text-neutral-400">{t.wallet_title}</p>
-                <p className="font-mono-num text-lg font-extrabold text-[#FFD100]">
+                <p className="text-[11px] font-bold text-[#334E4A] dark:text-[#6EE7B7]">{t.wallet_title}</p>
+                <p className="font-mono-num text-lg font-extrabold text-[#047857] dark:text-[#2DD4BF]">
                   {formatBRL(walletBalance)}
                 </p>
               </div>
-              <span className="rounded-xl bg-[#FFD100] px-3 py-1.5 text-xs font-extrabold text-neutral-950">
+              <span className="aurora-accent-flow rounded-xl px-3 py-1.5 text-xs font-extrabold text-white">
                 {t.deposit} / {t.transfer}
               </span>
             </button>
@@ -3522,7 +3645,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     setInfoModal(null);
                     onLogout();
                   }}
-                  className="min-h-[46px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
+                  className="aurora-accent-flow min-h-[46px] w-full rounded-2xl text-sm font-extrabold text-white"
                 >
                   Ir para tela de cadastro de Motorista
                 </button>
@@ -3574,7 +3697,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
                         {r.payment_method === 'wallet'
-                          ? '66pay'
+                          ? 'BorealPay'
                           : r.payment_method === 'pix'
                           ? 'Pix Plataforma'
                           : 'Dinheiro'}{' '}
@@ -3597,24 +3720,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                                   ride_id: r.id,
                                   amount: -(r.final_fare ?? r.estimated_fare),
                                   type: 'ride_debit',
-                                  description: `Corrida 66pay #${r.id.slice(-4)} · ${r.destination_address}`,
+                                  description: `Corrida BorealPay #${r.id.slice(-4)} · ${r.destination_address}`,
                                   auth_code: `66PAY-${r.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
                                   sender_name: currentUser.full_name,
-                                  recipient_name: r.driver?.full_name || 'Motorista 66pay',
+                                  recipient_name: r.driver?.full_name || 'Motorista BorealPay',
                                   recipient_key:
                                     r.driver?.pay66_key ||
                                     (r.driver_id
-                                      ? `66-${r.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-                                      : '66pay'),
+                                      ? `BOREAL-${r.driver_id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+                                      : 'BorealPay'),
                                   created_at: r.completed_at || r.created_at,
                                 },
                               });
                             }
                           }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
                         >
                           <Receipt className="h-3 w-3" />
-                          Comprovante 66pay
+                          Comprovante BorealPay
                         </button>
                       ) : r.payment_status === 'pending' &&
                         r.status !== 'cancelled' && (
@@ -3632,10 +3755,10 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                                 );
                               }
                             }}
-                            className="rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
+                            className="rounded-lg bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
                           >
                             {r.payment_method === 'wallet'
-                              ? 'Pagar 66pay'
+                              ? 'Pagar BorealPay'
                               : r.payment_method === 'pix'
                               ? 'Pagar Pix'
                               : 'Pagar Corrida'}
@@ -3779,11 +3902,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               ) : (
                 <div className="space-y-1.5">
                   <p>{cancelEstimate.reasonLabel}</p>
-                  <p>
-                    Após 20s do aceite, a taxa inicia em <strong>R$ 4,00</strong> e aumenta conforme a
-                    aproximação e o tempo de deslocamento até <strong>90%</strong> da corrida (máx.{' '}
-                    <strong className="font-mono-num">{formatBRL(cancelEstimate.maxFeeCap)}</strong>).
-                  </p>
+                  {activeRide.status === 'arrived' ? (
+                    <p>
+                      Como o motorista/entregador já chegou ao ponto de embarque, o cancelamento
+                      cobra <strong>100%</strong> do valor da corrida.
+                    </p>
+                  ) : (
+                    <p>
+                      Após os <strong>20 segundos gratuitos</strong> do aceite, com o parceiro já a
+                      caminho, aplica-se a taxa fixa de <strong>R$ 3,00</strong>.
+                    </p>
+                  )}
                   <p className="font-extrabold">
                     Valor repassado integralmente ao motorista/entregador:{' '}
                     <span className="font-mono-num">{formatBRL(cancelEstimate.feeAmount)}</span>
@@ -3859,7 +3988,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             ]);
             if (freshRide) onRideUpsert(freshRide);
             if (freshProfile) onUserUpdated(freshProfile);
-            void playRideAcceptedChime();
+            speakPtBr('Pagamento BorealPay confirmado com sucesso.', true);
           }}
           onClose={() => setQrScannerRide(null)}
         />
@@ -3873,6 +4002,21 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           platformConfig={platformConfig}
           onClose={() => setReceiptModalState(null)}
         />
+      )}
+
+      {cancelNotice && (
+        <div className="pointer-events-none fixed bottom-24 left-0 right-0 z-[1300] flex justify-center px-4">
+          <div
+            className={`pointer-events-auto flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-extrabold shadow-2xl border ${
+              cancelNotice.isFree
+                ? 'bg-emerald-600 text-white border-emerald-500'
+                : 'bg-[#0F2421] text-[#6EE7B7] border-[#047857]'
+            }`}
+          >
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>{cancelNotice.text}</span>
+          </div>
+        </div>
       )}
     </div>
   );

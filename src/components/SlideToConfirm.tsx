@@ -57,34 +57,27 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
 
   const trackBg =
     variant === 'emerald'
-      ? 'bg-emerald-950/90 border-emerald-500/45 shadow-inner'
-      : 'bg-neutral-900 border-neutral-700/80 shadow-inner';
-  const fillBg = variant === 'emerald' ? 'bg-emerald-500/30' : 'bg-[#FFD100]/25';
-  const thumbBg =
-    variant === 'emerald'
-      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-950/40'
-      : 'bg-[#FFD100] text-neutral-950 shadow-md shadow-black/30';
+      ? 'bg-gradient-to-r from-[#047857] to-[#0D9488] border-[#34D399]/70 shadow-lg shadow-emerald-700/20'
+      : 'bg-gradient-to-r from-[#065F46] via-[#047857] to-[#0891B2] border-[#2DD4BF]/65 shadow-lg shadow-teal-700/20';
+  const fillBg = 'bg-white/22';
+  const thumbBg = 'bg-white text-[#047857] shadow-md';
 
   return (
     <div
       ref={trackRef}
-      className={`relative h-[60px] w-full select-none overflow-hidden rounded-2xl border ${trackBg} ${
+      className={`relative h-[62px] w-full select-none overflow-hidden rounded-full border ${trackBg} ${
         disabled ? 'opacity-50' : ''
       }`}
     >
       <div
-        className={`absolute inset-y-0 left-0 ${fillBg} transition-none`}
+        className={`absolute inset-y-0 left-0 rounded-full ${fillBg} transition-none`}
         style={{ width: `${Math.round(progress * 100)}%` }}
       />
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center pl-14 pr-4">
-        <span className="truncate text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center pl-16 pr-5">
+        <span className="truncate text-sm font-extrabold tracking-tight flex items-center gap-1.5 text-white">
           <span>{label}</span>
-          <ChevronsRight
-            className={`h-4 w-4 shrink-0 ${
-              variant === 'emerald' ? 'text-emerald-400' : 'text-[#FFD100]'
-            }`}
-          />
+          <ChevronsRight className="h-4 w-4 shrink-0 text-[#A7F3D0]" />
         </span>
       </div>
 
@@ -108,11 +101,11 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
         style={{
           transform: `translateX(${
             trackRef.current
-              ? Math.round(progress * Math.max(0, trackRef.current.clientWidth - 60))
+              ? Math.round(progress * Math.max(0, trackRef.current.clientWidth - 62))
               : 0
           }px)`,
         }}
-        className={`touch-none absolute top-1 left-1 flex h-[50px] w-[52px] cursor-grab active:cursor-grabbing items-center justify-center rounded-xl transition-transform ${thumbBg}`}
+        className={`touch-none absolute top-1 left-1 flex h-[52px] w-[52px] cursor-grab active:cursor-grabbing items-center justify-center rounded-full transition-transform ${thumbBg}`}
       >
         <ChevronRight className="h-6 w-6 stroke-[2.8]" />
       </div>

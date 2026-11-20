@@ -85,7 +85,6 @@ import {
 import { isDateInPeriod } from '../lib/periodFilter';
 import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import {
-  playRideAcceptedChime,
   speakPtBr,
   startContinuousRideAlarm,
   stopSpeech,
@@ -148,12 +147,12 @@ const isDeliveryCategory = (cat: RideCategory) =>
   cat === 'delivery_moto' || cat === 'delivery_car';
 
 const PAYMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  paid_wallet: { label: 'Pago pelo App (Saldo) · A receber', color: 'text-emerald-400' },
-  paid_pix: { label: 'Pix pago à Plataforma · A receber', color: 'text-amber-400' },
-  admin_settled: { label: 'Quitado pelo Admin', color: 'text-emerald-400' },
-  paid_cash: { label: 'Recebido em Dinheiro', color: 'text-emerald-400' },
-  disputed: { label: 'Em Disputa (Admin)', color: 'text-red-400' },
-  pending: { label: 'Aguardando pagamento', color: 'text-neutral-400' },
+  paid_wallet: { label: 'Pago pelo App (Saldo) · A receber', color: 'text-emerald-700 dark:text-emerald-400' },
+  paid_pix: { label: 'Pix pago à Plataforma · A receber', color: 'text-amber-700 dark:text-amber-400' },
+  admin_settled: { label: 'Quitado pelo Admin', color: 'text-emerald-700 dark:text-emerald-400' },
+  paid_cash: { label: 'Recebido em Dinheiro', color: 'text-emerald-700 dark:text-emerald-400' },
+  disputed: { label: 'Em Disputa (Admin)', color: 'text-red-700 dark:text-red-400' },
+  pending: { label: 'Aguardando pagamento', color: 'text-neutral-600 dark:text-neutral-400' },
 };
 
 export const DriverView: React.FC<DriverViewProps> = ({
@@ -386,19 +385,33 @@ export const DriverView: React.FC<DriverViewProps> = ({
     );
   }, [isOnline, activeRide, currentUser.status, rides, declinedRideIds]);
 
-  // Continuous alarm sound + vibration while incoming ride alert is on screen
+  // Voice-only alert + gentle vibration while incoming ride alert is on screen
   useEffect(() => {
     if (!incomingRide) return;
+    if (!incomingRide.passenger?.full_name || !incomingRide.passenger?.avatar_url) {
+      fetchRideByIdEnriched(incomingRide.id)
+        .then((fresh) => {
+          if (fresh) onRideUpsert(fresh);
+        })
+        .catch(() => {});
+    }
     const isDel = isDeliveryCategory(incomingRide.category);
+    const fareVoice = `${incomingRide.estimated_fare.toFixed(2).replace('.', ',')} reais`;
+    const distVoice = `${(incomingRide.distance_km || 0.6).toFixed(1).replace('.', ',')} quilômetros`;
+    const spokenMessage = isDel
+      ? `Nova entrega disponível! Coleta em ${incomingRide.origin_address}, destino ${incomingRide.destination_address}, distância de ${distVoice}, valor de ${fareVoice}.`
+      : `Nova corrida disponível! Embarque em ${incomingRide.origin_address}, destino ${incomingRide.destination_address}, distância de ${distVoice}, valor de ${fareVoice}.`;
+
     const stopAlarm = startContinuousRideAlarm(
       isDel
         ? `Nova Entrega (${formatBRL(incomingRide.estimated_fare)})`
         : `Nova Corrida (${formatBRL(incomingRide.estimated_fare)})`,
       `${incomingRide.origin_address} → ${incomingRide.destination_address}`,
-      isDel
+      isDel,
+      spokenMessage
     );
     return stopAlarm;
-  }, [incomingRide]);
+  }, [incomingRide, onRideUpsert]);
 
   // Keep checkoutRide synced and show green confirmation feedback when Admin confirms Pix or client scans 66pay QR
   useEffect(() => {
@@ -419,7 +432,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
         setPixConfirmedSuccess(true);
         setCheckoutRide(latest);
         justCompletedRideIdRef.current = latest.id;
-        void playRideAcceptedChime();
+        speakPtBr('Pagamento recebido com sucesso.', true);
         fetchWalletTransactions(currentUser.id).then(setTransactions).catch(() => {});
         fetchUserProfileById(currentUser.id)
           .then((fresh) => fresh && onUserUpdated(fresh))
@@ -909,7 +922,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
       setCheckoutRide(null);
       setPixConfirmedSuccess(false);
       setWalletPaidSuccessRide(updated);
-      void playRideAcceptedChime();
+      speakPtBr('Pagamento BorealPay recebido com sucesso.', true);
     } else {
       setPixConfirmedSuccess(false);
       setWalletCheckoutSuccess(false);
@@ -1165,12 +1178,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
     meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.max(10, meters)} m`;
 
   const renderManeuverIcon = (step: RouteStep | null) => {
-    if (!step) return <Navigation className="h-7 w-7 text-[#FFD100]" />;
-    if (step.maneuverType === 'arrive') return <Flag className="h-7 w-7 text-emerald-400" />;
-    if (step.modifier === 'uturn') return <RotateCcw className="h-7 w-7 text-[#FFD100]" />;
-    if (step.modifier.includes('left')) return <CornerUpLeft className="h-7 w-7 text-[#FFD100]" />;
-    if (step.modifier.includes('right')) return <CornerUpRight className="h-7 w-7 text-[#FFD100]" />;
-    return <ArrowUp className="h-7 w-7 text-[#FFD100]" />;
+    if (!step) return <Navigation className="h-7 w-7 text-[#6EE7B7]" />;
+    if (step.maneuverType === 'arrive') return <Flag className="h-7 w-7 text-[#34D399]" />;
+    if (step.modifier === 'uturn') return <RotateCcw className="h-7 w-7 text-[#6EE7B7]" />;
+    if (step.modifier.includes('left')) return <CornerUpLeft className="h-7 w-7 text-[#6EE7B7]" />;
+    if (step.modifier.includes('right')) return <CornerUpRight className="h-7 w-7 text-[#6EE7B7]" />;
+    return <ArrowUp className="h-7 w-7 text-[#6EE7B7]" />;
   };
 
   const { formattedTimer: checkoutPixTimer, cycle: checkoutPixCycle } = usePixSecurityRotation(90);
@@ -1191,7 +1204,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const myPay66Key = useMemo(
     () =>
       currentUser.pay66_key ||
-      `66-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      `BOREAL-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
     [currentUser.pay66_key, currentUser.id]
   );
 
@@ -1208,9 +1221,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
       ride_id: ride.id,
       amount: fare,
       type: 'ride_earning',
-      description: `Corrida #${ride.id.slice(-4)} recebida via 66pay`,
+      description: `Corrida #${ride.id.slice(-4)} recebida via BorealPay`,
       auth_code: `66PAY-${ride.id.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
-      sender_name: ride.passenger?.full_name || 'Passageiro 66 Mobilidade',
+      sender_name: ride.passenger?.full_name || 'Passageiro Boreal Mobilidade',
       recipient_name: currentUser.full_name,
       recipient_key: myPay66Key,
       created_at: ride.completed_at || new Date().toISOString(),
@@ -1219,7 +1232,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-neutral-900">
+    <div className="relative h-screen w-screen overflow-hidden bg-neutral-100 dark:bg-neutral-950">
       <LiveMap
         center={driverCoords}
         isDelivery={
@@ -1286,7 +1299,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#181B22] text-white shadow-lg border border-white/10 active:scale-95 transition"
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white shadow-lg border border-neutral-200 dark:border-neutral-700 active:scale-95 transition"
               aria-label="Abrir menu do motorista"
             >
               <Menu className="h-6 w-6" />
@@ -1297,10 +1310,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 void loadNotifications();
                 setNotificationsOpen(true);
               }}
-              className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-[#181B22] text-white shadow-lg border border-white/10 active:scale-95 transition"
+              className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-white dark:bg-[#0B1D1A] text-[#0F2421] dark:text-white shadow-lg border border-[#D4EDE7] dark:border-[#1E3D37] active:scale-95 transition"
               aria-label="Notificações"
             >
-              <Bell className="h-5 w-5 text-[#FFD100]" />
+              <Bell className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
               {unreadNotificationsCount > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white shadow">
                   {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
@@ -1315,10 +1328,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
               loadFinancePanel();
               setFinanceOpen(true);
             }}
-            className="pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-full bg-[#181B22] px-4 sm:px-5 text-white shadow-xl border border-white/10 active:scale-95 transition"
+            className="pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-full bg-white dark:bg-[#0B1D1A] px-4 sm:px-5 text-[#0F2421] dark:text-white shadow-xl border border-[#2DD4BF]/50 dark:border-[#1E3D37] active:scale-95 transition"
           >
-            <Wallet className="h-4 w-4 text-[#FFD100]" />
-            <span className="font-mono-num text-sm sm:text-base font-extrabold text-white">
+            <Wallet className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
+            <span className="font-mono-num text-sm sm:text-base font-extrabold text-[#0F2421] dark:text-white">
               {formatBRL(currentUser.wallet_balance)}
             </span>
           </button>
@@ -1328,7 +1341,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             disabled={togglingOnline || currentUser.status !== 'active'}
             onClick={toggleOnline}
             className={`pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-full px-4 text-xs font-extrabold shadow-lg transition active:scale-95 disabled:opacity-50 ${
-              isOnline ? 'bg-emerald-600 text-white' : 'bg-[#FFD100] text-neutral-950'
+              isOnline ? 'bg-emerald-600 text-white' : 'aurora-accent-flow text-white'
             }`}
           >
             <Power className="h-4 w-4" />
@@ -1343,14 +1356,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
           <button
             type="button"
             onClick={() => setIdleCleanMap(false)}
-            className="pointer-events-auto flex min-h-[42px] items-center gap-2 rounded-full bg-[#181B22] px-4 text-xs font-extrabold text-white shadow-xl border border-white/15 active:scale-95"
+            className="pointer-events-auto flex min-h-[42px] items-center gap-2 rounded-full bg-white dark:bg-[#0B1D1A] px-4 text-xs font-extrabold text-[#0F2421] dark:text-white shadow-xl border border-[#D4EDE7] dark:border-[#1E3D37] active:scale-95"
           >
             <span
               className={`h-2.5 w-2.5 rounded-full ${
-                isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-[#FFD100]'
+                isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-[#2DD4BF]'
               }`}
             />
-            <Eye className="h-4 w-4 text-[#FFD100]" />
+            <Eye className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
             <span>{t.show_panel}</span>
           </button>
         </div>
@@ -1359,14 +1372,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
       {/* COMPACT IMMERSIVE TURN-BY-TURN NAVIGATION BANNER */}
       {activeRide && (
         <div className="pointer-events-none fixed top-0 left-0 right-0 z-[700] px-3 pt-safe py-2">
-          <div className="pointer-events-auto mx-auto max-w-xl rounded-2xl bg-[#14171D] px-3.5 py-2.5 text-white shadow-2xl border border-white/15">
+          <div className="pointer-events-auto mx-auto max-w-xl rounded-2xl bg-white dark:bg-neutral-900 px-3.5 py-2.5 text-neutral-950 dark:text-white shadow-2xl border border-neutral-200 dark:border-neutral-800">
             <div className="flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#1F242E] border border-[#FFD100]/40">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#071513] border border-[#2DD4BF]/50">
                   {renderManeuverIcon(currentNavStep)}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs sm:text-sm font-extrabold text-white truncate">
+                  <p className="text-xs sm:text-sm font-extrabold text-[#0F2421] dark:text-white truncate">
                     {currentNavStep
                       ? `${currentNavStep.instruction} em ${formatStepMeters(currentNavStep.distanceMeters)}`
                       : `Siga para ${
@@ -1375,7 +1388,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                             : activeRide.origin_address
                         }`}
                   </p>
-                  <p className="text-[11px] font-bold text-[#FFD100] font-mono-num truncate">
+                  <p className="text-[11px] font-bold text-[#047857] dark:text-[#6EE7B7] font-mono-num truncate">
                     {routeDistanceKm} km · {routeDurationMin || 3} min ·{' '}
                     {activeRide.status === 'in_progress'
                       ? 'Destino'
@@ -1397,8 +1410,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   }}
                   className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
                     voiceEnabled
-                      ? 'bg-[#FFD100]/20 border-[#FFD100]/40 text-[#FFD100]'
-                      : 'bg-white/10 border-white/10 text-neutral-400'
+                      ? 'bg-[#ECFDF5] dark:bg-[#047857]/30 border-[#2DD4BF] text-[#047857] dark:text-[#6EE7B7]'
+                      : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-500'
                   }`}
                   title={voiceEnabled ? 'Silenciar voz' : 'Ativar guia por voz'}
                   aria-label="Alternar guia por voz"
@@ -1409,7 +1422,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   href={googleMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex h-9 items-center gap-1 rounded-xl bg-white/10 px-2.5 text-[11px] font-bold text-[#FFD100]"
+                  className="flex h-9 items-center gap-1 rounded-xl bg-[#F7FBFA] dark:bg-neutral-800 px-2.5 text-[11px] font-bold text-[#047857] dark:text-[#6EE7B7] border border-[#D4EDE7] dark:border-neutral-700"
                   title="Abrir no Google Maps"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
@@ -1427,7 +1440,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         : activeRide.origin_lng
                     )
                   }
-                  className="flex h-9 items-center rounded-xl bg-[#FFD100] px-2.5 text-[11px] font-extrabold text-neutral-950 active:scale-95"
+                  className="flex h-9 items-center rounded-xl aurora-accent-flow px-2.5 text-[11px] font-extrabold text-white active:scale-95"
                   title="Simular avanço GPS na rota"
                 >
                   +GPS
@@ -1452,22 +1465,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
               }
               dragStartYRef.current = null;
             }}
-            className="pointer-events-auto flex items-center justify-between gap-2 rounded-2xl bg-[#14171D] px-3.5 py-3 text-white shadow-2xl border border-white/15"
+            className="pointer-events-auto flex items-center justify-between gap-2 rounded-2xl bg-white dark:bg-[#0B1D1A] px-3.5 py-3 text-[#0F2421] dark:text-white shadow-2xl border border-[#D4EDE7] dark:border-[#1E3D37]"
           >
             <button
               type="button"
               onClick={() => setSheetMinimized(false)}
               className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
             >
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#FFD100]" />
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#2DD4BF]" />
               <div className="min-w-0">
-                <p className="text-xs font-extrabold text-white truncate">
+                <p className="text-xs font-extrabold text-[#0F2421] dark:text-white truncate">
                   {activeRide.passenger?.full_name || 'Cliente'} ·{' '}
-                  <span className="text-[#FFD100] font-mono-num">
+                  <span className="text-[#047857] dark:text-[#6EE7B7] font-mono-num">
                     {formatBRL(activeRide.estimated_fare + waitingStats.waitingFee)}
                   </span>
                 </p>
-                <p className="text-[11px] text-neutral-400 truncate">
+                <p className="text-[11px] text-[#334E4A] dark:text-neutral-400 truncate">
                   {activeRide.status === 'arrived'
                     ? waitingStats.isCharging
                       ? `Espera +${formatTimerClock(waitingStats.extraSec)}`
@@ -1492,12 +1505,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={() => setChatOpen(true)}
-                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#FFD100] active:scale-95"
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7FBFA] dark:bg-neutral-800 text-[#047857] dark:text-[#6EE7B7] border border-[#D4EDE7] dark:border-neutral-700 active:scale-95"
                 aria-label="Abrir chat"
               >
                 <MessageSquare className="h-4 w-4" />
                 {currentChatMessages.length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#FFD100] px-1 text-[9px] font-extrabold text-neutral-950 font-mono-num">
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#047857] px-1 text-[9px] font-extrabold text-white font-mono-num">
                     {currentChatMessages.length}
                   </span>
                 )}
@@ -1505,7 +1518,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSheetMinimized(false)}
-                className="flex h-10 items-center gap-1 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950 active:scale-95"
+                className="flex h-10 items-center gap-1 rounded-xl aurora-accent-flow px-3 text-xs font-extrabold text-white active:scale-95"
                 aria-label="Expandir painel"
               >
                 <ChevronUp className="h-4 w-4" />
@@ -1514,7 +1527,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
           </div>
         ) : (
-        <div className="pointer-events-auto rounded-3xl bg-[#14171D] p-5 text-white shadow-2xl border border-white/10 max-h-[76vh] overflow-y-auto">
+        <div className="pointer-events-auto rounded-3xl bg-white dark:bg-neutral-900 p-5 text-neutral-950 dark:text-white shadow-2xl border border-neutral-200 dark:border-neutral-800 max-h-[76vh] overflow-y-auto">
           {activeRide && (
             <div
               onPointerDown={(e) => {
@@ -1526,13 +1539,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 }
                 dragStartYRef.current = null;
               }}
-              className="mb-3 -mt-2 flex items-center justify-between border-b border-white/10 pb-2 touch-none"
+              className="mb-3 -mt-2 flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-2 touch-none"
             >
-              <div className="h-1 w-10 rounded-full bg-white/25" />
+              <div className="h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-700" />
               <button
                 type="button"
                 onClick={() => setSheetMinimized(true)}
-                className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-neutral-200 hover:bg-white/15"
+                className="flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 text-[11px] font-bold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-700"
               >
                 <ChevronDown className="h-3.5 w-3.5" />
                 <span>Minimizar mapa</span>
@@ -1540,28 +1553,28 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
           )}
           {statusError && (
-            <div className="mb-3 rounded-2xl bg-red-950/70 border border-red-500/40 px-3.5 py-2.5 text-xs font-semibold text-red-200">
+            <div className="mb-3 rounded-2xl bg-red-50 dark:bg-red-950/70 border border-red-200 dark:border-red-500/40 px-3.5 py-2.5 text-xs font-semibold text-red-700 dark:text-red-200">
               {statusError}
             </div>
           )}
 
           {currentUser.status !== 'active' ? (
             <div className="space-y-3">
-              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-950/30 p-4">
+              <div className="flex items-start gap-3 rounded-2xl border border-[#2DD4BF]/40 dark:border-[#1E3D37] bg-[#ECFDF5] dark:bg-[#047857]/20 p-4">
                 {currentUser.status === 'pending' ? (
-                  <Clock className="h-6 w-6 shrink-0 text-[#FFD100]" />
+                  <Clock className="h-6 w-6 shrink-0 text-[#047857] dark:text-[#6EE7B7]" />
                 ) : (
-                  <AlertTriangle className="h-6 w-6 shrink-0 text-red-400" />
+                  <AlertTriangle className="h-6 w-6 shrink-0 text-red-600 dark:text-red-400" />
                 )}
                 <div>
-                  <h3 className="font-display text-base font-extrabold text-white">
+                  <h3 className="font-display text-base font-extrabold text-[#0F2421] dark:text-white">
                     {currentUser.status === 'pending'
                       ? 'Cadastro em análise'
                       : currentUser.status === 'rejected'
                       ? 'Cadastro reprovado'
                       : 'Perfil suspenso'}
                   </h3>
-                  <p className="mt-1 text-xs text-neutral-300">
+                  <p className="mt-1 text-xs text-[#334E4A] dark:text-neutral-300">
                     {currentUser.status === 'pending'
                       ? 'Seus documentos (CNH e CRLV) estão sendo revisados no Painel Administrativo.'
                       : currentUser.driver?.rejection_reason ||
@@ -1572,7 +1585,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={refreshProfile}
-                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-xs font-extrabold text-neutral-950"
+                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-xs font-extrabold text-white shadow-sm"
               >
                 <RefreshCw className="h-4 w-4" />
                 Verificar aprovação agora
@@ -1581,16 +1594,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
           ) : activeRide ? (
             <div className="space-y-3.5">
               {/* Passenger / Client Card with Photo, Rating, Chat & Native Tel Call */}
-              <div className="flex items-center justify-between gap-2.5 rounded-2xl bg-white/[0.04] border border-white/10 p-3">
+              <div className="flex items-center justify-between gap-2.5 rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800/70 border border-[#D4EDE7] dark:border-neutral-700 p-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <AvatarImage
                     src={activeRide.passenger?.avatar_url}
                     name={activeRide.passenger?.full_name || 'Cliente'}
-                    className="h-12 w-12 rounded-2xl object-cover border-2 border-[#FFD100]/80 shrink-0 shadow-sm"
-                    fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 font-extrabold text-lg"
+                    className="h-12 w-12 rounded-2xl object-cover border-2 border-[#2DD4BF] shrink-0 shadow-sm"
+                    fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#047857] text-[#6EE7B7] font-extrabold text-lg"
                   />
                   <div className="min-w-0">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#FFD100]/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#FFD100]">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] dark:bg-[#047857]/30 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#047857] dark:text-[#6EE7B7] border border-[#2DD4BF]/30">
                       {activeRide.status === 'accepted' &&
                         (activeIsDelivery
                           ? 'Etapa A · Indo para coleta'
@@ -1604,12 +1617,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                           ? 'Etapa B · Entrega em rota'
                           : 'Etapa B · Em viagem')}
                     </span>
-                    <h3 className="mt-0.5 font-display text-base font-extrabold text-white truncate">
+                    <h3 className="mt-0.5 font-display text-base font-extrabold text-[#0F2421] dark:text-white truncate">
                       {activeRide.passenger?.full_name || 'Cliente'}
                     </h3>
-                    <p className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-                      <Star className="h-3 w-3 fill-[#FFD100] text-[#FFD100]" />
-                      <span className="font-mono-num font-bold text-neutral-200">
+                    <p className="text-[11px] text-[#334E4A] dark:text-neutral-400 flex items-center gap-1.5">
+                      <Star className="h-3 w-3 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
+                      <span className="font-mono-num font-bold text-[#0F2421] dark:text-neutral-200">
                         {(activeRide.passenger?.rating_avg ?? 5).toFixed(2)}
                       </span>
                       <span>· {CATEGORY_LABELS[activeRide.category]}</span>
@@ -1631,13 +1644,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setChatOpen(true)}
-                    className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-[#FFD100] active:scale-95 transition border border-white/10"
+                    className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-neutral-700 text-[#047857] dark:text-[#6EE7B7] active:scale-95 transition border border-[#D4EDE7] dark:border-neutral-600 shadow-xs"
                     aria-label="Abrir chat com cliente"
                     title={t.any_note_chat}
                   >
                     <MessageSquare className="h-5 w-5" />
                     {currentChatMessages.length > 0 && (
-                      <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#FFD100] px-1 text-[10px] font-extrabold text-neutral-950 font-mono-num">
+                      <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#047857] px-1 text-[10px] font-extrabold text-white font-mono-num">
                         {currentChatMessages.length}
                       </span>
                     )}
@@ -1650,15 +1663,17 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <div
                   className={`rounded-2xl border p-3.5 transition-colors ${
                     waitingStats.isCharging
-                      ? 'border-red-500/60 bg-red-950/60 text-red-100'
-                      : 'border-[#FFD100]/40 bg-[#1D212B] text-white'
+                      ? 'border-red-300 dark:border-red-500/60 bg-red-50 dark:bg-red-950/60 text-red-900 dark:text-red-100'
+                      : 'border-[#2DD4BF]/50 dark:border-[#2DD4BF]/40 bg-[#ECFDF5] dark:bg-neutral-800 text-[#0F2421] dark:text-white'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Clock
                         className={`h-5 w-5 shrink-0 ${
-                          waitingStats.isCharging ? 'text-red-400 animate-pulse' : 'text-[#FFD100]'
+                          waitingStats.isCharging
+                            ? 'text-red-600 dark:text-red-400 animate-pulse'
+                            : 'text-[#047857] dark:text-[#6EE7B7]'
                         }`}
                       />
                       <div>
@@ -1676,7 +1691,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </div>
                     <span
                       className={`font-mono-num text-xl font-extrabold shrink-0 ${
-                        waitingStats.isCharging ? 'text-red-300' : 'text-[#FFD100]'
+                        waitingStats.isCharging
+                          ? 'text-red-700 dark:text-red-300'
+                          : 'text-[#047857] dark:text-[#6EE7B7]'
                       }`}
                     >
                       {waitingStats.isCharging
@@ -1685,9 +1702,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </span>
                   </div>
                   {!waitingStats.isCharging && (
-                    <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#CCFBF1] dark:bg-white/10">
                       <div
-                        className="h-full bg-[#FFD100] transition-all duration-500"
+                        className="h-full bg-[#047857] dark:bg-[#2DD4BF] transition-all duration-500"
                         style={{
                           width: `${Math.max(0, Math.min(100, (waitingStats.remainingFreeSec / 120) * 100))}%`,
                         }}
@@ -1698,36 +1715,37 @@ export const DriverView: React.FC<DriverViewProps> = ({
               )}
 
               {/* Current Target Address & Value */}
-              <div className="rounded-2xl bg-[#1A1F29] p-3.5 text-xs space-y-2 border border-white/10">
-                <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                  <span className="inline-flex items-center gap-1.5 font-bold text-neutral-300">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800/70 p-3.5 text-xs space-y-2 border border-[#D4EDE7] dark:border-neutral-700">
+                <div className="flex items-center justify-between border-b border-[#D4EDE7] dark:border-neutral-700 pb-2">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-[#334E4A] dark:text-neutral-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
                     {activeRide.payment_method === 'wallet'
                       ? t.pay_with_wallet
                       : activeRide.payment_method === 'pix'
                       ? t.pay_with_pix
                       : t.pay_with_cash}
                   </span>
-                  <span className="font-mono-num text-base font-extrabold text-[#FFD100]">
+                  <span className="font-mono-num text-base font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                     {formatBRL(activeRide.estimated_fare + waitingStats.waitingFee)}
                     {waitingStats.waitingFee > 0 && (
-                      <span className="ml-1 text-[10px] text-amber-300">
+                      <span className="ml-1 text-[10px] text-[#065F46] dark:text-[#2DD4BF]">
                         (+{formatBRL(waitingStats.waitingFee)} esp.)
                       </span>
                     )}
                   </span>
                 </div>
-                <p className="text-neutral-300">
-                  <strong className="text-white">
+                <p className="text-[#334E4A] dark:text-neutral-300">
+                  <strong className="text-[#0F2421] dark:text-white">
                     {activeIsDelivery ? 'Coleta:' : 'Embarque:'}
                   </strong>{' '}
                   {activeRide.origin_address}
                 </p>
-                <p className="text-neutral-300">
-                  <strong className="text-white">Destino:</strong> {activeRide.destination_address}
+                <p className="text-[#334E4A] dark:text-neutral-300">
+                  <strong className="text-[#0F2421] dark:text-white">Destino:</strong>{' '}
+                  {activeRide.destination_address}
                 </p>
                 {activeRide.delivery_notes && (
-                  <p className="text-[#FFD100] font-semibold">
+                  <p className="text-[#047857] dark:text-[#6EE7B7] font-semibold">
                     Obs. pacote: {activeRide.delivery_notes}
                   </p>
                 )}
@@ -1739,7 +1757,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   type="button"
                   disabled={actionLoading}
                   onClick={handleMarkArrived}
-                  className="min-h-[54px] w-full rounded-2xl bg-[#FFD100] px-4 text-sm font-extrabold text-neutral-950 shadow-md active:scale-[0.98] transition"
+                  className="min-h-[54px] w-full rounded-full aurora-accent-flow px-4 text-sm font-extrabold text-white shadow-md active:scale-[0.98] transition"
                 >
                   {activeIsDelivery ? t.arrived_collection : t.arrived_pickup}
                 </button>
@@ -1789,7 +1807,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     setDisputeRide(activeRide);
                     setDisputeReason('');
                   }}
-                  className="flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-950/40 text-xs font-bold text-red-300 hover:bg-red-950/60"
+                  className="flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-950/40 text-xs font-bold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60"
                 >
                   <ShieldAlert className="h-4 w-4" />
                   Relatar problema no pagamento
@@ -1798,16 +1816,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-400">
-                <span className="flex items-center gap-1 truncate">
-                  <MapPin className="h-3.5 w-3.5 text-[#FFD100] shrink-0" />
+              <div className="flex items-center justify-between gap-2 text-[11px] text-[#334E4A] dark:text-neutral-400">
+                <span className="flex items-center gap-1 truncate font-semibold">
+                  <MapPin className="h-3.5 w-3.5 text-[#047857] dark:text-[#6EE7B7] shrink-0" />
                   {driverGpsFixed
                     ? weather?.city || platformConfig.platform_city
                     : t.detecting_gps}
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
                   {weather && driverGpsFixed && (
-                    <span className="flex items-center gap-1 font-mono-num font-bold text-[#FFD100]">
+                    <span className="flex items-center gap-1 font-mono-num font-bold text-[#047857] dark:text-[#6EE7B7]">
                       <Thermometer className="h-3.5 w-3.5" />
                       {weather.temperatureC}°C · {weather.label}
                     </span>
@@ -1815,7 +1833,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIdleCleanMap(true)}
-                    className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-neutral-200 hover:bg-white/15"
+                    className="inline-flex items-center gap-1 rounded-full bg-[#F7FBFA] dark:bg-neutral-800 px-2.5 py-1 text-[10px] font-bold text-[#0F2421] dark:text-neutral-200 border border-[#D4EDE7] dark:border-neutral-700 hover:bg-[#ECFDF5] dark:hover:bg-neutral-700"
                     title="Ocultar painel e ver mapa 100% livre"
                   >
                     <EyeOff className="h-3 w-3" />
@@ -1826,13 +1844,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-display text-base font-extrabold text-white">
+                  <h3 className="font-display text-base font-extrabold text-[#0F2421] dark:text-white">
                     {isOnline ? `${t.online}!` : t.offline}
                   </h3>
-                  <p className="mt-0.5 text-xs text-neutral-400">
+                  <p className="mt-0.5 text-xs text-[#334E4A] dark:text-neutral-400">
                     {isOnline ? t.waiting_rides_region : t.tap_connect_hint}
                   </p>
-                  <p className="mt-1.5 text-xs font-bold text-neutral-300 font-mono-num">
+                  <p className="mt-1.5 text-xs font-bold text-[#334E4A] dark:text-neutral-300 font-mono-num">
                     {currentUser.driver?.vehicle_model} · {currentUser.driver?.vehicle_plate}
                   </p>
                 </div>
@@ -1840,10 +1858,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   type="button"
                   onClick={toggleOnline}
                   disabled={togglingOnline}
-                  className={`min-h-[48px] shrink-0 rounded-2xl px-5 text-sm font-extrabold shadow-sm transition active:scale-95 ${
+                  className={`min-h-[48px] shrink-0 rounded-full px-5 text-sm font-extrabold shadow-sm transition active:scale-95 ${
                     isOnline
-                      ? 'bg-white/10 text-white border border-white/15'
-                      : 'bg-[#FFD100] text-neutral-950'
+                      ? 'bg-[#F7FBFA] dark:bg-neutral-800 text-[#0F2421] dark:text-white border border-[#D4EDE7] dark:border-neutral-700'
+                      : 'aurora-accent-flow text-white'
                   }`}
                 >
                   {isOnline ? t.pause : t.connect}
@@ -1854,15 +1872,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setEventsOpen(true)}
-                  className="flex min-h-[44px] w-full items-center justify-between rounded-2xl border border-[#FFD100]/40 bg-[#FFD100]/10 px-3.5 py-2 text-left"
+                  className="flex min-h-[44px] w-full items-center justify-between rounded-2xl border border-[#2DD4BF]/50 dark:border-[#2DD4BF]/40 bg-[#ECFDF5] dark:bg-[#047857]/20 px-3.5 py-2 text-left"
                 >
-                  <span className="flex items-center gap-2 text-xs font-extrabold text-[#FFD100] truncate">
-                    <Sparkles className="h-4 w-4 shrink-0" />
+                  <span className="flex items-center gap-2 text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7] truncate">
+                    <Sparkles className="h-4 w-4 shrink-0 text-[#047857] dark:text-[#6EE7B7]" />
                     Evento ativo: {relevantEvents[0].title}
                     {relevantEvents[0].bonus_amount > 0 &&
                       ` (+${formatBRL(relevantEvents[0].bonus_amount)})`}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-[#FFD100] shrink-0" />
+                  <ChevronRight className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0" />
                 </button>
               )}
 
@@ -1872,28 +1890,28 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   loadFinancePanel();
                   setFinanceOpen(true);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl bg-[#1D212B] px-4 py-2.5 border border-white/5 hover:border-[#FFD100]/40 transition"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 px-4 py-2.5 border border-[#D4EDE7] dark:border-neutral-700 hover:border-[#047857] dark:hover:border-[#2DD4BF]/40 transition"
               >
                 <div className="flex items-center gap-2.5 text-left">
-                  <Wallet className="h-4 w-4 text-[#FFD100] shrink-0" />
+                  <Wallet className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0" />
                   <div>
-                    <p className="text-xs font-extrabold text-white">
+                    <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
                       {t.earnings_center}
                     </p>
-                    <p className="text-[11px] text-neutral-400 font-mono-num">
+                    <p className="text-[11px] text-[#334E4A] dark:text-neutral-400 font-mono-num">
                       {t.wallet_balance}: {formatBRL(financeSummary.pendingToReceive)} · {t.pay_with_cash}:{' '}
                       {formatBRL(financeSummary.totalCashCollected)}
                     </p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-neutral-400" />
+                <ChevronRight className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
               </button>
 
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => openDriverWallet('withdraw')}
-                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-3 text-xs font-extrabold text-emerald-300 hover:bg-emerald-500/25 active:scale-[0.98] transition"
+                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 px-3 text-xs font-extrabold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 active:scale-[0.98] transition"
                 >
                   <Wallet className="h-3.5 w-3.5" />
                   <span>{t.withdraw}</span>
@@ -1901,22 +1919,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <button
                   type="button"
                   onClick={() => openDriverWallet('transfer')}
-                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-white/10 border border-white/10 px-3 text-xs font-extrabold text-white hover:bg-white/15 active:scale-[0.98] transition"
+                  className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl bg-[#F7FBFA] dark:bg-neutral-800 border border-[#D4EDE7] dark:border-neutral-700 px-3 text-xs font-extrabold text-[#0F2421] dark:text-white hover:bg-[#ECFDF5] dark:hover:bg-neutral-700 active:scale-[0.98] transition"
                 >
-                  <ChevronRight className="h-3.5 w-3.5 text-[#FFD100]" />
+                  <ChevronRight className="h-3.5 w-3.5 text-[#047857] dark:text-[#6EE7B7]" />
                   <span>{t.transfer}</span>
                 </button>
               </div>
 
               {/* Navegação Livre no Mapa (Disponível somente fora de corrida ativa) */}
-              <div className="rounded-2xl border border-white/10 bg-[#1A1D24] p-3 space-y-2.5">
+              <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-700 bg-[#F7FBFA] dark:bg-neutral-800/80 p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     onClick={() => setFreeNavOpen((v) => !v)}
-                    className="flex items-center gap-2 text-left text-xs font-extrabold text-white"
+                    className="flex items-center gap-2 text-left text-xs font-extrabold text-[#0F2421] dark:text-white"
                   >
-                    <Navigation className="h-4 w-4 text-[#FFD100]" />
+                    <Navigation className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                     <span>Navegação Livre (Sem corrida)</span>
                   </button>
                   <div className="flex items-center gap-1.5">
@@ -1924,7 +1942,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       <button
                         type="button"
                         onClick={clearFreeNav}
-                        className="rounded-lg bg-red-500/15 px-2 py-1 text-[10px] font-bold text-red-300"
+                        className="rounded-lg bg-red-50 dark:bg-red-500/15 px-2 py-1 text-[10px] font-bold text-red-700 dark:text-red-300"
                       >
                         Limpar rota
                       </button>
@@ -1932,7 +1950,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setFreeNavOpen((v) => !v)}
-                      className="rounded-lg bg-white/10 px-2 py-1 text-[10px] font-bold text-[#FFD100]"
+                      className="rounded-lg bg-white dark:bg-neutral-700 border border-[#D4EDE7] dark:border-neutral-600 px-2 py-1 text-[10px] font-bold text-[#047857] dark:text-[#6EE7B7]"
                     >
                       {freeNavOpen ? 'Ocultar' : 'Buscar endereço'}
                     </button>
@@ -1949,7 +1967,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                           value={freeNavQuery}
                           onChange={(e) => setFreeNavQuery(e.target.value)}
                           placeholder="Buscar rua, bairro ou ponto de apoio..."
-                          className="min-h-[40px] w-full rounded-xl border border-white/10 bg-[#11141B] pl-8 pr-3 text-xs font-semibold text-white outline-none focus:border-[#FFD100]"
+                          className="min-h-[40px] w-full rounded-xl border border-[#D4EDE7] dark:border-neutral-700 bg-white dark:bg-neutral-900 pl-8 pr-3 text-xs font-semibold text-[#0F2421] dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                         />
                       </div>
                       <button
@@ -1957,8 +1975,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         onClick={() => setFreeNavPickMode((v) => !v)}
                         className={`min-h-[40px] shrink-0 rounded-xl px-2.5 text-[11px] font-extrabold transition ${
                           freeNavPickMode
-                            ? 'bg-[#FFD100] text-neutral-950'
-                            : 'bg-white/10 text-neutral-200 border border-white/10'
+                            ? 'aurora-accent-flow text-white'
+                            : 'bg-white dark:bg-neutral-700 text-[#0F2421] dark:text-neutral-200 border border-[#D4EDE7] dark:border-neutral-600'
                         }`}
                         title="Toque no mapa para definir destino"
                       >
@@ -1967,11 +1985,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </div>
 
                     {freeNavSearching && (
-                      <p className="text-[11px] text-neutral-400">Buscando endereços...</p>
+                      <p className="text-[11px] text-[#334E4A] dark:text-neutral-400">
+                        Buscando endereços...
+                      </p>
                     )}
 
                     {freeNavSuggestions.length > 0 && (
-                      <div className="max-h-36 overflow-y-auto rounded-xl border border-white/10 bg-[#11141B] divide-y divide-white/5">
+                      <div className="max-h-36 overflow-y-auto rounded-xl border border-[#D4EDE7] dark:border-neutral-700 bg-white dark:bg-neutral-900 divide-y divide-[#E6F4F1] dark:divide-neutral-800">
                         {freeNavSuggestions.map((s, idx) => (
                           <button
                             key={`${s.lat}-${s.lng}-${idx}`}
@@ -1983,15 +2003,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
                                 address: s.address,
                               });
                             }}
-                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs text-neutral-200 hover:bg-white/5"
+                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs text-[#0F2421] dark:text-neutral-200 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
                           >
-                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#FFD100]" />
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#047857] dark:text-[#6EE7B7]" />
                             <div className="min-w-0 flex-1">
-                              <span className="block truncate font-semibold text-white">
+                              <span className="block truncate font-semibold text-[#0F2421] dark:text-white">
                                 {s.address}
                               </span>
                               {s.subtitle && (
-                                <span className="block truncate text-[10px] text-neutral-400">
+                                <span className="block truncate text-[10px] text-[#334E4A] dark:text-neutral-400">
                                   {s.subtitle}
                                 </span>
                               )}
@@ -2004,10 +2024,12 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 )}
 
                 {freeNavDest && freeNavRouteInfo && (
-                  <div className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-3 py-2 text-[11px]">
+                  <div className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-neutral-900 border border-[#D4EDE7] dark:border-neutral-700 px-3 py-2 text-[11px]">
                     <div className="min-w-0">
-                      <p className="font-bold text-white truncate">{freeNavDest.address}</p>
-                      <p className="font-mono-num text-[#FFD100] font-bold">
+                      <p className="font-bold text-[#0F2421] dark:text-white truncate">
+                        {freeNavDest.address}
+                      </p>
+                      <p className="font-mono-num text-[#047857] dark:text-[#6EE7B7] font-bold">
                         {freeNavRouteInfo.distanceKm} km · ~{freeNavRouteInfo.durationMin} min
                       </p>
                     </div>
@@ -2015,7 +2037,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                       href={buildGoogleMapsDirectionsUrl(freeNavDest.lat, freeNavDest.lng)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg aurora-accent-flow px-2.5 py-1.5 text-[11px] font-extrabold text-white"
                     >
                       <ExternalLink className="h-3 w-3" />
                       Maps
@@ -2030,15 +2052,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
       </div>
       )}
 
-      {/* POP-UP MODERNO DE ACEITAÇÃO DE CORRIDA (TELA BRANCA COM AMARELO E BOTÕES REDONDOS) */}
+      {/* POP-UP MODERNO DE ACEITAÇÃO DE CORRIDA (LIGHT AURORA BOREAL) */}
       {incomingRide && (
-        <div className="fixed inset-0 z-[1200] flex flex-col justify-between bg-white p-5 pt-safe pb-safe text-neutral-950 overflow-y-auto">
+        <div className="fixed inset-0 z-[1200] flex flex-col justify-between bg-[#F7FBFA] p-5 pt-safe pb-safe text-[#0F2421] overflow-y-auto">
           <div className="mx-auto w-full max-w-md space-y-4">
             {/* Top Status Pill Bar */}
-            <div className="flex items-center justify-between border-b border-neutral-200 pb-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#FFD100] px-3.5 py-1.5 shadow-xs">
-                <span className="flex h-2.5 w-2.5 rounded-full bg-neutral-950 animate-ping" />
-                <span className="text-xs font-extrabold uppercase tracking-wider text-neutral-950">
+            <div className="flex items-center justify-between border-b border-[#D4EDE7] pb-3">
+              <div className="inline-flex items-center gap-2 rounded-full aurora-accent-flow px-3.5 py-1.5 shadow-xs">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-white animate-ping" />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-white">
                   {isDeliveryCategory(incomingRide.category)
                     ? `Nova ${CATEGORY_LABELS[incomingRide.category]}`
                     : incomingRide.category === 'negocia'
@@ -2046,22 +2068,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     : `Nova Chamada · ${CATEGORY_LABELS[incomingRide.category]}`}
                 </span>
               </div>
-              <span className="font-mono-num rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-extrabold text-neutral-900 border border-neutral-200">
+              <span className="font-mono-num rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-[#0F2421] border border-[#D4EDE7]">
                 {incomingRide.distance_km} km · ~{Math.max(3, Math.round(incomingRide.distance_km * 2.2))} min
               </span>
             </div>
 
             {/* Client Photo, Name, Verified Account & Rating Hero Card */}
-            <div className="flex items-center gap-4 rounded-3xl bg-neutral-50 p-4 border-2 border-[#FFD100] shadow-sm">
+            <div className="flex items-center gap-4 rounded-3xl bg-white p-4 border-2 border-[#2DD4BF] shadow-sm">
               <AvatarImage
                 src={incomingRide.passenger?.avatar_url}
                 name={incomingRide.passenger?.full_name || 'Passageiro'}
-                className="h-16 w-16 rounded-full object-cover border-4 border-[#FFD100] shadow-md shrink-0"
-                fallbackClassName="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#FFD100] border-2 border-neutral-950 text-neutral-950 font-extrabold text-xl"
+                className="h-16 w-16 rounded-full object-cover border-4 border-[#2DD4BF] shadow-md shrink-0"
+                fallbackClassName="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#047857] border-2 border-[#2DD4BF] text-[#6EE7B7] font-extrabold text-xl"
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-500">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#334E4A]">
                     {isDeliveryCategory(incomingRide.category) ? 'Solicitante da Entrega' : 'Passageiro'}
                   </p>
                   {incomingRide.passenger?.status === 'active' && (
@@ -2071,19 +2093,19 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </span>
                   )}
                 </div>
-                <h2 className="truncate font-display text-xl font-extrabold text-neutral-950">
-                  {incomingRide.passenger?.full_name || 'Cliente 66 Mobilidade'}
+                <h2 className="truncate font-display text-xl font-extrabold text-[#0F2421]">
+                  {incomingRide.passenger?.full_name || 'Cliente Boreal Mobilidade'}
                 </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#FFD100]/45 px-2.5 py-0.5 text-xs font-extrabold text-neutral-950">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] border border-[#2DD4BF]/40 px-2.5 py-0.5 text-xs font-extrabold text-[#047857]">
                     ★ {(incomingRide.passenger?.rating_avg ?? 5).toFixed(1)}
-                    <span className="text-[10px] font-bold text-neutral-700">
+                    <span className="text-[10px] font-bold text-[#334E4A]">
                       ({incomingRide.passenger?.rating_count || 1} aval.)
                     </span>
                   </span>
-                  <span className="inline-flex items-center rounded-full bg-white px-2.5 py-0.5 text-[11px] font-extrabold text-neutral-800 border border-neutral-200">
+                  <span className="inline-flex items-center rounded-full bg-[#F7FBFA] px-2.5 py-0.5 text-[11px] font-extrabold text-[#0F2421] border border-[#D4EDE7]">
                     {incomingRide.payment_method === 'wallet'
-                      ? '66pay · Saldo Reservado'
+                      ? 'BorealPay · Saldo Reservado'
                       : incomingRide.payment_method === 'pix'
                       ? 'Pix Plataforma'
                       : 'Dinheiro ao Motorista'}
@@ -2094,7 +2116,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </span>
                   )}
                   {Boolean(incomingRide.pending_debt_included && incomingRide.pending_debt_included > 0) && (
-                    <span className="inline-flex items-center rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-extrabold text-amber-900">
+                    <span className="inline-flex items-center rounded-full bg-teal-50 border border-[#2DD4BF] px-2 py-0.5 text-[10px] font-extrabold text-[#065F46]">
                       +Pendência {formatBRL(incomingRide.pending_debt_included || 0)}
                     </span>
                   )}
@@ -2102,49 +2124,49 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </div>
             </div>
 
-            {/* Highlighted Yellow Fare Card */}
-            <div className="rounded-3xl bg-[#FFD100] p-5 text-center shadow-lg border-2 border-neutral-950/10">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-neutral-900">
+            {/* Highlighted Aurora Fare Card */}
+            <div className="rounded-3xl aurora-surface-flow p-5 text-center shadow-lg border border-[#2DD4BF]/40">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-[#6EE7B7]">
                 Valor da Corrida
               </p>
-              <p className="mt-1 font-display text-5xl font-extrabold text-neutral-950 font-mono-num tracking-tight">
+              <p className="mt-1 font-display text-5xl font-extrabold text-white font-mono-num tracking-tight">
                 {formatBRL(incomingRide.estimated_fare)}
               </p>
-              <p className="mt-1.5 text-xs font-bold text-neutral-900">
+              <p className="mt-1.5 text-xs font-bold text-emerald-100">
                 {incomingRide.distance_km} km de trajeto estimado
               </p>
             </div>
 
             {/* Clean White Route Details Card */}
-            <div className="space-y-3 rounded-3xl bg-neutral-50 p-4 text-sm border border-neutral-200 shadow-xs">
+            <div className="space-y-3 rounded-3xl bg-white p-4 text-sm border border-[#D4EDE7] shadow-xs">
               <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 mt-0.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ECFDF5] border border-[#2DD4BF]/40 text-[#047857] mt-0.5">
                   <MapPin className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <span className="block text-[11px] font-extrabold uppercase tracking-wider text-neutral-500">
+                  <span className="block text-[11px] font-extrabold uppercase tracking-wider text-[#334E4A]">
                     {isDeliveryCategory(incomingRide.category) ? 'Local de Coleta' : 'Partida / Embarque'}
                   </span>
-                  <span className="font-bold text-neutral-950 leading-snug block">
+                  <span className="font-bold text-[#0F2421] leading-snug block">
                     {incomingRide.origin_address}
                   </span>
                 </div>
               </div>
-              <div className="border-t border-neutral-200 pt-3 flex items-start gap-3">
+              <div className="border-t border-[#E6F4F1] pt-3 flex items-start gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 mt-0.5">
                   <Navigation className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <span className="block text-[11px] font-extrabold uppercase tracking-wider text-neutral-500">
+                  <span className="block text-[11px] font-extrabold uppercase tracking-wider text-[#334E4A]">
                     Destino Final
                   </span>
-                  <span className="font-bold text-neutral-950 leading-snug block">
+                  <span className="font-bold text-[#0F2421] leading-snug block">
                     {incomingRide.destination_address}
                   </span>
                 </div>
               </div>
               {incomingRide.delivery_notes && (
-                <p className="border-t border-neutral-200 pt-2.5 text-xs text-neutral-900 font-bold bg-[#FFD100]/25 rounded-2xl px-3 py-2">
+                <p className="border-t border-[#E6F4F1] pt-2.5 text-xs text-[#047857] font-bold bg-[#ECFDF5] rounded-2xl px-3 py-2">
                   Obs.: {incomingRide.delivery_notes}
                 </p>
               )}
@@ -2156,7 +2178,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             <button
               type="button"
               onClick={() => handleDeclineRide(incomingRide.id)}
-              className="min-h-[60px] rounded-full border-2 border-neutral-300 bg-neutral-100 text-sm font-extrabold text-neutral-800 hover:bg-neutral-200 active:scale-95 transition shadow-xs"
+              className="min-h-[60px] rounded-full border-2 border-[#D4EDE7] bg-white text-sm font-extrabold text-[#334E4A] hover:bg-[#ECFDF5] active:scale-95 transition shadow-xs"
             >
               {t.decline_ride}
             </button>
@@ -2164,7 +2186,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               type="button"
               disabled={actionLoading}
               onClick={() => handleAcceptRide(incomingRide.id)}
-              className="col-span-2 min-h-[60px] rounded-full bg-[#FFD100] border-2 border-neutral-950 text-lg font-extrabold text-neutral-950 shadow-xl hover:brightness-95 active:scale-95 transition"
+              className="col-span-2 min-h-[60px] rounded-full aurora-accent-flow text-lg font-extrabold text-white shadow-xl hover:brightness-95 active:scale-95 transition"
             >
               {actionLoading ? '...' : t.accept_ride}
             </button>
@@ -2172,32 +2194,32 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* ETAPA C: DESTINATION CHECKOUT WITH 66PAY QR, ADMIN PIX QR & CONFIRMATION + RECEIPT */}
+      {/* ETAPA C: DESTINATION CHECKOUT WITH BOREALPAY QR, ADMIN PIX QR & CONFIRMATION + RECEIPT */}
       {checkoutRide && (() => {
         if (pixConfirmedSuccess) {
           return (
             <div className="fixed inset-0 z-[1180] flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
-              <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 text-center shadow-2xl space-y-4 border border-emerald-200 dark:border-emerald-800">
+              <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#0B1D1A] p-6 text-center shadow-2xl space-y-4 border border-emerald-200 dark:border-emerald-800">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-10 w-10" />
                 </div>
                 <div>
                   <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                     {walletCheckoutSuccess
-                      ? 'Pagamento 66pay Confirmado'
+                      ? 'Pagamento BorealPay Confirmado'
                       : t.checkout_pix_confirmed_admin}
                   </p>
-                  <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+                  <h3 className="mt-1 font-display text-xl font-extrabold text-[#0F2421] dark:text-white">
                     {t.checkout_payment_success}
                   </h3>
-                  <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+                  <p className="mt-1.5 text-xs text-[#334E4A] dark:text-neutral-300">
                     {walletCheckoutSuccess
-                      ? 'Transferência interna 66pay recebida do passageiro. O valor de '
+                      ? 'Transferência interna BorealPay recebida do passageiro. O valor de '
                       : 'O valor de '}
-                    <strong className="font-mono-num text-neutral-950 dark:text-[#FFD100]">
+                    <strong className="font-mono-num text-[#047857] dark:text-[#6EE7B7]">
                       {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
                     </strong>{' '}
-                    já foi creditado no seu saldo 66pay.
+                    já foi creditado no seu saldo BorealPay.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -2205,10 +2227,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     <button
                       type="button"
                       onClick={() => openRide66PayReceipt(checkoutRide)}
-                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98]"
+                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
                     >
                       <Receipt className="h-4 w-4" />
-                      Gerar Comprovante 66pay
+                      Gerar Comprovante BorealPay
                     </button>
                   )}
                   <button
@@ -2243,16 +2265,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
         return (
           <div className="fixed inset-0 z-[1180] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs">
             <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#14171D] p-5 text-neutral-950 dark:text-white shadow-2xl border border-neutral-200 dark:border-white/15 space-y-3.5 max-h-[92vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-neutral-100 dark:border-white/10 pb-3">
+              <div className="flex items-center justify-between border-b border-[#D4EDE7] dark:border-white/10 pb-3">
                 <div>
                   <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                     {isWalletQrCheckout
-                      ? 'Etapa C · Recebimento 66pay'
+                      ? 'Etapa C · Recebimento BorealPay'
                       : 'Etapa C · Pix / Pagamento'}
                   </p>
-                  <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
+                  <h3 className="font-display text-lg font-extrabold text-[#0F2421] dark:text-white">
                     {isWalletQrCheckout
-                      ? 'Receber Corrida via 66pay'
+                      ? 'Receber Corrida via BorealPay'
                       : waitingAdminPix
                       ? t.checkout_pix_waiting_title
                       : t.checkout_payment_title}
@@ -2270,16 +2292,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 )}
               </div>
 
-              <div className="rounded-2xl bg-neutral-50 dark:bg-[#1D212B] p-4 text-center border border-neutral-200 dark:border-white/10">
-                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+              <div className="rounded-2xl bg-[#F7FBFA] dark:bg-[#102924] p-4 text-center border border-[#D4EDE7] dark:border-white/10">
+                <p className="text-xs font-semibold text-[#334E4A] dark:text-neutral-400">
                   {checkoutRide.passenger?.full_name || t.passenger_role_badge}
                 </p>
-                <p className="mt-1 font-display text-4xl font-extrabold text-neutral-950 dark:text-[#FFD100] font-mono-num">
+                <p className="mt-1 font-display text-4xl font-extrabold text-[#047857] dark:text-[#6EE7B7] font-mono-num">
                   {formatBRL(checkoutRide.final_fare ?? checkoutRide.estimated_fare)}
                 </p>
                 {(checkoutRide.final_fare ?? checkoutRide.estimated_fare) >
                   checkoutRide.estimated_fare && (
-                  <p className="mt-1 text-[11px] font-bold text-amber-600 dark:text-amber-300">
+                  <p className="mt-1 text-[11px] font-bold text-[#047857] dark:text-[#2DD4BF]">
                     Inclui taxa de espera após 2 minutos gratuitos
                   </p>
                 )}
@@ -2293,11 +2315,11 @@ export const DriverView: React.FC<DriverViewProps> = ({
               </div>
 
               {isWalletQrCheckout ? (
-                <div className="rounded-2xl bg-[#11141B] text-white p-4 border border-[#FFD100]/40 space-y-3">
+                <div className="rounded-2xl bg-[#ECFDF5] dark:bg-[#0B1D1A] text-[#0F2421] dark:text-white p-4 border border-[#2DD4BF]/50 dark:border-[#2DD4BF]/40 space-y-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#FFD100]">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                       <KeyRound className="h-4 w-4" />
-                      QR Code Exclusivo 66pay (Motorista)
+                      QR Code Exclusivo BorealPay (Motorista)
                     </span>
                     <button
                       type="button"
@@ -2306,7 +2328,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         setCopied66PayKey(true);
                         setTimeout(() => setCopied66PayKey(false), 2000);
                       }}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-neutral-950"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg aurora-accent-flow px-2.5 py-1 text-[11px] font-extrabold text-white"
                     >
                       {copied66PayKey ? (
                         <Check className="h-3.5 w-3.5" />
@@ -2317,30 +2339,30 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </button>
                   </div>
 
-                  <p className="text-xs text-neutral-200 leading-relaxed">
-                    Mostre este QR Code ao passageiro para concluir a transferência interna 66pay
+                  <p className="text-xs text-[#334E4A] dark:text-neutral-200 leading-relaxed">
+                    Mostre este QR Code ao passageiro para concluir a transferência interna BorealPay
                     (saldo já reservado na corrida).
                   </p>
 
                   <div className="flex flex-col sm:flex-row items-center gap-3.5">
-                    <div className="rounded-2xl bg-white p-2.5 shrink-0 shadow-sm">
+                    <div className="rounded-2xl bg-white p-2.5 shrink-0 shadow-sm border border-[#D4EDE7] dark:border-transparent">
                       <PixQrSvg payload={driver66PayQrPayload} size={144} />
                     </div>
                     <div className="min-w-0 flex-1 space-y-2 text-center sm:text-left">
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                          Sua Chave 66pay
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#334E4A] dark:text-neutral-400">
+                          Sua Chave BorealPay
                         </p>
-                        <p className="font-mono-num text-sm font-extrabold text-[#FFD100] select-all">
+                        <p className="font-mono-num text-sm font-extrabold text-[#047857] dark:text-[#6EE7B7] select-all">
                           {myPay66Key}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-2 text-[11px] font-bold text-amber-200 flex items-center gap-2">
-                        <Clock className="h-4 w-4 shrink-0 text-[#FFD100] animate-pulse" />
-                        <span>Aguardando passageiro escanear QR Code 66pay...</span>
+                      <div className="rounded-xl border border-[#2DD4BF]/40 dark:border-[#2DD4BF]/30 bg-white dark:bg-[#071513] px-3 py-2 text-[11px] font-bold text-[#047857] dark:text-[#6EE7B7] flex items-center gap-2">
+                        <Clock className="h-4 w-4 shrink-0 text-[#047857] dark:text-[#6EE7B7] animate-pulse" />
+                        <span>Aguardando passageiro escanear QR Code BorealPay...</span>
                       </div>
-                      <p className="text-[10px] text-neutral-400">
-                        Transferência interna 66pay (não é Pix bancário)
+                      <p className="text-[10px] text-[#334E4A] dark:text-neutral-400">
+                        Transferência interna BorealPay (não é Pix bancário)
                       </p>
                     </div>
                   </div>
@@ -2348,13 +2370,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
               ) : (
                 <>
                   {waitingAdminPix && (
-                    <div className="rounded-2xl border border-amber-300 dark:border-amber-500/50 bg-amber-50 dark:bg-amber-950/60 px-3.5 py-3 text-xs font-bold text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
-                      <Clock className="h-5 w-5 shrink-0 text-amber-600 dark:text-[#FFD100] animate-pulse mt-0.5" />
+                    <div className="rounded-2xl border border-[#2DD4BF]/50 dark:border-[#2DD4BF]/40 bg-[#ECFDF5] dark:bg-[#047857]/30 px-3.5 py-3 text-xs font-bold text-[#065F46] dark:text-[#6EE7B7] flex items-start gap-2.5">
+                      <Clock className="h-5 w-5 shrink-0 text-[#047857] dark:text-[#6EE7B7] animate-pulse mt-0.5" />
                       <div>
-                        <p className="text-neutral-950 dark:text-white font-extrabold">
+                        <p className="text-[#0F2421] dark:text-white font-extrabold">
                           {t.checkout_waiting_admin_headline}
                         </p>
-                        <p className="mt-0.5 font-normal text-amber-800 dark:text-amber-100/80">
+                        <p className="mt-0.5 font-normal text-[#334E4A] dark:text-emerald-100/80">
                           {t.checkout_waiting_admin_desc}
                         </p>
                       </div>
@@ -2362,9 +2384,9 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   )}
 
                   {/* ALWAYS SHOW ADMIN PIX QR CODE (FOR PIX RIDES OR UNFORESEEN SWITCH FROM CASH) */}
-                  <div className="rounded-2xl bg-neutral-50 dark:bg-[#1D212B] p-4 border border-neutral-200 dark:border-white/10 space-y-3">
+                  <div className="rounded-2xl bg-[#F7FBFA] dark:bg-[#102924] p-4 border border-[#D4EDE7] dark:border-white/10 space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-extrabold text-neutral-900 dark:text-[#FFD100]">
+                      <span className="text-[11px] font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                         {checkoutRide.payment_method === 'cash'
                           ? t.checkout_qr_cash_option
                           : `${t.checkout_qr_admin_platform} · ${platformConfig.platform_pix_receiver}`}
@@ -2376,7 +2398,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                           setCopiedCheckoutPix(true);
                           setTimeout(() => setCopiedCheckoutPix(false), 2000);
                         }}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#071513]"
                       >
                         {copiedCheckoutPix ? (
                           <Check className="h-3.5 w-3.5" />
@@ -2390,7 +2412,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     <div className="flex flex-col sm:flex-row items-center gap-3.5">
                       <div
                         key={checkoutPixCycle}
-                        className="rounded-2xl bg-white p-2.5 border border-neutral-200 dark:border-transparent shrink-0 shadow-xs"
+                        className="rounded-2xl bg-white p-2.5 border border-[#D4EDE7] dark:border-transparent shrink-0 shadow-xs"
                       >
                         {platformConfig.platform_pix_qr_url ? (
                           <img
@@ -2406,16 +2428,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
                           Atualiza em <span className="font-mono-num">{checkoutPixTimer}</span> · Conta Admin
                         </p>
-                        <p className="text-[11px] font-bold text-neutral-600 dark:text-neutral-300">
+                        <p className="text-[11px] font-bold text-[#334E4A] dark:text-neutral-300">
                           {platformConfig.platform_pix_receiver}
                         </p>
                         <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
                           Chave:{' '}
-                          <span className="text-neutral-950 dark:text-white font-mono-num">
+                          <span className="text-[#0F2421] dark:text-white font-mono-num">
                             {platformConfig.platform_pix_key}
                           </span>
                         </p>
-                        <p className="font-mono-num text-[10px] text-neutral-600 dark:text-neutral-300 break-all line-clamp-3 select-all">
+                        <p className="font-mono-num text-[10px] text-[#334E4A] dark:text-neutral-300 break-all line-clamp-3 select-all">
                           {checkoutEmvPayload}
                         </p>
                       </div>
@@ -2430,7 +2452,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     type="button"
                     disabled={actionLoading}
                     onClick={() => handleDeclareCheckoutPix(checkoutRide)}
-                    className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-xs font-extrabold text-neutral-950 active:scale-[0.98]"
+                    className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-xs font-extrabold text-white active:scale-[0.98]"
                   >
                     <QrCode className="h-4 w-4" />
                     {t.checkout_pix_sent_btn}
@@ -2441,7 +2463,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   type="button"
                   disabled={actionLoading}
                   onClick={() => handleConfirmCashPayment(checkoutRide)}
-                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-extrabold text-neutral-950 active:scale-[0.98]"
+                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-sm font-extrabold text-white active:scale-[0.98]"
                 >
                   <Banknote className="h-5 w-5" />
                   {actionLoading
@@ -2457,7 +2479,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     setDisputeRide(checkoutRide);
                     setDisputeReason('');
                   }}
-                  className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-red-500/40 bg-red-950/40 text-xs font-bold text-red-600 dark:text-red-300"
+                  className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-red-200 dark:border-red-500/40 bg-red-50 dark:bg-red-950/40 text-xs font-bold text-red-700 dark:text-red-300"
                 >
                   <ShieldAlert className="h-4 w-4" />
                   {t.checkout_report_unpaid}
@@ -2468,38 +2490,38 @@ export const DriverView: React.FC<DriverViewProps> = ({
         );
       })()}
 
-      {/* Instant Celebratory Modal for Rides/Deliveries Paid with 66pay */}
+      {/* Instant Celebratory Modal for Rides/Deliveries Paid with BorealPay */}
       {walletPaidSuccessRide && (
         <div className="fixed inset-0 z-[1185] flex items-center justify-center bg-black/75 p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 text-center shadow-2xl space-y-4 border border-emerald-200 dark:border-emerald-800">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#0B1D1A] p-6 text-center shadow-2xl space-y-4 border border-emerald-200 dark:border-emerald-800">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="h-10 w-10" />
             </div>
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                Pagamento 66pay Confirmado
+                Pagamento BorealPay Confirmado
               </p>
-              <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+              <h3 className="mt-1 font-display text-xl font-extrabold text-[#0F2421] dark:text-white">
                 Valor creditado no seu saldo!
               </h3>
-              <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+              <p className="mt-1.5 text-xs text-[#334E4A] dark:text-neutral-300">
                 O valor de{' '}
-                <strong className="font-mono-num text-neutral-950 dark:text-[#FFD100]">
+                <strong className="font-mono-num text-[#047857] dark:text-[#6EE7B7]">
                   {formatBRL(
                     walletPaidSuccessRide.final_fare ?? walletPaidSuccessRide.estimated_fare
                   )}
                 </strong>{' '}
-                já foi adicionado automaticamente ao seu saldo 66pay.
+                já foi adicionado automaticamente ao seu saldo BorealPay.
               </p>
             </div>
             <div className="space-y-2">
               <button
                 type="button"
                 onClick={() => openRide66PayReceipt(walletPaidSuccessRide)}
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98]"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
               >
                 <Receipt className="h-4 w-4" />
-                Gerar Comprovante 66pay
+                Gerar Comprovante BorealPay
               </button>
               <button
                 type="button"
@@ -2587,10 +2609,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     key={slotIdx}
                     className={`flex h-16 w-14 items-center justify-center rounded-2xl border-2 font-mono-num text-2xl font-extrabold transition ${
                       digit
-                        ? 'border-neutral-950 dark:border-[#FFD100] bg-neutral-50 dark:bg-[#1D212B] text-neutral-950 dark:text-[#FFD100] shadow-xs'
+                        ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#ECFDF5] dark:bg-[#102924] text-[#047857] dark:text-[#6EE7B7] shadow-xs'
                         : isActiveSlot
-                        ? 'border-[#FFD100] bg-[#FFD100]/10 text-neutral-400 ring-2 ring-[#FFD100]/30'
-                        : 'border-neutral-200 dark:border-white/15 bg-neutral-100/70 dark:bg-white/5 text-neutral-400'
+                        ? 'border-[#2DD4BF] bg-[#ECFDF5]/60 text-neutral-400 ring-2 ring-[#2DD4BF]/30'
+                        : 'border-[#D4EDE7] dark:border-white/15 bg-neutral-100/70 dark:bg-white/5 text-neutral-400'
                     }`}
                   >
                     {digit || '•'}
@@ -2602,7 +2624,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             <button
               type="submit"
               disabled={pinInput.length !== 4 || actionLoading}
-              className="flex min-h-[52px] w-full items-center justify-center rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm disabled:opacity-40 active:scale-[0.98] transition"
+              className="flex min-h-[52px] w-full items-center justify-center rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm disabled:opacity-40 active:scale-[0.98] transition"
             >
               {actionLoading ? '...' : t.validate_pin_btn}
             </button>
@@ -2639,7 +2661,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
               value={disputeReason}
               onChange={(e) => setDisputeReason(e.target.value)}
               placeholder="Descreva o ocorrido (ex: passageiro desembarcou sem pagar)"
-              className="w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+              className="w-full rounded-2xl border border-[#D4EDE7] dark:border-neutral-700 bg-[#F7FBFA] dark:bg-neutral-800 p-3 text-xs text-[#0F2421] dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
             />
             <button
               type="submit"
@@ -2652,10 +2674,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
         </div>
       )}
 
-      {/* Dark Graphite Driver Drawer (99 Motorista Reference Style) */}
+      {/* Clean Light Aurora Driver Drawer */}
       {menuOpen && (
-        <div className="fixed inset-0 z-[1000] flex bg-black/70">
-          <div className="flex h-full w-80 max-w-[85vw] flex-col bg-[#0F1115] p-6 text-white shadow-2xl overflow-y-auto">
+        <div className="fixed inset-0 z-[1000] flex bg-black/60">
+          <div className="flex h-full w-80 max-w-[85vw] flex-col bg-white dark:bg-[#0B1D1A] p-6 text-[#0F2421] dark:text-white shadow-2xl overflow-y-auto">
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -2668,15 +2690,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <AvatarImage
                   src={currentUser.avatar_url}
                   name={currentUser.full_name}
-                  className="h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                  fallbackClassName="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 font-extrabold text-lg shrink-0"
+                  className="h-12 w-12 rounded-full object-cover border-2 border-[#2DD4BF] shrink-0"
+                  fallbackClassName="flex h-12 w-12 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-extrabold text-lg shrink-0"
                 />
                 <div>
-                  <h3 className="font-display text-base font-extrabold text-white">
+                  <h3 className="font-display text-base font-extrabold text-[#0F2421] dark:text-white">
                     {currentUser.full_name}
                   </h3>
-                  <p className="text-xs font-semibold text-neutral-300 flex items-center gap-1">
-                    <Star className="h-3.5 w-3.5 fill-[#FFD100] text-[#FFD100]" />
+                  <p className="text-xs font-semibold text-[#334E4A] dark:text-neutral-300 flex items-center gap-1">
+                    <Star className="h-3.5 w-3.5 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
                     <span className="font-mono-num">{currentUser.rating_avg.toFixed(2)}</span>
                     <span>· {completedRides.length} viagens</span>
                   </p>
@@ -2685,31 +2707,31 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F7FBFA] dark:bg-neutral-800 text-[#0F2421] dark:text-white"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {weather && (
-              <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#1A1D24] px-3.5 py-2.5 text-xs border border-white/5">
-                <span className="text-neutral-300 truncate pr-2">{weather.city}</span>
-                <span className="font-mono-num font-bold text-[#FFD100] shrink-0">
+              <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 px-3.5 py-2.5 text-xs border border-[#D4EDE7] dark:border-neutral-700">
+                <span className="text-[#334E4A] dark:text-neutral-300 truncate pr-2">{weather.city}</span>
+                <span className="font-mono-num font-bold text-[#047857] dark:text-[#6EE7B7] shrink-0">
                   {weather.temperatureC}°C · {weather.label}
                 </span>
               </div>
             )}
 
-            <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-[#1A1D24] p-4 border border-white/5 text-center">
+            <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-4 border border-[#D4EDE7] dark:border-neutral-700 text-center">
               <div>
-                <p className="text-[11px] text-neutral-400">Taxa de Aceitação</p>
-                <p className="mt-1 font-mono-num text-lg font-extrabold text-white">
+                <p className="text-[11px] text-[#334E4A] dark:text-neutral-400">Taxa de Aceitação</p>
+                <p className="mt-1 font-mono-num text-lg font-extrabold text-[#0F2421] dark:text-white">
                   {currentUser.driver?.acceptance_rate ?? 100}%
                 </p>
               </div>
               <div>
-                <p className="text-[11px] text-neutral-400">Taxa de Finalização</p>
-                <p className="mt-1 font-mono-num text-lg font-extrabold text-white">
+                <p className="text-[11px] text-[#334E4A] dark:text-neutral-400">Taxa de Finalização</p>
+                <p className="mt-1 font-mono-num text-lg font-extrabold text-[#0F2421] dark:text-white">
                   {currentUser.driver?.completion_rate ?? 100}%
                 </p>
               </div>
@@ -2722,13 +2744,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   openDriverWallet('withdraw');
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-3 text-sm font-extrabold text-emerald-300 hover:bg-emerald-500/20"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-3 text-sm font-extrabold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
               >
                 <span className="flex items-center gap-3">
-                  <Wallet className="h-5 w-5 text-emerald-400" />
+                  <Wallet className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                   <span>{t.wallet_title} · {t.withdraw} / {t.transfer}</span>
                 </span>
-                <span className="font-mono-num text-xs font-extrabold text-white">
+                <span className="font-mono-num text-xs font-extrabold text-[#0F2421] dark:text-white">
                   {formatBRL(currentUser.wallet_balance || 0)}
                 </span>
               </button>
@@ -2740,13 +2762,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   setFinanceOpen(true);
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F2421] dark:text-neutral-100 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
               >
                 <span className="flex items-center gap-3">
-                  <Wallet className="h-5 w-5 text-[#FFD100]" />
+                  <Wallet className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                   {t.earnings_center}
                 </span>
-                <ChevronRight className="h-4 w-4 text-neutral-500" />
+                <ChevronRight className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
               </button>
 
               <button
@@ -2755,13 +2777,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   setEventsOpen(true);
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F2421] dark:text-neutral-100 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
               >
                 <span className="flex items-center gap-3">
-                  <Sparkles className="h-5 w-5 text-[#FFD100]" />
+                  <Sparkles className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                   Eventos & Bônus ({relevantEvents.length})
                 </span>
-                <ChevronRight className="h-4 w-4 text-neutral-500" />
+                <ChevronRight className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
               </button>
 
               <button
@@ -2771,10 +2793,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   setNotificationsOpen(true);
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F2421] dark:text-neutral-100 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
               >
                 <span className="flex items-center gap-3">
-                  <Bell className="h-5 w-5 text-[#FFD100]" />
+                  <Bell className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                   Notificações
                 </span>
                 {unreadNotificationsCount > 0 ? (
@@ -2782,7 +2804,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     {unreadNotificationsCount}
                   </span>
                 ) : (
-                  <ChevronRight className="h-4 w-4 text-neutral-500" />
+                  <ChevronRight className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
                 )}
               </button>
 
@@ -2792,13 +2814,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   setHistoryOpen(true);
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F2421] dark:text-neutral-100 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
               >
                 <span className="flex items-center gap-3">
-                  <History className="h-5 w-5 text-neutral-400" />
+                  <History className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
                   {t.ride_history} ({myDriverRides.length})
                 </span>
-                <ChevronRight className="h-4 w-4 text-neutral-500" />
+                <ChevronRight className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
               </button>
 
               <button
@@ -2807,13 +2829,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   setSupportChatOpen(true);
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F2421] dark:text-neutral-100 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
               >
                 <span className="flex items-center gap-3">
-                  <Headphones className="h-5 w-5 text-sky-400" />
+                  <Headphones className="h-5 w-5 text-sky-600 dark:text-sky-400" />
                   {t.support_admin}
                 </span>
-                <ChevronRight className="h-4 w-4 text-neutral-500" />
+                <ChevronRight className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
               </button>
 
               <button
@@ -2822,17 +2844,17 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   setSettingsOpen(true);
                   setMenuOpen(false);
                 }}
-                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-neutral-100 hover:bg-white/5"
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F2421] dark:text-neutral-100 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800"
               >
                 <span className="flex items-center gap-3">
-                  <Settings className="h-5 w-5 text-neutral-400" />
+                  <Settings className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
                   {t.settings_title}
                 </span>
-                <ChevronRight className="h-4 w-4 text-neutral-500" />
+                <ChevronRight className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
               </button>
 
-              <div className="flex items-center gap-3 px-3 py-2 text-xs text-neutral-400">
-                <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+              <div className="flex items-center gap-3 px-3 py-2 text-xs text-[#334E4A] dark:text-neutral-400">
+                <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>{platformConfig.platform_city} · RLS & PIN ativos</span>
               </div>
 
@@ -2840,7 +2862,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 <PWAInstallButton
                   variant="menu"
                   apkUrl={platformConfig.ota_apk_url}
-                  siteName={platformConfig.site_name || '66 Mobilidade'}
+                  siteName={platformConfig.site_name || 'Boreal Mobilidade'}
                 />
               </div>
             </div>
@@ -2848,7 +2870,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-white/10 text-sm font-bold text-white hover:bg-white/15"
+              className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-sm font-bold text-neutral-950 dark:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700"
             >
               <LogOut className="h-4 w-4" />
               {t.logout}
@@ -2860,28 +2882,28 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
       {/* FULL DRIVER PAYMENT & EARNINGS MANAGEMENT PANEL WITH DIA/SEMANA/MÊS/GERAL BREAKDOWN */}
       {financeOpen && (
-        <div className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
-          <div className="w-full max-w-2xl rounded-t-3xl sm:rounded-3xl bg-[#0F1115] text-white p-6 shadow-2xl max-h-[92vh] flex flex-col border border-white/10">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        <div className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
+          <div className="w-full max-w-2xl rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white p-6 shadow-2xl max-h-[92vh] flex flex-col border border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
               <div>
-                <h3 className="font-display text-lg font-extrabold text-white">
+                <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                   {t.earnings_center}
                 </h3>
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   Acompanhe ganhos por Dia, Semana, Mês, repasses Pix e dinheiro recebido
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setFinanceOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Period Filter Tabs: Dia / Semana / Mês / Geral */}
-            <div className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl bg-[#1A1D24] p-1 border border-white/5">
+            <div className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-1 border border-neutral-200 dark:border-neutral-700">
               {(
                 [
                   { id: 'day', label: t.period_day },
@@ -2902,8 +2924,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     onClick={() => setFinancePeriod(p.id)}
                     className={`min-h-[38px] rounded-xl px-2 text-[11px] font-extrabold transition ${
                       financePeriod === p.id
-                        ? 'bg-[#FFD100] text-neutral-950 shadow-xs'
-                        : 'text-neutral-300 hover:text-white'
+                        ? 'aurora-accent-flow text-white shadow-xs'
+                        : 'text-[#334E4A] dark:text-neutral-300 hover:text-[#0F2421] dark:hover:text-white'
                     }`}
                   >
                     {p.label} ({count})
@@ -2927,15 +2949,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   ? Math.min(100, Math.round((financeSummary.grossTotal / goalTarget) * 100))
                   : 100;
               return (
-                <div className="mt-3 rounded-2xl bg-[#1A1D24] p-3.5 border border-white/10 space-y-2">
+                <div className="mt-3 rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-3.5 border border-[#D4EDE7] dark:border-neutral-700 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div>
-                      <span className="text-neutral-400 font-semibold">Produção no período: </span>
-                      <strong className="font-mono-num text-base font-extrabold text-[#FFD100]">
+                      <span className="text-[#334E4A] dark:text-neutral-400 font-semibold">Produção no período: </span>
+                      <strong className="font-mono-num text-base font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                         {formatBRL(financeSummary.grossTotal)}
                       </strong>
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] font-bold text-neutral-300">
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-[#334E4A] dark:text-neutral-300">
                       <span>{financeSummary.ridesCount} corridas</span>
                       <span>·</span>
                       <span>{financeSummary.deliveriesCount} entregas</span>
@@ -2943,15 +2965,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   </div>
                   {goalTarget > 0 && (
                     <div className="space-y-1">
-                      <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-2 w-full rounded-full bg-[#D4EDE7] dark:bg-white/10 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-[#FFD100] transition-all"
+                          className="h-full rounded-full aurora-accent-flow transition-all"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <div className="flex justify-between text-[10px] font-bold text-neutral-400 font-mono-num">
+                      <div className="flex justify-between text-[10px] font-bold text-[#334E4A] dark:text-neutral-400 font-mono-num">
                         <span>Meta sugerida: {formatBRL(goalTarget)}</span>
-                        <span className="text-[#FFD100]">{pct}% atingido</span>
+                        <span className="text-[#047857] dark:text-[#6EE7B7]">{pct}% atingido</span>
                       </div>
                     </div>
                   )}
@@ -2961,47 +2983,47 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
             {/* 4 Financial Summary Cards */}
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-[#FFD100]/30">
-                <p className="text-[11px] font-semibold text-neutral-400">
+              <div className="rounded-2xl bg-[#ECFDF5] dark:bg-neutral-800 p-3.5 border border-[#2DD4BF]/40 dark:border-[#2DD4BF]/30">
+                <p className="text-[11px] font-semibold text-[#334E4A] dark:text-neutral-400">
                   Saldo a Receber (Atual)
                 </p>
-                <p className="mt-1 font-mono-num text-xl font-extrabold text-[#FFD100]">
+                <p className="mt-1 font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                   {formatBRL(financeSummary.pendingToReceive)}
                 </p>
               </div>
 
-              <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-white/5">
-                <p className="text-[11px] font-semibold text-neutral-400">
+              <div className="rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-3.5 border border-[#D4EDE7] dark:border-neutral-700">
+                <p className="text-[11px] font-semibold text-[#334E4A] dark:text-neutral-400">
                   Pix + Saldo App (Período)
                 </p>
-                <p className="mt-1 font-mono-num text-xl font-extrabold text-white">
+                <p className="mt-1 font-mono-num text-xl font-extrabold text-[#0F2421] dark:text-white">
                   {formatBRL(financeSummary.totalPixEarned + financeSummary.totalWalletEarned)}
                 </p>
               </div>
 
-              <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-white/5">
-                <p className="text-[11px] font-semibold text-neutral-400">
+              <div className="rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-3.5 border border-[#D4EDE7] dark:border-neutral-700">
+                <p className="text-[11px] font-semibold text-[#334E4A] dark:text-neutral-400">
                   Dinheiro (Período)
                 </p>
-                <p className="mt-1 font-mono-num text-xl font-extrabold text-emerald-400">
+                <p className="mt-1 font-mono-num text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
                   {formatBRL(financeSummary.totalCashCollected)}
                 </p>
               </div>
 
-              <div className="rounded-2xl bg-[#1A1D24] p-3.5 border border-white/5">
-                <p className="text-[11px] font-semibold text-neutral-400">
+              <div className="rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-3.5 border border-[#D4EDE7] dark:border-neutral-700">
+                <p className="text-[11px] font-semibold text-[#334E4A] dark:text-neutral-400">
                   Repassado (Período)
                 </p>
-                <p className="mt-1 font-mono-num text-xl font-extrabold text-sky-400">
+                <p className="mt-1 font-mono-num text-xl font-extrabold text-sky-600 dark:text-sky-400">
                   {formatBRL(financeSummary.totalPayoutsReceived)}
                 </p>
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#1A1D24] px-4 py-2.5 text-xs border border-white/5">
-              <span className="text-neutral-400 truncate">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 px-4 py-2.5 text-xs border border-[#D4EDE7] dark:border-neutral-700">
+              <span className="text-[#334E4A] dark:text-neutral-400 truncate">
                 {t.pix_key_label}:{' '}
-                <strong className="font-mono-num text-white">
+                <strong className="font-mono-num text-[#0F2421] dark:text-white">
                   {currentUser.driver?.pix_key || 'Não cadastrada'}
                 </strong>
               </span>
@@ -3012,7 +3034,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     setFinanceOpen(false);
                     openDriverWallet('withdraw');
                   }}
-                  className="rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                  className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-extrabold text-white"
                 >
                   {t.withdraw}
                 </button>
@@ -3022,14 +3044,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     setFinanceOpen(false);
                     openDriverWallet('transfer');
                   }}
-                  className="rounded-lg bg-white/10 px-2.5 py-1.5 text-[11px] font-bold text-white"
+                  className="rounded-lg bg-neutral-200 dark:bg-neutral-700 px-2.5 py-1.5 text-[11px] font-bold text-[#0F2421] dark:text-white"
                 >
                   {t.transfer}
                 </button>
                 <button
                   type="button"
                   onClick={loadFinancePanel}
-                  className="flex items-center gap-1 text-[#FFD100] font-bold px-1"
+                  className="flex items-center gap-1 text-[#047857] dark:text-[#6EE7B7] font-bold px-1"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                 </button>
@@ -3037,14 +3059,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
             </div>
 
             {/* Sub-tabs: Corridas vs Extrato */}
-            <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-2xl bg-[#1A1D24] p-1">
+            <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-1 border border-[#D4EDE7] dark:border-neutral-700">
               <button
                 type="button"
                 onClick={() => setFinanceTab('rides')}
                 className={`min-h-[40px] rounded-xl text-xs font-extrabold transition ${
                   financeTab === 'rides'
-                    ? 'bg-[#FFD100] text-neutral-950'
-                    : 'text-neutral-400 hover:text-white'
+                    ? 'aurora-accent-flow text-white shadow-xs'
+                    : 'text-[#334E4A] dark:text-neutral-400 hover:text-[#0F2421] dark:hover:text-white'
                 }`}
               >
                 Corridas do Período ({periodDriverRides.length})
@@ -3054,8 +3076,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 onClick={() => setFinanceTab('ledger')}
                 className={`min-h-[40px] rounded-xl text-xs font-extrabold transition ${
                   financeTab === 'ledger'
-                    ? 'bg-[#FFD100] text-neutral-950'
-                    : 'text-neutral-400 hover:text-white'
+                    ? 'aurora-accent-flow text-white shadow-xs'
+                    : 'text-[#334E4A] dark:text-neutral-400 hover:text-[#0F2421] dark:hover:text-white'
                 }`}
               >
                 Extrato e Repasses ({periodTransactions.length})
@@ -3066,14 +3088,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
               {financeTab === 'rides' ? (
                 periodDriverRides.length === 0 ? (
                   <div className="py-10 text-center space-y-2">
-                    <p className="text-xs text-neutral-400">
+                    <p className="text-xs text-[#334E4A] dark:text-neutral-400">
                       Nenhuma corrida ou entrega neste período selecionado.
                     </p>
                     {financePeriod !== 'all' && (
                       <button
                         type="button"
                         onClick={() => setFinancePeriod('all')}
-                        className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-[#FFD100]"
+                        className="rounded-xl aurora-accent-flow px-3 py-1.5 text-xs font-bold text-white"
                       >
                         Ver histórico completo (Geral)
                       </button>
@@ -3087,28 +3109,28 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     return (
                       <div
                         key={r.id}
-                        className="rounded-2xl bg-[#1A1D24] p-4 border border-white/5 space-y-2"
+                        className="rounded-2xl bg-[#F7FBFA] dark:bg-neutral-800 p-4 border border-[#D4EDE7] dark:border-neutral-700 space-y-2"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             {r.payment_method === 'wallet' ? (
-                              <Wallet className="h-4 w-4 text-emerald-400 shrink-0" />
+                              <Wallet className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                             ) : r.payment_method === 'pix' ? (
-                              <QrCode className="h-4 w-4 text-[#FFD100] shrink-0" />
+                              <QrCode className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0" />
                             ) : (
-                              <Banknote className="h-4 w-4 text-emerald-400 shrink-0" />
+                              <Banknote className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                             )}
-                            <span className="text-xs font-extrabold text-white truncate">
+                            <span className="text-xs font-extrabold text-[#0F2421] dark:text-white truncate">
                               {CATEGORY_LABELS[r.category]} ·{' '}
                               {r.passenger?.full_name || 'Cliente'}
                             </span>
                           </div>
-                          <span className="font-mono-num text-sm font-extrabold text-[#FFD100] shrink-0">
+                          <span className="font-mono-num text-sm font-extrabold text-[#047857] dark:text-[#6EE7B7] shrink-0">
                             {formatBRL(r.final_fare ?? r.estimated_fare)}
                           </span>
                         </div>
 
-                        <p className="text-[11px] text-neutral-400 truncate">
+                        <p className="text-[11px] text-neutral-600 dark:text-neutral-400 truncate">
                           {r.origin_address} → {r.destination_address}
                         </p>
 
@@ -3141,7 +3163,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                                 setDisputeRide(r);
                                 setDisputeReason('');
                               }}
-                              className="text-[11px] font-bold text-red-400 hover:underline"
+                              className="text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline"
                             >
                               Relatar problema / não pagamento ao Admin
                             </button>
@@ -3151,18 +3173,18 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   })
                 )
               ) : periodTransactions.length === 0 ? (
-                <p className="py-10 text-center text-xs text-neutral-400">
+                <p className="py-10 text-center text-xs text-neutral-500 dark:text-neutral-400">
                   Nenhuma movimentação financeira neste período.
                 </p>
               ) : (
                 periodTransactions.map((tx) => (
                   <div
                     key={tx.id}
-                    className="flex items-center justify-between rounded-2xl border border-white/5 bg-[#1A1D24] px-4 py-3 text-xs"
+                    className="flex items-center justify-between rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 py-3 text-xs"
                   >
                     <div className="min-w-0 pr-3">
-                      <p className="font-bold text-white truncate">{tx.description}</p>
-                      <p className="text-[11px] text-neutral-400">
+                      <p className="font-bold text-neutral-950 dark:text-white truncate">{tx.description}</p>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                         {tx.type === 'payout'
                           ? 'Repasse Pix recebido do Admin'
                           : tx.type === 'dispute_settlement'
@@ -3177,7 +3199,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                     </div>
                     <span
                       className={`font-mono-num font-extrabold shrink-0 ${
-                        tx.amount < 0 ? 'text-sky-400' : 'text-emerald-400'
+                        tx.amount < 0 ? 'text-sky-600 dark:text-sky-400' : 'text-emerald-600 dark:text-emerald-400'
                       }`}
                     >
                       {tx.amount < 0
@@ -3195,15 +3217,15 @@ export const DriverView: React.FC<DriverViewProps> = ({
       {/* Driver Ride History Modal */}
       {historyOpen && (
         <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-              <h3 className="font-display text-lg font-extrabold text-neutral-950">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white p-6 shadow-2xl max-h-[80vh] flex flex-col border border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
                 Histórico de Viagens e Entregas
               </h3>
               <button
                 type="button"
                 onClick={() => setHistoryOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -3217,22 +3239,22 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 myDriverRides.map((r) => (
                   <div
                     key={r.id}
-                    className="rounded-2xl border border-neutral-200 p-3.5 text-xs space-y-1.5"
+                    className="rounded-2xl border border-neutral-200 dark:border-neutral-700 p-3.5 text-xs space-y-1.5"
                   >
-                    <div className="flex items-center justify-between font-bold text-neutral-950">
+                    <div className="flex items-center justify-between font-bold text-neutral-950 dark:text-white">
                       <span>
                         {CATEGORY_LABELS[r.category]} · {r.status}
                       </span>
-                      <span className="font-mono-num text-emerald-700">
+                      <span className="font-mono-num text-emerald-700 dark:text-emerald-400">
                         {formatBRL(r.final_fare ?? r.estimated_fare)}
                       </span>
                     </div>
-                    <p className="text-neutral-600 truncate">De: {r.origin_address}</p>
-                    <p className="text-neutral-900 font-medium truncate">
+                    <p className="text-neutral-600 dark:text-neutral-400 truncate">De: {r.origin_address}</p>
+                    <p className="text-neutral-900 dark:text-neutral-200 font-medium truncate">
                       Para: {r.destination_address}
                     </p>
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] font-semibold text-neutral-500">
+                      <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
                         {r.payment_method === 'wallet'
                           ? 'Saldo do App'
                           : r.payment_method === 'pix'
@@ -3250,7 +3272,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                               setDisputeRide(r);
                               setDisputeReason('');
                             }}
-                            className="text-[11px] font-bold text-red-700 hover:underline"
+                            className="text-[11px] font-bold text-red-700 dark:text-red-400 hover:underline"
                           >
                             Relatar problema de pagamento
                           </button>
@@ -3267,42 +3289,42 @@ export const DriverView: React.FC<DriverViewProps> = ({
       {/* Events & Bonuses Modal for Drivers / Motoboys */}
       {eventsOpen && (
         <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-[#0F1115] text-white p-6 shadow-2xl border border-white/10 max-h-[82vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-white p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800 max-h-[82vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-[#D4EDE7] dark:border-neutral-800">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-[#FFD100]" />
-                <h3 className="font-display text-lg font-extrabold text-white">
+                <Sparkles className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
+                <h3 className="font-display text-lg font-extrabold text-[#0F2421] dark:text-white">
                   Eventos & Campanhas Ativas
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setEventsOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F7FBFA] dark:bg-neutral-800 text-[#0F2421] dark:text-white"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="mt-4 flex-1 overflow-y-auto space-y-3">
               {relevantEvents.length === 0 ? (
-                <p className="py-10 text-center text-xs text-neutral-400">
+                <p className="py-10 text-center text-xs text-[#334E4A] dark:text-neutral-400">
                   Nenhum evento ou bônus ativo criado pela administração no momento.
                 </p>
               ) : (
                 relevantEvents.map((ev) => (
                   <div
                     key={ev.id}
-                    className="rounded-2xl border border-[#FFD100]/30 bg-[#1A1D24] p-4 space-y-1.5"
+                    className="rounded-2xl border border-[#2DD4BF]/50 dark:border-[#2DD4BF]/30 bg-[#ECFDF5] dark:bg-neutral-800 p-4 space-y-1.5"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <h4 className="font-display text-sm font-extrabold text-white">{ev.title}</h4>
+                      <h4 className="font-display text-sm font-extrabold text-[#0F2421] dark:text-white">{ev.title}</h4>
                       {ev.bonus_amount > 0 && (
-                        <span className="rounded-full bg-[#FFD100] px-2.5 py-0.5 text-[11px] font-extrabold text-neutral-950 font-mono-num">
+                        <span className="rounded-full aurora-accent-flow px-2.5 py-0.5 text-[11px] font-extrabold text-white font-mono-num">
                           +{formatBRL(ev.bonus_amount)}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-neutral-300 leading-relaxed">{ev.description}</p>
+                    <p className="text-xs text-[#334E4A] dark:text-neutral-300 leading-relaxed">{ev.description}</p>
                     <p className="text-[10px] text-neutral-500 font-mono-num">
                       Publicado em {new Date(ev.created_at).toLocaleDateString('pt-BR')}
                     </p>

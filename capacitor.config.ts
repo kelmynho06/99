@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.mobilidade66.app',
-  appName: '66 Mobilidade',
+  appName: 'Boreal Mobilidade',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true,
-    backgroundColor: '#FFCC00',
+    backgroundColor: '#F7FBFA',
   },
   plugins: {
     Geolocation: {
@@ -19,7 +19,7 @@ const config: CapacitorConfig = {
     },
     LocalNotifications: {
       smallIcon: 'ic_launcher',
-      iconColor: '#FFD100',
+      iconColor: '#0D9488',
     },
   },
 };

@@ -12,8 +12,8 @@ interface AvatarImageProps {
 export const AvatarImage: React.FC<AvatarImageProps> = ({
   src,
   name,
-  className = 'h-12 w-12 rounded-full object-cover border-2 border-[#FFD100] shrink-0',
-  fallbackClassName = 'flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-bold shrink-0',
+  className = 'h-12 w-12 rounded-full object-cover border-2 border-[#2DD4BF] shrink-0',
+  fallbackClassName = 'flex h-12 w-12 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-bold shrink-0',
   initialsCount = 1,
 }) => {
   const [resolvedUrl, setResolvedUrl] = useState<string>('');

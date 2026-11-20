@@ -1896,4 +1896,195 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- 10. Foto/nome imediato do passageiro na chamada do motorista + Nova política de cancelamento (20s grátis, R$ 3,00 após 20s, 100% quando já chegou)
+DROP POLICY IF EXISTS "Usuário vê próprio perfil ou participante em corrida ativa" ON public.profiles;
+CREATE POLICY "Usuário vê próprio perfil ou participante em corrida ativa"
+  ON public.profiles FOR SELECT
+  USING (
+    auth.uid() = id
+    OR public.is_admin()
+    OR (
+      public.is_online_approved_driver()
+      AND EXISTS (
+        SELECT 1 FROM public.rides r
+        WHERE r.passenger_id = profiles.id
+          AND r.status = 'searching'
+      )
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.rides r
+      WHERE r.status IN ('accepted', 'arrived', 'in_progress')
+        AND (
+          (r.passenger_id = auth.uid() AND r.driver_id = profiles.id)
+          OR (r.driver_id = auth.uid() AND r.passenger_id = profiles.id)
+        )
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.get_ride_passenger_preview(p_ride_id UUID)
+RETURNS TABLE (
+  id UUID,
+  full_name TEXT,
+  avatar_url TEXT,
+  rating_avg NUMERIC,
+  rating_count INTEGER,
+  status TEXT
+) AS $$
+  SELECT
+    p.id,
+    p.full_name,
+    p.avatar_url,
+    p.rating_avg,
+    p.rating_count,
+    p.status
+  FROM public.rides r
+  JOIN public.profiles p ON p.id = r.passenger_id
+  WHERE r.id = p_ride_id
+    AND (
+      r.passenger_id = auth.uid()
+      OR r.driver_id = auth.uid()
+      OR public.is_admin()
+      OR (r.status = 'searching' AND public.is_online_approved_driver())
+    );
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.cancel_ride_with_fee(
+  p_ride_id UUID,
+  p_fee_amount NUMERIC DEFAULT 0
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_ride public.rides%ROWTYPE;
+  v_fare NUMERIC(10,2);
+  v_elapsed_sec NUMERIC;
+  v_fee NUMERIC(10,2) := 0;
+  v_refund NUMERIC(10,2) := 0;
+  v_pax_bal NUMERIC(10,2) := 0;
+  v_pax_res NUMERIC(10,2) := 0;
+  v_release_res NUMERIC(10,2) := 0;
+  v_debit_now NUMERIC(10,2) := 0;
+  v_debt_add NUMERIC(10,2) := 0;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Usuário não autenticado.'; END IF;
+
+  SELECT * INTO v_ride FROM public.rides WHERE id = p_ride_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Corrida não encontrada.'; END IF;
+
+  IF v_ride.passenger_id <> v_uid AND v_ride.driver_id <> v_uid AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Sem permissão para cancelar esta corrida.';
+  END IF;
+
+  IF v_ride.status = 'cancelled' THEN
+    RETURN jsonb_build_object('ok', TRUE, 'fee', 0, 'refund', 0);
+  END IF;
+
+  IF v_ride.status = 'completed' THEN
+    RAISE EXCEPTION 'Corrida já concluída.';
+  END IF;
+
+  IF v_ride.status = 'in_progress' AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Não é possível cancelar após o embarque iniciado.';
+  END IF;
+
+  v_fare := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, 0)::NUMERIC, 2);
+
+  IF v_uid = v_ride.passenger_id AND v_ride.driver_id IS NOT NULL THEN
+    IF v_ride.status = 'arrived' THEN
+      v_fee := v_fare;
+    ELSIF v_ride.accepted_at IS NOT NULL THEN
+      v_elapsed_sec := EXTRACT(EPOCH FROM (NOW() - v_ride.accepted_at));
+      IF v_elapsed_sec > 20 THEN
+        v_fee := LEAST(v_fare, 3.00);
+      END IF;
+    END IF;
+  END IF;
+
+  PERFORM set_config('app.trusted_wallet_tx', '1', true);
+
+  UPDATE public.rides
+  SET status = 'cancelled'
+  WHERE id = p_ride_id;
+
+  SELECT COALESCE(wallet_balance, 0), COALESCE(reserved_balance, 0)
+  INTO v_pax_bal, v_pax_res
+  FROM public.profiles
+  WHERE id = v_ride.passenger_id
+  FOR UPDATE;
+
+  IF v_ride.payment_method = 'wallet' AND v_ride.payment_status IN ('paid_wallet', 'paid') THEN
+    v_refund := GREATEST(0, ROUND((v_fare - v_fee)::NUMERIC, 2));
+    IF v_refund > 0 THEN
+      UPDATE public.profiles
+      SET wallet_balance = ROUND((v_pax_bal + v_refund)::NUMERIC, 2), updated_at = NOW()
+      WHERE id = v_ride.passenger_id;
+
+      INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+      VALUES (
+        v_ride.passenger_id,
+        p_ride_id,
+        v_refund,
+        'ride_refund',
+        CASE WHEN v_fee > 0
+          THEN 'Estorno após taxa de cancelamento #' || RIGHT(p_ride_id::TEXT, 4)
+          ELSE 'Estorno automático de corrida cancelada #' || RIGHT(p_ride_id::TEXT, 4)
+        END
+      );
+    END IF;
+  ELSIF v_ride.payment_method = 'wallet' AND v_pax_res > 0 THEN
+    v_release_res := LEAST(v_pax_res, v_fare);
+    v_refund := GREATEST(0, ROUND((v_release_res - v_fee)::NUMERIC, 2));
+
+    UPDATE public.profiles
+    SET reserved_balance = ROUND(GREATEST(0, v_pax_res - v_release_res)::NUMERIC, 2),
+        wallet_balance = ROUND((v_pax_bal + v_refund)::NUMERIC, 2),
+        updated_at = NOW()
+    WHERE id = v_ride.passenger_id;
+
+    IF v_fee > 0 THEN
+      INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+      VALUES (v_ride.passenger_id, p_ride_id, -LEAST(v_release_res, v_fee), 'ride_debit', 'Taxa de cancelamento #' || RIGHT(p_ride_id::TEXT, 4));
+    END IF;
+  ELSIF v_fee > 0 THEN
+    v_debit_now := LEAST(v_pax_bal, v_fee);
+    v_debt_add := ROUND((v_fee - v_debit_now)::NUMERIC, 2);
+
+    IF v_debit_now > 0 THEN
+      UPDATE public.profiles
+      SET wallet_balance = ROUND((v_pax_bal - v_debit_now)::NUMERIC, 2), updated_at = NOW()
+      WHERE id = v_ride.passenger_id;
+
+      INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+      VALUES (v_ride.passenger_id, p_ride_id, -v_debit_now, 'ride_debit', 'Taxa de cancelamento #' || RIGHT(p_ride_id::TEXT, 4));
+    END IF;
+
+    IF v_debt_add > 0 THEN
+      UPDATE public.profiles
+      SET pending_debt_amount = ROUND((COALESCE(pending_debt_amount, 0) + v_debt_add)::NUMERIC, 2),
+          pending_debt_note = 'Taxa de cancelamento corrida #' || RIGHT(p_ride_id::TEXT, 4),
+          updated_at = NOW()
+      WHERE id = v_ride.passenger_id;
+    END IF;
+  END IF;
+
+  IF v_fee > 0 AND v_ride.driver_id IS NOT NULL THEN
+    UPDATE public.profiles
+    SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_fee)::NUMERIC, 2), updated_at = NOW()
+    WHERE id = v_ride.driver_id;
+
+    INSERT INTO public.wallet_transactions (user_id, ride_id, amount, type, description)
+    VALUES (
+      v_ride.driver_id,
+      p_ride_id,
+      v_fee,
+      'ride_earning',
+      'Taxa de cancelamento recebida #' || RIGHT(p_ride_id::TEXT, 4)
+    );
+  END IF;
+
+  RETURN jsonb_build_object('ok', TRUE, 'fee', v_fee, 'refund', v_refund);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+
 

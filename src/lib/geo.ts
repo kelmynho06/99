@@ -258,6 +258,8 @@ interface OverpassElement {
   center?: { lat: number; lon: number };
   tags?: {
     name?: string;
+    highway?: string;
+    landuse?: string;
     shop?: string;
     amenity?: string;
     leisure?: string;
@@ -968,15 +970,134 @@ export async function searchAddresses(
   return finalPool.slice(0, 18).map((item) => item.entry);
 }
 
+const nearbyPickupCandidatesCache = new Map<string, AddressSuggestion[]>();
+
+export async function fetchNearbyPickupCandidates(
+  lat: number,
+  lng: number
+): Promise<AddressSuggestion[]> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+  const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const cached = nearbyPickupCandidatesCache.get(cacheKey);
+  if (cached) return cached;
+
+  const candidates: Array<{ item: AddressSuggestion; distKm: number }> = [];
+  const seen = new Set<string>();
+
+  const addCandidate = (
+    name: string,
+    street: string,
+    hood: string,
+    city: string,
+    catLabel: string,
+    cLat: number,
+    cLng: number
+  ) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    const distKm = haversineKm(lat, lng, cLat, cLng);
+    if (distKm > 0.22) return;
+    const dedupe = cleanName.toLowerCase();
+    if (seen.has(dedupe)) return;
+    seen.add(dedupe);
+
+    const distMeters = Math.max(5, Math.round(distKm * 1000));
+    const address = [cleanName, street, hood, city].filter(Boolean).join(' · ');
+    const subtitle = [street, hood, `${distMeters}m de você`].filter(Boolean).join(' · ');
+
+    candidates.push({
+      distKm,
+      item: {
+        address,
+        subtitle: subtitle || `${distMeters}m de você`,
+        categoryLabel: catLabel,
+        lat: cLat,
+        lng: cLng,
+      },
+    });
+  };
+
+  for (const list of localGeoIndexMap.values()) {
+    for (const entry of list) {
+      const distKm = haversineKm(lat, lng, entry.lat, entry.lng);
+      if (distKm <= 0.2) {
+        addCandidate(
+          entry.name,
+          entry.street || '',
+          entry.hood || '',
+          entry.city || '',
+          entry.categoryLabel,
+          entry.lat,
+          entry.lng
+        );
+      }
+    }
+  }
+
+  try {
+    const localCity = await resolveCachedLocalCity(lat, lng);
+    const overpassQuery = `[out:json][timeout:5];(node(around:180,${lat},${lng})[name];way(around:180,${lat},${lng})[name]["amenity"];way(around:180,${lat},${lng})[name]["shop"];way(around:180,${lat},${lng})[name]["building"];way(around:180,${lat},${lng})[name]["landuse"="residential"];);out center 20;`;
+    const data = await queryOverpassJson(overpassQuery);
+    for (const el of data?.elements || []) {
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      const name = el.tags?.name?.trim();
+      if (!name || typeof elLat !== 'number' || typeof elLng !== 'number') continue;
+      if (el.tags?.highway && !el.tags?.amenity && !el.tags?.shop && !el.tags?.building) continue;
+      const street = el.tags?.['addr:street']
+        ? `${el.tags['addr:street']}${el.tags['addr:housenumber'] ? `, ${el.tags['addr:housenumber']}` : ''}`
+        : '';
+      const hood = el.tags?.['addr:suburb'] || '';
+      const city = el.tags?.['addr:city'] || localCity;
+      addCandidate(
+        name,
+        street,
+        hood,
+        city,
+        classifyOverpassType(el.tags || {}),
+        elLat,
+        elLng
+      );
+    }
+  } catch {
+    // Ignore Overpass rate limit and keep local index candidates
+  }
+
+  candidates.sort((a, b) => a.distKm - b.distKm);
+  const finalList = candidates.slice(0, 6).map((c) => c.item);
+  if (finalList.length > 0) {
+    nearbyPickupCandidatesCache.set(cacheKey, finalList);
+  }
+  return finalList;
+}
+
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&namedetails=1&accept-language=pt-BR`,
-      { headers: { Accept: 'application/json' } }
+    const [nomRes, nearbyPois] = await Promise.all([
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&extratags=1&namedetails=1&accept-language=pt-BR`,
+        { headers: { Accept: 'application/json' } }
+      ),
+      fetchNearbyPickupCandidates(lat, lng).catch(() => []),
+    ]);
+
+    let baseAddress = '';
+    if (nomRes.ok) {
+      const data = (await nomRes.json()) as NominatimResult;
+      baseAddress = formatShortAddress(data);
+    }
+
+    const closestPoi = nearbyPois.find(
+      (p) => haversineKm(lat, lng, p.lat, p.lng) <= 0.055
     );
-    if (!res.ok) return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-    const data = (await res.json()) as NominatimResult;
-    return formatShortAddress(data);
+    if (closestPoi) {
+      const poiTitle = closestPoi.address.split('·')[0].trim();
+      if (poiTitle && !baseAddress.toLowerCase().includes(poiTitle.toLowerCase())) {
+        return baseAddress ? `${poiTitle} · ${baseAddress}` : closestPoi.address;
+      }
+    }
+
+    return baseAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   } catch {
     return `Localização atual (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
   }

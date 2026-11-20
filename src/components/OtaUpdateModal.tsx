@@ -13,7 +13,7 @@ interface OtaUpdateModalProps {
 
 export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
   updateInfo,
-  siteName = '66 Mobilidade',
+  siteName = 'Boreal Mobilidade',
   mandatory = false,
   onClose,
 }) => {
@@ -60,7 +60,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
       <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-4 border border-neutral-200 dark:border-neutral-800">
         <div className="flex items-start justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 shadow-sm">
+            <div className="aurora-accent-flow flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm">
               <DownloadCloud className="h-6 w-6" />
             </div>
             <div>
@@ -137,7 +137,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => handleOpenExternalUrl(primarySiteOrApkUrl, e)}
-                  className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                  className="aurora-accent-flow flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                 >
                   <DownloadCloud className="h-5 w-5" />
                   <span>Atualizar Agora (Baixar APK no Site)</span>
@@ -148,7 +148,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   type="button"
                   disabled={applyingWeb}
                   onClick={handleApplyLiveWeb}
-                  className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                  className="aurora-accent-flow flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                 >
                   <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
                   <span>{t.ota_apply_web}</span>
@@ -175,7 +175,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   type="button"
                   disabled={applyingWeb}
                   onClick={handleApplyLiveWeb}
-                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                  className="aurora-accent-flow flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                 >
                   <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
                   <span>{t.ota_apply_web}</span>
@@ -190,7 +190,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition ${
                     hasWebUpdate
                       ? 'border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white'
-                      : 'bg-[#FFD100] text-neutral-950'
+                      : 'aurora-accent-flow text-white'
                   }`}
                 >
                   <DownloadCloud className="h-5 w-5" />
@@ -201,7 +201,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm active:scale-[0.98] transition"
+                  className="aurora-accent-flow flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                 >
                   <RefreshCw className="h-5 w-5" />
                   <span>{t.ota_apply_web}</span>

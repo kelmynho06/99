@@ -81,7 +81,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
       try {
         const found = await lookup66PayDriver(clean);
         if (!found) {
-          setErrorMsg('Chave ou QR Code 66pay não encontrado. Confira com o motorista.');
+          setErrorMsg('Chave ou QR Code BorealPay não encontrado. Confira com o motorista.');
           return;
         }
         if (ride.driver_id && found.id !== ride.driver_id) {
@@ -95,7 +95,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
         setMatchedDriver(found);
         setManualKey(found.pay66_key);
       } catch (err) {
-        setErrorMsg(err instanceof Error ? err.message : 'Falha ao consultar chave 66pay.');
+        setErrorMsg(err instanceof Error ? err.message : 'Falha ao consultar chave BorealPay.');
       } finally {
         setLookingUp(false);
       }
@@ -117,7 +117,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
       try {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
           setCameraError(
-            'Câmera não disponível neste navegador. Use a aba "Digitar Chave 66pay" abaixo.'
+            'Câmera não disponível neste navegador. Use a aba "Digitar Chave BorealPay" abaixo.'
           );
           return;
         }
@@ -222,7 +222,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
       } catch {
         if (!cancelled) {
           setCameraError(
-            'Não foi possível acessar a câmera. Permita o uso ou digite a Chave 66pay do motorista.'
+            'Não foi possível acessar a câmera. Permita o uso ou digite a Chave BorealPay do motorista.'
           );
         }
       }
@@ -244,24 +244,24 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
       const receipt = await process66PayRideTransfer(ride.id, keyToSend);
       onPaid(receipt);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Erro ao processar pagamento 66pay.');
+      setErrorMsg(err instanceof Error ? err.message : 'Erro ao processar pagamento BorealPay.');
     } finally {
       setConfirming(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[1220] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#14171D] text-neutral-950 dark:text-white border border-neutral-200 dark:border-white/15 p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-neutral-100 dark:border-white/10 pb-3">
+    <div className="fixed inset-0 z-[1220] flex items-end sm:items-center justify-center bg-[#0F2421]/70 p-0 sm:p-4 backdrop-blur-xs">
+      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#0D1A18] text-[#0F2421] dark:text-white border border-[#DCEEE8] dark:border-emerald-950 p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-[#EDF6F3] dark:border-emerald-950 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFD100] text-neutral-950">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#047857] to-[#0D9488] text-white shadow-xs">
               <QrCode className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-base font-extrabold">Pagar Corrida com 66pay</h3>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                Leia o QR Code ou digite a Chave 66pay do motorista
+              <h3 className="font-display text-base font-extrabold">Pagar Corrida com BorealPay</h3>
+              <p className="text-[11px] text-[#5F7D78] dark:text-neutral-400">
+                Leia o QR Code ou digite a Chave BorealPay do motorista
               </p>
             </div>
           </div>
@@ -271,7 +271,7 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
               stopCamera();
               onClose();
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-white/10 text-neutral-700 dark:text-white"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F1F8F6] dark:bg-white/10 text-[#334E4A] dark:text-white"
             aria-label="Fechar"
           >
             <X className="h-5 w-5" />
@@ -279,14 +279,14 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
         </div>
 
         {/* Switch Tabs */}
-        <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-neutral-100 dark:bg-white/10 p-1">
+        <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[#F1F8F6] dark:bg-white/10 p-1">
           <button
             type="button"
             onClick={() => setMode('scan')}
             className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-extrabold transition ${
               mode === 'scan'
-                ? 'bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-xs'
-                : 'text-neutral-700 dark:text-neutral-300'
+                ? 'bg-[#047857] text-white shadow-xs'
+                : 'text-[#334E4A] dark:text-neutral-300'
             }`}
           >
             <Camera className="h-4 w-4" />
@@ -297,18 +297,18 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
             onClick={() => setMode('manual')}
             className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-xl text-xs font-extrabold transition ${
               mode === 'manual'
-                ? 'bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-xs'
-                : 'text-neutral-700 dark:text-neutral-300'
+                ? 'bg-[#047857] text-white shadow-xs'
+                : 'text-[#334E4A] dark:text-neutral-300'
             }`}
           >
             <KeyRound className="h-4 w-4" />
-            Chave 66pay
+            Chave BorealPay
           </button>
         </div>
 
         {mode === 'scan' && (
           <div className="space-y-3">
-            <div className="relative aspect-square w-full max-w-[280px] mx-auto overflow-hidden rounded-3xl bg-neutral-950 border-2 border-[#FFD100]/60 flex items-center justify-center">
+            <div className="relative aspect-square w-full max-w-[280px] mx-auto overflow-hidden rounded-3xl bg-[#0F2421] border-2 border-[#2DD4BF] flex items-center justify-center">
               <video
                 ref={videoRef}
                 playsInline
@@ -317,38 +317,38 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
               />
               <canvas ref={canvasRef} className="hidden" />
               {!cameraError && (
-                <div className="pointer-events-none absolute inset-6 rounded-2xl border-2 border-[#FFD100] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+                <div className="pointer-events-none absolute inset-6 rounded-2xl border-2 border-[#6EE7B7] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
               )}
               {!cameraReady && !cameraError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-neutral-950/90 text-xs text-neutral-300 p-4 text-center">
-                  <Camera className="h-7 w-7 text-[#FFD100] animate-pulse" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0F2421]/90 text-xs text-neutral-200 p-4 text-center">
+                  <Camera className="h-7 w-7 text-[#6EE7B7] animate-pulse" />
                   <span>Abrindo câmera do aparelho...</span>
                 </div>
               )}
               {cameraError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-950/95 p-5 text-center">
-                  <QrCode className="h-9 w-9 text-[#FFD100]" />
-                  <p className="text-xs text-neutral-300 leading-relaxed">{cameraError}</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0F2421]/95 p-5 text-center">
+                  <QrCode className="h-9 w-9 text-[#6EE7B7]" />
+                  <p className="text-xs text-neutral-200 leading-relaxed">{cameraError}</p>
                   <button
                     type="button"
                     onClick={() => setMode('manual')}
-                    className="min-h-[40px] rounded-xl bg-[#FFD100] px-4 text-xs font-extrabold text-neutral-950"
+                    className="min-h-[40px] rounded-xl bg-[#047857] px-4 text-xs font-extrabold text-white"
                   >
-                    Digitar Chave 66pay
+                    Digitar Chave BorealPay
                   </button>
                 </div>
               )}
             </div>
-            <p className="text-center text-[11px] text-neutral-500 dark:text-neutral-400">
-              Aponte a câmera para o QR Code 66pay exibido no celular do motorista.
+            <p className="text-center text-[11px] text-[#5F7D78] dark:text-neutral-400">
+              Aponte a câmera para o QR Code BorealPay exibido no celular do motorista.
             </p>
           </div>
         )}
 
         {mode === 'manual' && (
           <div className="space-y-2.5">
-            <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300">
-              Chave 66pay do Motorista (código 66-..., e-mail ou telefone)
+            <label className="block text-xs font-bold text-[#334E4A] dark:text-neutral-300">
+              Chave BorealPay do Motorista (código, e-mail ou telefone)
             </label>
             <div className="flex gap-2">
               <input
@@ -356,13 +356,13 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
                 value={manualKey}
                 onChange={(e) => setManualKey(e.target.value)}
                 placeholder={matchedDriver?.pay66_key || 'Ex: 66-A1B2C3D4'}
-                className="min-h-[46px] flex-1 rounded-xl border border-neutral-200 dark:border-white/15 bg-neutral-50 dark:bg-white/5 px-3 font-mono-num text-sm font-bold outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[46px] flex-1 rounded-xl border border-[#DCEEE8] dark:border-white/15 bg-[#F7FBFA] dark:bg-white/5 px-3 font-mono-num text-sm font-bold outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
               <button
                 type="button"
                 disabled={lookingUp || !manualKey.trim()}
                 onClick={() => resolveDriverFromInput(manualKey)}
-                className="min-h-[46px] flex items-center gap-1 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950 disabled:opacity-50"
+                className="min-h-[46px] flex items-center gap-1 rounded-xl bg-[#047857] px-4 text-xs font-extrabold text-white disabled:opacity-50"
               >
                 <Search className="h-4 w-4" />
                 {lookingUp ? '...' : 'Validar'}
@@ -378,40 +378,40 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
         )}
 
         {/* Driver Recipient Card + Fare */}
-        <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 p-4 space-y-3">
+        <div className="rounded-2xl border border-[#A7F3D0] dark:border-emerald-800/70 bg-[#ECFDF5]/70 dark:bg-emerald-950/30 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <AvatarImage
                 src={matchedDriver?.avatar_url}
                 name={matchedDriver?.full_name || 'Motorista'}
-                className="h-11 w-11 rounded-full object-cover border-2 border-emerald-500 shrink-0"
-                fallbackClassName="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-extrabold"
+                className="h-11 w-11 rounded-full object-cover border-2 border-[#047857] shrink-0"
+                fallbackClassName="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#047857] text-white font-extrabold"
               />
               <div className="min-w-0">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#047857] dark:text-[#6EE7B7]">
                   Motorista Destinatário
                 </p>
                 <p className="font-display text-sm font-extrabold truncate">
                   {matchedDriver?.full_name || ride.driver?.full_name || 'Motorista da Corrida'}
                 </p>
-                <p className="text-[11px] font-mono-num text-neutral-600 dark:text-neutral-300 truncate">
-                  Chave: {matchedDriver?.pay66_key || '66pay verificada'}
+                <p className="text-[11px] font-mono-num text-[#334E4A] dark:text-neutral-300 truncate">
+                  Chave: {matchedDriver?.pay66_key || 'BorealPay verificada'}
                   {matchedDriver?.vehicle_plate ? ` · ${matchedDriver.vehicle_plate}` : ''}
                 </p>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">Valor</p>
-              <p className="font-mono-num text-xl font-extrabold text-emerald-700 dark:text-[#FFD100]">
+              <p className="text-[10px] font-bold text-[#5F7D78] dark:text-neutral-400">Valor</p>
+              <p className="font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                 {formatBRL(amount)}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-xl bg-white/80 dark:bg-black/30 px-3 py-2 text-[11px] text-neutral-700 dark:text-neutral-300">
-            <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-2 rounded-xl bg-white/90 dark:bg-black/30 px-3 py-2 text-[11px] text-[#334E4A] dark:text-neutral-300">
+            <ShieldCheck className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0" />
             <span>
-              Transferência interna instantânea <strong>66pay</strong> — valor garantido direto para a carteira do motorista.
+              Transferência interna instantânea <strong>BorealPay</strong> — valor garantido direto para a carteira do motorista.
             </span>
           </div>
         </div>
@@ -420,10 +420,10 @@ export const Qr66PayScannerModal: React.FC<Qr66PayScannerModalProps> = ({
           type="button"
           disabled={confirming}
           onClick={handleConfirmPayment}
-          className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-md hover:brightness-95 active:scale-[0.98] disabled:opacity-60 transition"
+          className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] text-sm font-extrabold text-white shadow-md hover:bg-[#065F46] active:scale-[0.98] disabled:opacity-60 transition"
         >
           <CheckCircle2 className="h-5 w-5" />
-          {confirming ? 'Processando transferência 66pay...' : `Confirmar Pagamento 66pay (${formatBRL(amount)})`}
+          {confirming ? 'Processando transferência BorealPay...' : `Confirmar Pagamento BorealPay (${formatBRL(amount)})`}
         </button>
       </div>
     </div>

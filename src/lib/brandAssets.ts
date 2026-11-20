@@ -1,11 +1,11 @@
-import mobilidade66Logo from '../assets/images/mobilidade66_logo.png';
+import borealBrandLogo from '../assets/images/boreal_brand_logo.png';
 import veloCarPopImg from '../assets/images/velo_car_pop_1794857333460.jpg';
 import veloDeliveryCarImg from '../assets/images/velo_delivery_car_1794857334048.jpg';
 import veloDeliveryMotoImg from '../assets/images/velo_delivery_moto_1794857334549.jpg';
 import veloMotoUrbanImg from '../assets/images/velo_moto_urban_1794857333529.jpg';
 import type { PlatformConfig, RideCategory } from '../types/mobility';
 
-export const DEFAULT_BRAND_LOGO = mobilidade66Logo;
+export const DEFAULT_BRAND_LOGO = borealBrandLogo;
 
 export const DEFAULT_VEHICLE_IMAGES: Record<RideCategory, string> = {
   moto: veloMotoUrbanImg,

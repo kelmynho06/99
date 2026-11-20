@@ -14,7 +14,7 @@ import {
   pushDriverLocation,
 } from '../lib/mobilityApi';
 import { formatBRL } from '../lib/geo';
-import { playSoundCue, speakPtBr, syncPlatformSounds } from '../lib/sound';
+import { speakPtBr, syncPlatformSounds } from '../lib/sound';
 import { supabase } from '../lib/supabase';
 import type {
   PlatformConfig,
@@ -166,7 +166,7 @@ export function useRealtimeMobility(
                 const isDelivery =
                   enriched.category === 'delivery_moto' || enriched.category === 'delivery_car';
 
-                // Driver / Motoboy online receives immediate local notification for new ride/delivery
+                // Driver / Motoboy online receives single deduped local notification (+ voice if minimized) for new ride/delivery
                 if (
                   u.role === 'driver' &&
                   u.status === 'active' &&
@@ -174,9 +174,18 @@ export function useRealtimeMobility(
                   payload.eventType === 'INSERT' &&
                   enriched.status === 'searching'
                 ) {
+                  const fareVoice = Number(enriched.estimated_fare || 0).toFixed(2).replace('.', ',');
+                  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                    speakPtBr(
+                      isDelivery
+                        ? `Nova entrega disponível! Coleta em ${enriched.origin_address}, destino ${enriched.destination_address}, valor de ${fareVoice} reais.`
+                        : `Nova corrida disponível! Embarque em ${enriched.origin_address}, destino ${enriched.destination_address}, valor de ${fareVoice} reais.`
+                    );
+                  }
                   triggerLocalNotification({
+                    dedupeKey: `ride-offer-${enriched.id}`,
                     title: isDelivery ? 'Nova Entrega Disponível!' : 'Nova Corrida Disponível!',
-                    body: `${enriched.origin_address} → ${enriched.destination_address}`,
+                    body: `${formatBRL(enriched.estimated_fare)} · ${enriched.origin_address} → ${enriched.destination_address}`,
                     playSound: false,
                   });
                 }
@@ -188,33 +197,32 @@ export function useRealtimeMobility(
                   prevPayStatus !== 'paid_pix' &&
                   enriched.payment_status === 'paid_pix'
                 ) {
-                  void playSoundCue('accepted');
                   speakPtBr('Pagamento Pix confirmado pelo administrador. Corrida liberada.');
                   triggerLocalNotification({
+                    dedupeKey: `ride-${enriched.id}-paid-pix`,
                     title: 'Pix Confirmado pelo Admin!',
                     body: 'Saldo creditado e tela liberada para sua próxima corrida.',
                     playSound: false,
                   });
                 }
 
-                // Passenger receives immediate sound + PT-BR voice + local notification on status changes
+                // Passenger receives PT-BR voice + single deduped local notification on status changes
                 if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
                   const driverDisplayName =
                     enriched.driver?.full_name?.trim() || 'seu parceiro';
                   if (enriched.status === 'accepted') {
-                    void playSoundCue('accepted');
                     speakPtBr(
                       isDelivery
-                        ? `O entregador ${driverDisplayName} aceitou a sua entrega e está indo para a coleta.`
-                        : `O motorista ${driverDisplayName} aceitou a sua corrida e está a caminho.`
+                        ? `O entregador ${driverDisplayName} aceitou a sua entrega.`
+                        : `O motorista ${driverDisplayName} aceitou a sua corrida.`
                     );
                     triggerLocalNotification({
-                      title: isDelivery ? 'Entregador aceitou seu pedido!' : 'Motorista a caminho!',
-                      body: `${driverDisplayName} aceitou sua solicitação.`,
+                      dedupeKey: `ride-${enriched.id}-accepted`,
+                      title: isDelivery ? 'Entregador aceitou seu pedido!' : 'Motorista aceitou sua corrida!',
+                      body: `${driverDisplayName} está indo até você.`,
                       playSound: false,
                     });
                   } else if (enriched.status === 'arrived') {
-                    void playSoundCue('arrived');
                     const pinSpeech =
                       !isDelivery || enriched.require_pin !== false
                         ? ` Informe o código PIN ${enriched.pin_code.split('').join(' ')}.`
@@ -222,9 +230,10 @@ export function useRealtimeMobility(
                     speakPtBr(
                       isDelivery
                         ? `O entregador ${driverDisplayName} chegou no local de coleta.${pinSpeech}`
-                        : `O motorista ${driverDisplayName} chegou no ponto de embarque.${pinSpeech}`
+                        : `O motorista ${driverDisplayName} chegou no local de embarque.${pinSpeech}`
                     );
                     triggerLocalNotification({
+                      dedupeKey: `ride-${enriched.id}-arrived`,
                       title: isDelivery ? 'Entregador chegou para a coleta!' : 'Seu motorista chegou!',
                       body:
                         !isDelivery || enriched.require_pin !== false
@@ -236,37 +245,46 @@ export function useRealtimeMobility(
                     speakPtBr(
                       isDelivery
                         ? 'Pacote coletado e em rota de entrega.'
-                        : 'Viagem iniciada. Bom trajeto.'
+                        : 'Corrida iniciada. Bom trajeto.'
                     );
                     triggerLocalNotification({
+                      dedupeKey: `ride-${enriched.id}-in_progress`,
                       title: isDelivery ? 'Pacote em rota de entrega!' : 'Viagem iniciada!',
                       body: `Destino: ${enriched.destination_address}`,
                       playSound: false,
                     });
                   } else if (enriched.status === 'completed') {
-                    void playSoundCue('completed');
                     const needs66PayQr =
                       enriched.payment_method === 'wallet' && enriched.payment_status === 'pending';
+                    const isMoto = enriched.category === 'moto' || enriched.category === 'delivery_moto';
+                    const exitVehicleSpeech = isMoto
+                      ? 'Lembre-se de pegar o seu celular e objetos pessoais antes de sair da moto.'
+                      : 'Lembre-se de pegar o seu celular e objetos pessoais antes de sair do carro.';
                     speakPtBr(
                       needs66PayQr
-                        ? `Você chegou ao destino. Escaneie o QR Code 66pay na tela de ${driverDisplayName} para concluir o pagamento.`
+                        ? isDelivery
+                          ? `Entrega finalizada. Escaneie o QR Code BorealPay na tela de ${driverDisplayName} para concluir o pagamento.`
+                          : `Você está chegando ao seu destino. ${exitVehicleSpeech} Escaneie o QR Code BorealPay na tela de ${driverDisplayName} para concluir o pagamento.`
                         : isDelivery
                         ? 'Entrega concluída com sucesso.'
-                        : 'Você chegou ao seu destino. Obrigado por viajar com a 66 Mobilidade.'
+                        : `Você está chegando ao seu destino. ${exitVehicleSpeech}`
                     );
                     triggerLocalNotification({
+                      dedupeKey: `ride-${enriched.id}-completed`,
                       title: isDelivery ? 'Entrega concluída!' : 'Você chegou ao destino!',
                       body: needs66PayQr
-                        ? `Leia o QR Code 66pay de ${driverDisplayName} para liberar o pagamento.`
-                        : 'Avalie a experiência no aplicativo.',
+                        ? `Leia o QR Code BorealPay de ${driverDisplayName} para liberar o pagamento.`
+                        : isDelivery
+                        ? 'Avalie o entregador no aplicativo.'
+                        : 'Não esqueça seus objetos pessoais no veículo.',
                       playSound: false,
                     });
                   } else if (enriched.status === 'cancelled') {
-                    void playSoundCue('cancel');
                     speakPtBr(
                       isDelivery ? 'Sua entrega foi cancelada.' : 'Sua corrida foi cancelada.'
                     );
                     triggerLocalNotification({
+                      dedupeKey: `ride-${enriched.id}-cancelled`,
                       title: isDelivery ? 'Entrega cancelada' : 'Corrida cancelada',
                       body: 'A solicitação foi encerrada.',
                       playSound: false,
@@ -274,14 +292,13 @@ export function useRealtimeMobility(
                   }
                 }
 
-                // Driver receives immediate alert if passenger cancels before boarding
+                // Driver receives immediate voice + single deduped alert if passenger cancels before boarding
                 if (
                   u.role === 'driver' &&
                   enriched.driver_id === u.id &&
                   prevStatus !== 'cancelled' &&
                   enriched.status === 'cancelled'
                 ) {
-                  void playSoundCue('cancel');
                   const passengerFirstName =
                     enriched.passenger?.full_name?.split(' ')[0] || 'cliente';
                   speakPtBr(
@@ -290,6 +307,7 @@ export function useRealtimeMobility(
                       : `O passageiro ${passengerFirstName} cancelou a corrida.`
                   );
                   triggerLocalNotification({
+                    dedupeKey: `driver-ride-${enriched.id}-cancelled`,
                     title: isDelivery ? 'Entrega cancelada pelo cliente' : 'Corrida cancelada',
                     body: `${enriched.passenger?.full_name || 'Cliente'} cancelou antes do embarque.`,
                     playSound: false,
@@ -385,15 +403,17 @@ export function useRealtimeMobility(
           const evs = await fetchPlatformEvents();
           if (active) setPlatformEvents(evs);
 
-          const inserted = payload.new as { title?: string; description?: string; active?: boolean } | undefined;
+          const inserted = payload.new as { id?: string; title?: string; description?: string; active?: boolean } | undefined;
           if (
             payload.eventType === 'INSERT' &&
             inserted?.active &&
             userRef.current?.role === 'driver'
           ) {
             triggerLocalNotification({
+              dedupeKey: `event-${inserted.id || inserted.title || 'active'}`,
               title: `Novo Evento: ${inserted.title || 'Campanha Ativa'}`,
               body: inserted.description || 'Confira os bônus disponíveis no seu painel.',
+              playSound: false,
             });
           }
         }
@@ -424,8 +444,9 @@ export function useRealtimeMobility(
             };
             appendMessage(msgObj);
             if (userRef.current && msgObj.sender_id !== userRef.current.id) {
-              void playSoundCue('chat');
+              speakPtBr(`Mensagem de ${msgObj.sender_name}: ${msgObj.content}`, false);
               triggerLocalNotification({
+                dedupeKey: `ride-msg-${msgObj.id}`,
                 title: `Mensagem de ${msgObj.sender_name}`,
                 body: msgObj.content,
                 playSound: false,
@@ -439,17 +460,17 @@ export function useRealtimeMobility(
         { event: '*', schema: 'public', table: 'wallet_deposits' },
         async (payload) => {
           if (!active) return;
-          const row = payload.new as { user_id?: string; status?: string; amount?: number } | undefined;
+          const row = payload.new as { id?: string; user_id?: string; status?: string; amount?: number } | undefined;
           const oldRow = payload.old as { status?: string } | undefined;
           const u = userRef.current;
           if (u && row?.user_id === u.id) {
             const refreshed = await fetchUserProfileById(u.id);
             if (refreshed && active) onCurrentUserUpdated(refreshed);
             if (row.status === 'approved' && oldRow?.status !== 'approved') {
-              void playSoundCue('accepted');
               const amountNum = Number(row.amount || 0).toFixed(2).replace('.', ',');
               speakPtBr(`Depósito de ${amountNum} reais confirmado na sua carteira.`);
               triggerLocalNotification({
+                dedupeKey: `deposit-approved-${row.id || amountNum}`,
                 title: 'Saldo Creditado!',
                 body: `Seu depósito Pix de R$ ${amountNum} foi confirmado pelo Administrador.`,
                 playSound: false,
@@ -492,42 +513,43 @@ export function useRealtimeMobility(
               : undefined;
 
             if (txType === 'transfer_in' && absAmt > 0) {
-              const senderMatch = desc.match(/(?:Recebido de|Transferência 66 Pay recebida de)\s+([^·]+)/i);
-              const senderName = senderMatch?.[1]?.trim() || 'Um usuário 66 Pay';
+              const senderMatch = desc.match(/(?:Recebido de|Transferência (?:66 Pay|BorealPay) recebida de)\s+([^·]+)/i);
+              const senderName = senderMatch?.[1]?.trim() || 'Um usuário BorealPay';
               const msg = `${senderName} enviou uma transferência de ${formattedAmt} para você.`;
-              void playSoundCue('accepted');
               speakPtBr(
                 `${senderName} enviou uma transferência de ${absAmt.toFixed(2).replace('.', ',')} reais para você.`
               );
               triggerLocalNotification({
-                title: 'Transferência 66 Pay Recebida!',
+                dedupeKey: `tx-in-${row.id || absAmt}`,
+                title: 'Transferência BorealPay Recebida!',
                 body: msg,
                 playSound: false,
               });
               window.dispatchEvent(
                 new CustomEvent('mobilidade66:wallet-toast', {
                   detail: {
-                    title: '66 Pay · Transferência Recebida!',
+                    title: 'BorealPay · Transferência Recebida!',
                     message: msg,
                     receiptTx,
                   },
                 })
               );
             } else if (txType === 'transfer_out' && absAmt > 0) {
-              const recipientMatch = desc.match(/(?:Enviado para|Transferência 66 Pay enviada para)\s+([^·]+)/i);
+              const recipientMatch = desc.match(/(?:Enviado para|Transferência (?:66 Pay|BorealPay) enviada para)\s+([^·]+)/i);
               const recipientName = recipientMatch?.[1]?.trim() || '';
               const msg = recipientName
                 ? `Você enviou uma transferência de ${formattedAmt} para ${recipientName}.`
                 : `Transferência de ${formattedAmt} enviada com sucesso.`;
               triggerLocalNotification({
-                title: 'Transferência 66 Pay Enviada!',
+                dedupeKey: `tx-out-${row.id || absAmt}`,
+                title: 'Transferência BorealPay Enviada!',
                 body: msg,
                 playSound: false,
               });
               window.dispatchEvent(
                 new CustomEvent('mobilidade66:wallet-toast', {
                   detail: {
-                    title: '66 Pay · Transferência Enviada!',
+                    title: 'BorealPay · Transferência Enviada!',
                     message: msg,
                     receiptTx,
                   },
@@ -566,8 +588,11 @@ export function useRealtimeMobility(
           window.dispatchEvent(new CustomEvent('mobilidade66:notifications-updated'));
 
           if (n.metadata?.source !== 'p2p_transfer') {
-            void playSoundCue('accepted');
+            if (n.title || n.message) {
+              speakPtBr(`${n.title || 'Aviso'}. ${n.message || ''}`, false);
+            }
             triggerLocalNotification({
+              dedupeKey: `app-notif-${n.id}`,
               title: n.title || 'Nova Notificação',
               body: n.message || '',
               playSound: false,
@@ -575,7 +600,7 @@ export function useRealtimeMobility(
             window.dispatchEvent(
               new CustomEvent('mobilidade66:wallet-toast', {
                 detail: {
-                  title: n.title || 'Notificação 66 Mobilidade',
+                  title: n.title || 'Notificação Boreal Mobilidade',
                   message: n.message || '',
                   receiptTx: n.metadata?.tx,
                 },
@@ -613,8 +638,9 @@ export function useRealtimeMobility(
           const u = userRef.current;
           if (!u || !m?.sender_id || String(m.sender_id) === u.id) return;
           if (u.role === 'admin' || String(m.user_id) === u.id) {
-            void playSoundCue('chat');
+            speakPtBr(`Nova mensagem de suporte: ${String(m.content || '')}`, false);
             triggerLocalNotification({
+              dedupeKey: `direct-msg-${String(m.id || m.created_at || Date.now())}`,
               title:
                 String(m.sender_role) === 'admin'
                   ? 'Mensagem da Administração'

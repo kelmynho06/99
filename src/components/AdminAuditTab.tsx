@@ -102,7 +102,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `auditoria_${(platformConfig.site_name || '66mobilidade').toLowerCase().replace(/\s+/g, '')}_${new Date()
+    link.download = `auditoria_${(platformConfig.site_name || 'borealmobilidade').toLowerCase().replace(/\s+/g, '')}_${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
     document.body.appendChild(link);
@@ -116,8 +116,8 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
       {/* Header & Export Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-extrabold text-neutral-950 dark:text-white flex items-center gap-2">
-            <Activity className="h-5 w-5 text-amber-600" />
+          <h2 className="font-display text-xl font-extrabold text-[#0F2421] dark:text-white flex items-center gap-2">
+            <Activity className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
             <span>Auditoria &amp; Telemetria de Dispositivos ({filteredLogs.length})</span>
           </h2>
           <p className="text-xs text-neutral-600 dark:text-neutral-400">
@@ -147,7 +147,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3.5 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3.5 text-xs font-extrabold text-white dark:text-[#0F2421] shadow-sm hover:bg-[#065F46] transition"
           >
             <Printer className="h-3.5 w-3.5" />
             Imprimir / Salvar PDF

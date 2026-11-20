@@ -169,7 +169,7 @@ export const AdminSettlementReceiptModal: React.FC<AdminSettlementReceiptModalPr
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-neutral-950 px-3.5 text-xs font-extrabold text-[#FFD100]"
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-[#047857] px-3.5 text-xs font-extrabold text-white shadow-sm hover:bg-[#065F46] transition"
             >
               <Printer className="h-4 w-4" />
               Imprimir / Salvar PDF
@@ -196,8 +196,8 @@ export const AdminSettlementReceiptModal: React.FC<AdminSettlementReceiptModalPr
                 className="h-12 w-12 rounded-xl object-cover border border-neutral-300"
               />
               <div>
-                <h2 className="font-display text-xl font-extrabold text-neutral-950">
-                  {platformConfig.site_name || '66 Mobilidade'}
+                <h2 className="font-display text-xl font-extrabold text-[#0F2421]">
+                  {platformConfig.site_name || 'Boreal Mobilidade'}
                 </h2>
                 <p className="text-xs font-semibold text-neutral-600">
                   Operação Local · {platformConfig.platform_city}
@@ -266,9 +266,9 @@ export const AdminSettlementReceiptModal: React.FC<AdminSettlementReceiptModalPr
                 {formatBRL(totals.paidOut)}
               </p>
             </div>
-            <div className="rounded-xl border-2 border-neutral-950 bg-amber-50 p-3">
-              <p className="text-[10px] font-extrabold uppercase text-neutral-800">Saldo a Pagar</p>
-              <p className="mt-1 font-mono-num text-base font-extrabold text-neutral-950">
+            <div className="rounded-xl border-2 border-[#047857] bg-[#ECFDF5] p-3">
+              <p className="text-[10px] font-extrabold uppercase text-[#065F46]">Saldo a Pagar</p>
+              <p className="mt-1 font-mono-num text-base font-extrabold text-[#0F2421]">
                 {formatBRL(driver.wallet_balance || 0)}
               </p>
             </div>

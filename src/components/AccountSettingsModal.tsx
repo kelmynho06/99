@@ -385,8 +385,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 <AvatarImage
                   src={avatarUrl}
                   name={currentUser.full_name}
-                  className="h-14 w-14 rounded-full object-cover border-2 border-[#FFD100] shrink-0"
-                  fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-xl font-extrabold"
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#2DD4BF] shrink-0"
+                  fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-display text-xl font-extrabold"
                 />
                 <div className="min-w-0">
                   <p className="font-display text-base font-extrabold text-neutral-950 dark:text-white truncate">
@@ -405,7 +405,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 p-3.5 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-1.5 text-xs font-extrabold text-neutral-900 dark:text-neutral-100">
-                    <SunMoon className="h-4 w-4 text-amber-500" />
+                    <SunMoon className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                     {t.theme_label}
                   </span>
                   <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
@@ -427,7 +427,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         onClick={() => handleThemeChange(opt.id)}
                         className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-extrabold transition ${
                           active
-                            ? 'bg-neutral-950 text-[#FFD100] border-neutral-950 dark:bg-[#FFD100] dark:text-neutral-950 dark:border-[#FFD100]'
+                            ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421] dark:border-[#2DD4BF]'
                             : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                         }`}
                       >
@@ -481,10 +481,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClose();
                       onOpenWallet();
                     }}
-                    className="flex min-h-[58px] w-full items-center justify-between px-4 text-left bg-amber-50/70 dark:bg-amber-950/30 hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
+                    className="flex min-h-[58px] w-full items-center justify-between px-4 text-left bg-[#ECFDF5]/80 dark:bg-emerald-950/30 hover:bg-[#CCFBF1]/70 dark:hover:bg-emerald-950/50"
                   >
                     <span className="flex items-center gap-3 text-sm font-extrabold text-neutral-950 dark:text-white">
-                      <Wallet className="h-4 w-4 text-amber-700 dark:text-[#FFD100]" />
+                      <Wallet className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                       <span>
                         {t.wallet_title} ({currentUser.role === 'driver' ? `${t.withdraw} / ${t.transfer}` : `${t.deposit} / ${t.transfer}`})
                         <span className="block text-[11px] font-mono-num font-bold text-emerald-700 dark:text-emerald-400">
@@ -613,7 +613,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3 text-xs font-extrabold transition ${
                     userPrefs.voice_enabled || userPrefs.sounds_enabled
-                      ? 'bg-neutral-950 text-[#FFD100] dark:bg-neutral-700 dark:text-white'
+                      ? 'bg-[#047857] text-white dark:bg-neutral-700 dark:text-white'
                       : 'bg-emerald-600 text-white'
                   }`}
                 >
@@ -630,14 +630,14 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     {t.app_version_label}
                   </p>
                   <p className="font-mono-num text-sm font-extrabold text-neutral-950 dark:text-white">
-                    v{installedVersion} · {platformConfig?.site_name || '66 Mobilidade'}
+                    v{installedVersion} · {platformConfig?.site_name || 'Boreal Mobilidade'}
                   </p>
                 </div>
                 <button
                   type="button"
                   disabled={checkingOta}
                   onClick={handleCheckOta}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950 disabled:opacity-50"
+                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-xs font-extrabold text-white dark:text-[#0F2421] disabled:opacity-50"
                 >
                   <DownloadCloud className="h-3.5 w-3.5" />
                   {checkingOta ? 'Verificando...' : t.check_updates}
@@ -648,7 +648,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <PWAInstallButton
                 variant="settings"
                 apkUrl={platformConfig?.ota_apk_url}
-                siteName={platformConfig?.site_name || '66 Mobilidade'}
+                siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
               />
             </div>
           )}
@@ -660,10 +660,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   <AvatarImage
                     src={avatarUrl}
                     name={fullName || currentUser.full_name}
-                    className="h-24 w-24 rounded-full object-cover border-4 border-[#FFD100] shadow"
-                    fallbackClassName="flex h-24 w-24 items-center justify-center rounded-full bg-neutral-950 text-[#FFD100] font-display text-3xl font-extrabold shadow"
+                    className="h-24 w-24 rounded-full object-cover border-4 border-[#2DD4BF] shadow"
+                    fallbackClassName="flex h-24 w-24 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-display text-3xl font-extrabold shadow"
                   />
-                  <label className="absolute -bottom-1 -right-1 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#FFD100] text-neutral-950 border-2 border-white shadow">
+                  <label className="aurora-accent-flow absolute -bottom-1 -right-1 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-white border-2 border-white shadow">
                     <Camera className="h-4 w-4" />
                     <input
                       type="file"
@@ -674,7 +674,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </label>
                 </div>
                 <div className="flex items-center gap-3">
-                  <label className="cursor-pointer text-xs font-extrabold text-neutral-950 dark:text-[#FFD100] underline">
+                  <label className="cursor-pointer text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7] underline">
                     Escolher foto da galeria / câmera
                     <input
                       type="file"
@@ -704,7 +704,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                 />
               </div>
               <div>
@@ -716,7 +716,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                 />
               </div>
               <div>
@@ -726,7 +726,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                 />
               </div>
               <div>
@@ -739,13 +739,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Ex: Ponto próximo à portaria principal"
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                 />
               </div>
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
+                className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-extrabold text-white"
               >
                 {saving ? t.saving : t.save_changes}
               </button>
@@ -860,10 +860,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               )}
 
               {onOpenWallet && (
-                <div className="flex items-center justify-between gap-3 rounded-2xl bg-neutral-950 p-4 text-white">
+                <div className="aurora-border-glow flex items-center justify-between gap-3 rounded-2xl border border-[#6EE7B7] bg-[#ECFDF5] dark:bg-emerald-950/60 p-4 text-[#0F2421] dark:text-white">
                   <div>
-                    <p className="text-[11px] font-bold text-neutral-400">Meu Saldo no App</p>
-                    <p className="font-mono-num text-xl font-extrabold text-[#FFD100]">
+                    <p className="text-[11px] font-bold text-[#334E4A] dark:text-[#6EE7B7]">Meu Saldo no App</p>
+                    <p className="font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#2DD4BF]">
                       {formatBRL(currentUser.wallet_balance || 0)}
                     </p>
                   </div>
@@ -873,7 +873,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClose();
                       onOpenWallet();
                     }}
-                    className="min-h-[40px] rounded-xl bg-[#FFD100] px-3.5 text-xs font-extrabold text-neutral-950"
+                    className="aurora-accent-flow min-h-[40px] rounded-xl px-3.5 text-xs font-extrabold text-white"
                   >
                     Depositar Saldo (Pix)
                   </button>
@@ -896,7 +896,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => setPreferredPayment(m.id)}
                       className={`min-h-[42px] rounded-xl border text-xs font-bold ${
                         preferredPayment === m.id
-                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950 dark:bg-[#FFD100] dark:text-neutral-950'
+                          ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
                           : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
@@ -909,7 +909,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
+                className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-extrabold text-white"
               >
                 {saving ? t.saving : 'Salvar Favoritos'}
               </button>
@@ -932,7 +932,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => setVehicleType(vt.id)}
                       className={`min-h-[42px] rounded-xl border text-xs font-bold ${
                         vehicleType === vt.id
-                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950 dark:bg-[#FFD100] dark:text-neutral-950'
+                          ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
                           : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
@@ -982,7 +982,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
+                className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-extrabold text-white"
               >
                 {saving ? t.saving : 'Atualizar Veículo & Pix'}
               </button>
@@ -1007,7 +1007,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="min-h-[48px] w-full rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-sm font-bold text-[#FFD100] dark:text-neutral-950"
+                className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-bold text-white"
               >
                 {saving ? 'Alterando...' : 'Confirmar Nova Senha'}
               </button>
@@ -1017,7 +1017,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'prefs' && (
             <div className="space-y-3">
               {/* Accessibility 1-Tap Master Switch */}
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#FFD100]/40 bg-[#FFD100]/10 p-4">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#6EE7B7] bg-[#ECFDF5] dark:bg-emerald-950/30 p-4">
                 <div className="min-w-0">
                   <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
                     Acessibilidade · Controle Geral
@@ -1044,7 +1044,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     userPrefs.voice_enabled ||
                     userPrefs.sounds_enabled ||
                     userPrefs.notifications_enabled
-                      ? 'bg-neutral-950 text-[#FFD100]'
+                      ? 'bg-[#047857] text-white'
                       : 'bg-emerald-600 text-white'
                   }`}
                 >
@@ -1070,7 +1070,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => handleLanguageChange(lang.code)}
                       className={`rounded-xl border px-2.5 py-2 text-left text-xs transition ${
                         userPrefs.language === lang.code
-                          ? 'bg-neutral-950 text-[#FFD100] border-neutral-950 dark:bg-[#FFD100] dark:text-neutral-950 font-extrabold'
+                          ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421] font-extrabold'
                           : 'bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700 font-bold'
                       }`}
                     >
@@ -1163,7 +1163,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     }}
                     className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
                       userPrefs.sounds_enabled
-                        ? 'bg-neutral-950 text-[#FFD100]'
+                        ? 'bg-[#047857] text-white'
                         : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
                     }`}
                   >
@@ -1215,7 +1215,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               {/* Background-Only Floating Bubble Toggle */}
               <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 flex items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
-                  <ShieldCheck className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <ShieldCheck className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7] shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
                       Balão Flutuante em Segundo Plano (APK)
@@ -1237,7 +1237,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
                     (userPrefs.floating_bubble_enabled ?? true)
-                      ? 'bg-[#FFD100] text-neutral-950'
+                      ? 'bg-[#047857] text-white'
                       : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
                   }`}
                 >
@@ -1248,7 +1248,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPermsModalOpen(true)}
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+                className="aurora-accent-flow flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm"
               >
                 <ShieldCheck className="h-4 w-4" />
                 {t.permissions_btn}
@@ -1329,7 +1329,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
       {permsModalOpen && (
         <PermissionsPromptModal
-          siteName={platformConfig?.site_name || '66 Mobilidade'}
+          siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
           onClose={() => setPermsModalOpen(false)}
         />
       )}
@@ -1337,7 +1337,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       {legalDocsOpen && (
         <LegalDocsModal
           initialTab="terms"
-          siteName={platformConfig?.site_name || '66 Mobilidade'}
+          siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
           onClose={() => setLegalDocsOpen(false)}
         />
       )}
@@ -1345,7 +1345,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       {otaUpdateInfo && (
         <OtaUpdateModal
           updateInfo={otaUpdateInfo}
-          siteName={platformConfig?.site_name || '66 Mobilidade'}
+          siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
           onClose={() => setOtaUpdateInfo(null)}
         />
       )}

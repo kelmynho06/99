@@ -30,9 +30,9 @@ const CATEGORY_META: Record<
   { label: string; icon: React.ComponentType<{ className?: string }>; badgeClass: string }
 > = {
   wallet: {
-    label: '66 Pay',
+    label: 'BorealPay',
     icon: Wallet,
-    badgeClass: 'bg-[#FFD100]/20 text-amber-900 dark:text-[#FFD100] border-[#FFD100]/40',
+    badgeClass: 'bg-[#ECFDF5] dark:bg-emerald-950/60 text-[#047857] dark:text-[#6EE7B7] border-[#6EE7B7]/60 dark:border-emerald-800',
   },
   coupon: {
     label: 'Cupom',
@@ -101,7 +101,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 shadow-2xs">
+            <span className="aurora-accent-flow flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-2xs">
               <Bell className="h-5 w-5" />
             </span>
             <div>
@@ -150,7 +150,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 Nenhuma notificação ainda
               </p>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Avisos da plataforma, transferências 66 Pay, eventos e cupons aparecerão aqui.
+                Avisos da plataforma, transferências BorealPay, eventos e cupons aparecerão aqui.
               </p>
             </div>
           ) : (
@@ -167,7 +167,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                   className={`w-full rounded-2xl border p-3.5 text-left transition active:scale-[0.99] ${
                     notif.is_read
                       ? 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900'
-                      : 'border-[#FFD100] bg-[#FFD100]/10 dark:bg-[#FFD100]/10 shadow-2xs'
+                      : 'border-[#2DD4BF] bg-[#ECFDF5]/80 dark:bg-emerald-950/30 shadow-2xs'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -198,9 +198,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                     {notif.message}
                   </p>
                   {receiptTx && onOpenReceipt && (
-                    <span className="mt-2 inline-flex items-center gap-1 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[11px] font-extrabold text-[#FFD100] dark:text-neutral-950">
+                    <span className="mt-2 inline-flex items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#0F2421]">
                       <Receipt className="h-3.5 w-3.5" />
-                      Ver Comprovante 66 Pay
+                      Ver Comprovante BorealPay
                     </span>
                   )}
                   {!receiptTx && isEvent && onOpenEvents && (

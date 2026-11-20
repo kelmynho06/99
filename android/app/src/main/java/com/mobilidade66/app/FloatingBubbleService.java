@@ -168,7 +168,7 @@ public class FloatingBubbleService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Atalho Rápido 66 Mobilidade",
+                "Atalho Rápido Boreal Mobilidade",
                 NotificationManager.IMPORTANCE_MIN
             );
             channel.setDescription("Mantém o botão flutuante ativo apenas em segundo plano com mínimo consumo de bateria.");
@@ -191,7 +191,7 @@ public class FloatingBubbleService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openIntent, piFlags);
 
         Notification notif = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("66 Mobilidade em segundo plano")
+            .setContentTitle("Boreal Mobilidade em segundo plano")
             .setContentText("Toque no balão flutuante para retornar rapidamente")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setPriority(NotificationCompat.PRIORITY_MIN)
@@ -267,10 +267,15 @@ public class FloatingBubbleService extends Service {
         float density = getResources().getDisplayMetrics().density;
 
         FrameLayout circleFrame = new FrameLayout(this);
-        circleFrame.setBackground(createCircleDrawable(Color.parseColor("#111419"), Color.parseColor("#FFD100"), Math.round(2.5f * density)));
+        circleFrame.setBackground(createCircleDrawable(Color.parseColor("#0F2421"), Color.parseColor("#2DD4BF"), Math.round(2 * density)));
+        circleFrame.setClipToOutline(true);
+        circleFrame.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
         circleFrame.setElevation(10 * density);
-        int pad = Math.round(4 * density);
-        circleFrame.setPadding(pad, pad, pad, pad);
 
         ImageView logoImg = new ImageView(this);
         logoImg.setImageResource(R.drawable.bubble_logo_66);
@@ -287,7 +292,7 @@ public class FloatingBubbleService extends Service {
         // Active ride indicator dot
         int dotSize = Math.round(13 * density);
         statusDot = new View(this);
-        statusDot.setBackground(createCircleDrawable(Color.parseColor("#FFD100"), Color.parseColor("#111419"), Math.round(2 * density)));
+        statusDot.setBackground(createCircleDrawable(Color.parseColor("#10B981"), Color.WHITE, Math.round(2 * density)));
         FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(dotSize, dotSize, Gravity.TOP | Gravity.END);
         dotLp.topMargin = Math.round(1 * density);
         dotLp.rightMargin = Math.round(1 * density);

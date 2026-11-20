@@ -31,18 +31,18 @@ import type {
 export const PLATFORM_BRAND_CACHE_KEY = 'velo99_platform_brand_cache_v1';
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
-  platform_pix_key: 'pix@66mobilidade.app',
-  platform_pix_receiver: '66 Mobilidade Ltda',
+  platform_pix_key: 'pix@borealmobilidade.app',
+  platform_pix_receiver: 'Boreal Mobilidade Ltda',
   platform_city: 'São Paulo, SP',
   company_address: '',
   platform_pix_qr_url: null,
-  site_name: '66 Mobilidade',
+  site_name: 'Boreal Mobilidade',
   support_whatsapp: '',
   commission_percent: 0,
   maintenance_mode: false,
   app_logo_url: null,
-  primary_color: '#FFD100',
-  secondary_color: '#111827',
+  primary_color: '#047857',
+  secondary_color: '#0F2421',
   vehicle_img_moto: null,
   vehicle_img_pop: null,
   vehicle_img_delivery_moto: null,
@@ -724,6 +724,30 @@ function readCachedPlatformBrand(): Partial<PlatformConfig> {
   }
 }
 
+function resolveNormalizedBrandName(raw?: unknown): string {
+  const clean = String(raw || '').trim();
+  if (!clean || clean === '66 Mobilidade' || clean === 'Velo99' || clean === 'Velo99 Mobilidade') {
+    return DEFAULT_PLATFORM_CONFIG.site_name;
+  }
+  return clean;
+}
+
+function resolveNormalizedPrimaryColor(raw?: unknown): string {
+  const clean = String(raw || '').trim();
+  if (!clean || clean.toUpperCase() === '#FFD100' || clean.toUpperCase() === '#FFDD00') {
+    return DEFAULT_PLATFORM_CONFIG.primary_color || '#047857';
+  }
+  return clean;
+}
+
+function resolveNormalizedSecondaryColor(raw?: unknown): string {
+  const clean = String(raw || '').trim();
+  if (!clean || clean.toUpperCase() === '#111827') {
+    return DEFAULT_PLATFORM_CONFIG.secondary_color || '#0F2421';
+  }
+  return clean;
+}
+
 export async function fetchAppBrandConfig(): Promise<{
   app_name: string;
   logo_url: string | null;
@@ -745,15 +769,15 @@ export async function fetchAppBrandConfig(): Promise<{
   const resolvedLogo = rawLogo ? await resolveDocumentDisplayUrl(rawLogo) : null;
 
   return {
-    app_name: String(
-      appCfg?.app_name || platCfg?.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name
+    app_name: resolveNormalizedBrandName(
+      appCfg?.app_name || platCfg?.site_name || cached.site_name
     ),
     logo_url: resolvedLogo || rawLogo,
-    primary_color: String(
-      appCfg?.primary_color || platCfg?.primary_color || cached.primary_color || '#FFD100'
+    primary_color: resolveNormalizedPrimaryColor(
+      appCfg?.primary_color || platCfg?.primary_color || cached.primary_color
     ),
-    secondary_color: String(
-      appCfg?.secondary_color || platCfg?.secondary_color || cached.secondary_color || '#111827'
+    secondary_color: resolveNormalizedSecondaryColor(
+      appCfg?.secondary_color || platCfg?.secondary_color || cached.secondary_color
     ),
   };
 }
@@ -777,11 +801,11 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     return {
       ...DEFAULT_PLATFORM_CONFIG,
       ...cached,
-      site_name: String(appCfg?.app_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name),
+      site_name: resolveNormalizedBrandName(appCfg?.app_name || cached.site_name),
       app_logo_url: resolvedFallbackLogo,
       platform_pix_qr_url: resolvedFallbackQr,
-      primary_color: String(appCfg?.primary_color || cached.primary_color || '#FFD100'),
-      secondary_color: String(appCfg?.secondary_color || cached.secondary_color || '#111827'),
+      primary_color: resolveNormalizedPrimaryColor(appCfg?.primary_color || cached.primary_color),
+      secondary_color: resolveNormalizedSecondaryColor(appCfg?.secondary_color || cached.secondary_color),
       ota_web_url: cached.ota_web_url ?? null,
     };
   }
@@ -809,18 +833,18 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     company_address:
       (data.company_address as string | null | undefined) ?? cached.company_address ?? '',
     platform_pix_qr_url: resolvedQrUrl || null,
-    site_name: String(
-      appCfg?.app_name || data.site_name || cached.site_name || DEFAULT_PLATFORM_CONFIG.site_name
+    site_name: resolveNormalizedBrandName(
+      appCfg?.app_name || data.site_name || cached.site_name
     ),
     support_whatsapp: String(data.support_whatsapp || cached.support_whatsapp || ''),
     commission_percent: Number(data.commission_percent ?? cached.commission_percent ?? 0),
     maintenance_mode: Boolean(data.maintenance_mode ?? false),
     app_logo_url: resolvedLogoUrl || null,
-    primary_color: String(
-      appCfg?.primary_color || data.primary_color || cached.primary_color || '#FFD100'
+    primary_color: resolveNormalizedPrimaryColor(
+      appCfg?.primary_color || data.primary_color || cached.primary_color
     ),
-    secondary_color: String(
-      appCfg?.secondary_color || data.secondary_color || cached.secondary_color || '#111827'
+    secondary_color: resolveNormalizedSecondaryColor(
+      appCfg?.secondary_color || data.secondary_color || cached.secondary_color
     ),
     vehicle_img_moto:
       (data.vehicle_img_moto as string | null | undefined) ?? cached.vehicle_img_moto ?? null,
@@ -952,6 +976,65 @@ export async function fetchOnlineDriversPublic(): Promise<UserProfile[]> {
   }));
 }
 
+async function resolveMissingPassengerPreviews(
+  rideRows: Array<Record<string, unknown>>,
+  profilesById: Map<string, UserProfile>
+): Promise<void> {
+  const missingRides = rideRows.filter((r) => {
+    const pid = r.passenger_id ? String(r.passenger_id) : '';
+    return pid && !profilesById.has(pid);
+  });
+
+  if (missingRides.length > 0) {
+    await Promise.all(
+      missingRides.slice(0, 12).map(async (r) => {
+        const pid = String(r.passenger_id);
+        if (profilesById.has(pid)) return;
+        try {
+          const { data } = await supabase.rpc('get_ride_passenger_preview', {
+            p_ride_id: String(r.id),
+          });
+          const row = Array.isArray(data) ? data[0] : data;
+          if (row && row.id) {
+            const rawAvatar = row.avatar_url ? String(row.avatar_url) : null;
+            const resolvedAvatar = rawAvatar
+              ? await resolveDocumentDisplayUrl(rawAvatar).catch(() => rawAvatar)
+              : null;
+            profilesById.set(
+              String(row.id),
+              mapDbProfile({
+                id: row.id,
+                role: 'passenger',
+                status: row.status || 'active',
+                full_name: row.full_name || 'Passageiro',
+                avatar_url: resolvedAvatar,
+                rating_avg: row.rating_avg ?? 5,
+                rating_count: row.rating_count ?? 0,
+              })
+            );
+          }
+        } catch {
+          // Ignore if RPC not yet installed
+        }
+      })
+    );
+  }
+
+  await Promise.all(
+    Array.from(profilesById.values()).map(async (prof) => {
+      if (
+        prof.avatar_url &&
+        (prof.avatar_url.startsWith('storage:') ||
+          prof.avatar_url.includes('/storage/v1/object/public/driver-documents/'))
+      ) {
+        prof.avatar_url = await resolveDocumentDisplayUrl(prof.avatar_url).catch(
+          () => prof.avatar_url || null
+        );
+      }
+    })
+  );
+}
+
 export async function fetchEnrichedRides(): Promise<Ride[]> {
   const { data: rideRows, error } = await supabase
     .from('rides')
@@ -986,6 +1069,8 @@ export async function fetchEnrichedRides(): Promise<Ride[]> {
     }
   }
 
+  await resolveMissingPassengerPreviews(rideRows as Array<Record<string, unknown>>, profilesById);
+
   return rideRows.map((r) => mapDbRide(r as Record<string, unknown>, profilesById));
 }
 
@@ -1012,6 +1097,8 @@ export async function fetchRideByIdEnriched(rideId: string): Promise<Ride | null
       );
     }
   }
+
+  await resolveMissingPassengerPreviews([row as Record<string, unknown>], profilesById);
 
   return mapDbRide(row as Record<string, unknown>, profilesById);
 }
@@ -1135,7 +1222,7 @@ export async function createRideRequest(input: {
   const rideId = String(data.id);
 
   if (input.payment_method === 'wallet') {
-    const desc = `Reserva 66pay corrida #${rideId.slice(-4)} · ${
+    const desc = `Reserva BorealPay corrida #${rideId.slice(-4)} · ${
       input.destination.address.split(',')[0]
     }`;
     const { error: reserveErr } = await supabase.rpc('reserve_66pay_for_ride', {
@@ -1147,7 +1234,7 @@ export async function createRideRequest(input: {
     if (reserveErr) {
       if (reserveErr.message?.toLowerCase().includes('saldo')) {
         await supabase.from('rides').delete().eq('id', rideId);
-        throw new Error('Saldo 66pay insuficiente na carteira.');
+        throw new Error('Saldo BorealPay insuficiente na carteira.');
       }
       // Fallback for older SQL schemas without reserve_66pay_for_ride: use debit_own_wallet_for_ride & mark paid_wallet
       const { error: rpcErr } = await supabase.rpc('debit_own_wallet_for_ride', {
@@ -1291,7 +1378,7 @@ export interface CancellationFeeEstimate {
 
 export function computeCancellationFeeEstimate(
   ride: Ride,
-  driverCoords?: [number, number] | null
+  _driverCoords?: [number, number] | null
 ): CancellationFeeEstimate {
   if (
     ride.status === 'in_progress' ||
@@ -1320,14 +1407,28 @@ export function computeCancellationFeeEstimate(
       elapsedSinceAcceptSec: 0,
       feeAmount: 0,
       maxFeeCap: 0,
-      reasonLabel: 'Cancelamento gratuito antes do motorista aceitar.',
+      reasonLabel: 'Cancelamento gratuito enquanto procuramos um parceiro.',
     };
   }
 
+  const fare = Number((ride.final_fare ?? ride.estimated_fare ?? 0).toFixed(2));
   const acceptedMs = new Date(ride.accepted_at).getTime();
   const elapsedSec = Number.isFinite(acceptedMs)
     ? Math.max(0, Math.floor((Date.now() - acceptedMs) / 1000))
     : 0;
+
+  if (ride.status === 'arrived') {
+    return {
+      canCancel: true,
+      isFreeGrace: false,
+      remainingFreeSec: 0,
+      elapsedSinceAcceptSec: elapsedSec,
+      feeAmount: fare,
+      maxFeeCap: fare,
+      reasonLabel:
+        'O motorista/entregador já chegou ao local de embarque. Cancelar agora cobra 100% do valor da corrida.',
+    };
+  }
 
   if (elapsedSec <= 20) {
     return {
@@ -1336,47 +1437,21 @@ export function computeCancellationFeeEstimate(
       remainingFreeSec: 20 - elapsedSec,
       elapsedSinceAcceptSec: elapsedSec,
       feeAmount: 0,
-      maxFeeCap: 0,
-      reasonLabel: `Cancelamento gratuito por mais ${20 - elapsedSec}s após o aceite.`,
+      maxFeeCap: fare,
+      reasonLabel: `Você está nos 20 segundos gratuitos após o aceite (${20 - elapsedSec}s restantes).`,
     };
   }
 
-  const fare = Number((ride.final_fare ?? ride.estimated_fare ?? 0).toFixed(2));
-  const cap = Number(Math.max(0, fare * 0.9).toFixed(2));
-  const minBase = Number(Math.min(4.0, cap > 0 ? Math.max(4.0, cap) : 4.0).toFixed(2));
-  const effectiveCap = Number(Math.max(minBase, cap).toFixed(2));
-
-  const extraMinAfterGrace = (elapsedSec - 20) / 60;
-  const timeEscalation = extraMinAfterGrace * 1.25;
-
-  let proximityFactor = ride.status === 'arrived' ? 1.0 : 0;
-  if (
-    ride.status !== 'arrived' &&
-    driverCoords &&
-    Number.isFinite(driverCoords[0]) &&
-    Number.isFinite(driverCoords[1])
-  ) {
-    const distKm = haversineKm(driverCoords[0], driverCoords[1], ride.origin_lat, ride.origin_lng);
-    if (distKm <= 2.5) {
-      proximityFactor = Math.max(0, Math.min(1, (2.5 - distKm) / 2.5));
-    }
-  }
-
-  const proximityEscalation = proximityFactor * Math.max(0, effectiveCap - minBase) * 0.55;
-  const computed = Math.min(effectiveCap, Math.max(minBase, minBase + timeEscalation + proximityEscalation));
-  const feeAmount = Number(computed.toFixed(2));
-
+  const fixedLateFee = Number(Math.min(fare, 3.0).toFixed(2));
   return {
     canCancel: true,
     isFreeGrace: false,
     remainingFreeSec: 0,
     elapsedSinceAcceptSec: elapsedSec,
-    feeAmount,
-    maxFeeCap: effectiveCap,
+    feeAmount: fixedLateFee,
+    maxFeeCap: fare,
     reasonLabel:
-      ride.status === 'arrived'
-        ? 'Parceiro já no embarque · Taxa repassada integralmente ao motorista/entregador.'
-        : 'Prazo gratuito de 20s encerrado · Taxa dinâmica repassada ao motorista/entregador.',
+      'Prazo gratuito de 20s encerrado · Taxa fixa de R$ 3,00 repassada ao motorista/entregador.',
   };
 }
 
@@ -1633,8 +1708,8 @@ export async function completeRide(
     const labelPrefix =
       nextPaymentStatus === 'paid' || nextPaymentStatus === 'paid_wallet'
         ? isDelivery
-          ? 'Entrega 66pay'
-          : 'Corrida 66pay'
+          ? 'Entrega BorealPay'
+          : 'Corrida BorealPay'
         : isDelivery
         ? 'Entrega Pix'
         : 'Corrida Pix';
@@ -2128,9 +2203,9 @@ export async function adminSavePricing(pricingList: PricingSetting[]): Promise<v
 }
 
 export async function adminSavePlatformConfig(config: PlatformConfig): Promise<void> {
-  const cleanName = config.site_name.trim() || '66 Mobilidade';
-  const cleanPrimary = config.primary_color || '#FFD100';
-  const cleanSecondary = config.secondary_color || '#111827';
+  const cleanName = config.site_name.trim() || 'Boreal Mobilidade';
+  const cleanPrimary = config.primary_color || '#047857';
+  const cleanSecondary = config.secondary_color || '#0F2421';
 
   try {
     localStorage.setItem(
@@ -2602,7 +2677,7 @@ export async function createWalletDepositRequest(
   const windowStatus = getDepositWindowStatus(cfg);
   if (!windowStatus.isOpen) {
     throw new Error(
-      `Horário de depósitos Pix encerrado no momento. Novos depósitos funcionam das ${windowStatus.startTime} às ${windowStatus.endTime}. Quem já tem saldo 66pay continua usando normalmente!`
+      `Horário de depósitos Pix encerrado no momento. Novos depósitos funcionam das ${windowStatus.startTime} às ${windowStatus.endTime}. Quem já tem saldo BorealPay continua usando normalmente!`
     );
   }
 
@@ -2739,7 +2814,7 @@ export async function adminUpdateUserWalletBalance(
 export async function updateMyPay66Key(userId: string, newKey: string): Promise<UserProfile> {
   const clean = newKey.trim().replace(/\s+/g, '');
   if (clean.length < 4 || clean.length > 64) {
-    throw new Error('Informe uma Chave 66pay válida entre 4 e 64 caracteres.');
+    throw new Error('Informe uma Chave BorealPay válida entre 4 e 64 caracteres.');
   }
 
   const { error: rpcErr } = await supabase.rpc('update_my_pay66_key', {
@@ -2762,14 +2837,14 @@ export async function updateMyPay66Key(userId: string, newKey: string): Promise<
       .eq('id', userId);
     if (updErr) {
       if (updErr.code === '23505') {
-        throw new Error('Esta Chave 66pay já está em uso por outro usuário.');
+        throw new Error('Esta Chave BorealPay já está em uso por outro usuário.');
       }
       throw new Error(updErr.message);
     }
   }
 
   const refreshed = await fetchUserProfileById(userId);
-  if (!refreshed) throw new Error('Erro ao recarregar perfil após salvar Chave 66pay.');
+  if (!refreshed) throw new Error('Erro ao recarregar perfil após salvar Chave BorealPay.');
   return refreshed;
 }
 
@@ -2843,10 +2918,10 @@ export async function transferirSaldo66(
   const cleanTarget = extractPay66Token(destinatario);
   const cleanAmount = Number(Math.max(0, valor).toFixed(2));
   if (!cleanTarget) {
-    throw new Error('Informe o destinatário da transferência 66 Pay.');
+    throw new Error('Informe o destinatário da transferência BorealPay.');
   }
   if (cleanAmount < 1) {
-    throw new Error('O valor mínimo para transferência 66 Pay é R$ 1,00.');
+    throw new Error('O valor mínimo para transferência BorealPay é R$ 1,00.');
   }
 
   const { data: rpc66Data, error: rpc66Err } = await supabase.rpc('transferir_saldo_66', {
@@ -2866,7 +2941,7 @@ export async function transferirSaldo66(
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData.session?.user?.id || '';
     return {
-      id: payload.tx_id ? String(payload.tx_id) : `66PAY-${Date.now()}`,
+      id: payload.tx_id ? String(payload.tx_id) : `BOREAL-${Date.now()}`,
       user_id: uid,
       amount: -Number(payload.amount ?? cleanAmount),
       type: 'transfer_out',
@@ -2891,7 +2966,7 @@ export async function transferirSaldo66(
     throw new Error(legacyErr.message || rpc66Err.message || 'Erro ao transferir saldo.');
   }
 
-  throw new Error(rpc66Err.message || 'Erro ao transferir saldo na carteira 66 Pay.');
+  throw new Error(rpc66Err.message || 'Erro ao transferir saldo na carteira BorealPay.');
 }
 
 export async function transferWalletBalance(
@@ -3376,7 +3451,7 @@ export async function process66PayRideTransfer(
     p_ride_id: rideId,
   });
   if (legacyErr) {
-    throw new Error(error?.message || legacyErr.message || 'Falha ao processar pagamento 66pay.');
+    throw new Error(error?.message || legacyErr.message || 'Falha ao processar pagamento BorealPay.');
   }
 
   const ride = await fetchRideByIdEnriched(rideId);

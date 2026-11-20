@@ -1,7 +1,10 @@
 package com.mobilidade66.app;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -15,6 +18,22 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(FloatingBubblePlugin.class);
         super.onCreate(savedInstanceState);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                NotificationChannel ch = new NotificationChannel(
+                        "mobilidade66_voice_alerts",
+                        "Boreal Mobilidade · Alertas por Voz",
+                        NotificationManager.IMPORTANCE_HIGH
+                );
+                ch.setDescription("Alertas visuais discretos com assistente de voz");
+                ch.setSound(null, null);
+                ch.enableVibration(true);
+                ch.setVibrationPattern(new long[]{0, 65});
+                nm.createNotificationChannel(ch);
+            }
+        }
 
         SharedPreferences prefs = getSharedPreferences("mobilidade66_ota", Context.MODE_PRIVATE);
         String savedOtaUrl = prefs.getString("ota_web_url", "");

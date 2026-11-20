@@ -747,8 +747,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       applyLocalConfig({
         app_name: platformConfig.site_name,
         logo_url: platformConfig.app_logo_url ?? null,
-        primary_color: platformConfig.primary_color || '#FFD100',
-        secondary_color: platformConfig.secondary_color || '#111827',
+        primary_color: platformConfig.primary_color || '#047857',
+        secondary_color: platformConfig.secondary_color || '#071513',
       });
       void refreshConfig();
       showToast('Configurações, Marca, Cores, Pix Oficial e Sons salvos!');
@@ -1282,7 +1282,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         name={d.full_name}
                         initialsCount={2}
                         className="h-10 w-10 rounded-full object-cover border border-neutral-200 shrink-0"
-                        fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-extrabold text-[#FFD100]"
+                        fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#047857] text-xs font-extrabold text-[#6EE7B7]"
                       />
                       <div className="min-w-0">
                         <h3 className="font-display text-base font-extrabold text-neutral-950 truncate">
@@ -1299,7 +1299,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           d.status === 'active'
                             ? 'text-emerald-700'
                             : d.status === 'pending'
-                            ? 'text-amber-600'
+                            ? 'text-teal-700'
                             : 'text-red-600'
                         }`}
                       >
@@ -1329,7 +1329,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="mt-3 text-xs text-neutral-700 space-y-1 border-t border-neutral-100 pt-3">
                     <p className="flex items-center gap-1.5">
                       {d.driver?.vehicle_type === 'delivery' ? (
-                        <Package className="h-3.5 w-3.5 text-amber-600" />
+                        <Package className="h-3.5 w-3.5 text-[#047857]" />
                       ) : d.driver?.vehicle_type === 'moto' ? (
                         <Bike className="h-3.5 w-3.5 text-neutral-700" />
                       ) : (
@@ -1405,7 +1405,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => handleReviewDriver(d.id, 'active')}
-                        className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl bg-[#FFD100] px-3 text-xs font-extrabold text-neutral-950"
+                        className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl aurora-accent-flow px-3 text-xs font-extrabold text-white"
                       >
                         <Check className="h-3.5 w-3.5" />
                         Aprovar
@@ -1414,7 +1414,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => handleReviewDriver(d.id, 'suspended', 'Bloqueado pelo Admin')}
-                        className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-800"
+                        className="min-h-[40px] flex items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 text-xs font-bold text-rose-800"
                       >
                         <Ban className="h-3.5 w-3.5" />
                         Bloquear
@@ -1529,12 +1529,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
             <img
               src={resolveBrandLogo(platformConfig)}
-              alt={platformConfig.site_name || '66 Mobilidade'}
-              className="h-10 w-10 shrink-0 rounded-xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
+              alt={platformConfig.site_name || 'Boreal Mobilidade'}
+              className="h-10 w-10 shrink-0 rounded-xl object-cover border border-[#D4EDE7] dark:border-neutral-700 shadow-xs"
             />
             <div className="min-w-0">
-              <h1 className="font-display text-base sm:text-lg font-extrabold text-neutral-950 dark:text-white leading-tight truncate">
-                {platformConfig.site_name || '66 Mobilidade'} · Super Admin
+              <h1 className="font-display text-base sm:text-lg font-extrabold text-[#0F2421] dark:text-white leading-tight truncate">
+                {platformConfig.site_name || 'Boreal Mobilidade'} · Super Admin
               </h1>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
                 {platformConfig.platform_city} · {activeNavItem.label}
@@ -1584,7 +1584,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="flex min-h-[42px] items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3.5 text-xs font-bold text-[#FFD100] dark:text-neutral-950"
+              className="flex min-h-[42px] items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3.5 text-xs font-bold text-white dark:text-[#071513]"
             >
               <LogOut className="h-4 w-4" />
               <span>Sair</span>
@@ -1600,17 +1600,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             className="fixed inset-0 bg-black/65 backdrop-blur-xs"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="relative z-10 flex h-full w-80 max-w-[85vw] flex-col bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 p-4">
+          <aside className="relative z-10 flex h-full w-80 max-w-[85vw] flex-col bg-white dark:bg-[#0B1D1A] border-r border-[#D4EDE7] dark:border-neutral-800 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#D4EDE7] dark:border-neutral-800 p-4">
               <div className="flex items-center gap-2.5 min-w-0">
                 <img
                   src={resolveBrandLogo(platformConfig)}
-                  alt={platformConfig.site_name || '66 Mobilidade'}
-                  className="h-10 w-10 rounded-xl object-cover border border-neutral-200 dark:border-neutral-700 shrink-0"
+                  alt={platformConfig.site_name || 'Boreal Mobilidade'}
+                  className="h-10 w-10 rounded-xl object-cover border border-[#D4EDE7] dark:border-neutral-700 shrink-0"
                 />
                 <div className="min-w-0">
-                  <p className="font-display text-sm font-extrabold text-neutral-950 dark:text-white truncate">
-                    {platformConfig.site_name || '66 Mobilidade'}
+                  <p className="font-display text-sm font-extrabold text-[#0F2421] dark:text-white truncate">
+                    {platformConfig.site_name || 'Boreal Mobilidade'}
                   </p>
                   <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
                     {currentUser.email}
@@ -1641,8 +1641,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`flex min-h-[46px] w-full items-center justify-between gap-2.5 rounded-2xl px-3.5 text-left text-xs font-bold transition ${
                       active
-                        ? 'bg-neutral-950 text-[#FFD100] dark:bg-[#FFD100] dark:text-neutral-950 shadow-sm'
-                        : 'text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                        ? 'aurora-accent-flow text-white shadow-sm'
+                        : 'text-[#0F2421] dark:text-neutral-200 hover:bg-[#F7FBFA] dark:hover:bg-neutral-800'
                     }`}
                   >
                     <span className="flex items-center gap-2.5 min-w-0">
@@ -1692,7 +1692,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`min-h-[36px] rounded-xl text-[11px] font-extrabold ${
                       adminPrefs.sounds_enabled
-                        ? 'bg-neutral-950 text-[#FFD100]'
+                        ? 'bg-[#047857] text-[#6EE7B7]'
                         : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
                     }`}
                   >
@@ -1714,7 +1714,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {toast && (
-        <div className="no-print fixed bottom-5 right-5 z-50 rounded-2xl bg-neutral-950 px-4 py-3 text-xs font-bold text-[#FFD100] shadow-xl">
+        <div className="no-print fixed bottom-5 right-5 z-50 rounded-2xl bg-[#071513] border border-[#2DD4BF]/40 px-4 py-3 text-xs font-bold text-[#6EE7B7] shadow-xl">
           {toast}
         </div>
       )}
@@ -1722,41 +1722,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-8 py-6">
         {/* KPIs */}
         <div className="no-print mb-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+          <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
             <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Volume Total</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-neutral-950 dark:text-white">
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-[#0F2421] dark:text-white">
               {formatBRL(metrics.totalRevenue)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+          <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
             <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Entradas Pix / App</p>
             <p className="mt-1 font-mono-num text-xl font-extrabold text-emerald-700 dark:text-emerald-400">
               {formatBRL(metrics.totalPixPlatform)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+          <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
             <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">A Repassar (Pix)</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-amber-600 dark:text-[#FFD100]">
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#6EE7B7]">
               {formatBRL(metrics.totalPendingToDrivers)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+          <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
             <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Concluídas / Ativas</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-neutral-950 dark:text-white">
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-[#0F2421] dark:text-white">
               {metrics.completedCount} / {metrics.activeRidesCount}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+          <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
             <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Aprovações Pend.</p>
-            <p className="mt-1 font-mono-num text-xl font-extrabold text-amber-600 dark:text-[#FFD100]">
+            <p className="mt-1 font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#6EE7B7]">
               {metrics.pendingApprovalsCount}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+          <div className="rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
             <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Disputas Abertas</p>
             <p
               className={`mt-1 font-mono-num text-xl font-extrabold ${
-                metrics.disputedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-neutral-950 dark:text-white'
+                metrics.disputedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-[#0F2421] dark:text-white'
               }`}
             >
               {metrics.disputedCount}
@@ -1768,10 +1768,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           pendingDeposits.length > 0 ||
           pendingWithdrawals.length > 0 ||
           supportAlerts.length > 0) && (
-          <div className="no-print mb-5 rounded-3xl border-2 border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/40 p-4 shadow-lg ring-2 ring-amber-400/40 space-y-3">
+          <div className="no-print mb-5 rounded-3xl border-2 border-[#2DD4BF] dark:border-[#2DD4BF]/60 bg-[#ECFDF5] dark:bg-[#047857]/25 p-4 shadow-lg ring-2 ring-[#2DD4BF]/30 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFD100] text-neutral-950 animate-pulse shadow">
+                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl aurora-accent-flow text-white animate-pulse shadow">
                   <BellRing className="h-5 w-5" />
                   <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
@@ -1779,17 +1779,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-extrabold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+                  <p className="text-xs font-extrabold text-[#065F46] dark:text-[#6EE7B7] flex items-center gap-2">
                     <span>ATENÇÃO ADMIN · PENDÊNCIAS EM TEMPO REAL</span>
                   </p>
-                  <p className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                  <p className="text-[11px] font-semibold text-[#047857] dark:text-emerald-200">
                     {awaitingPixRides.length > 0 && `${awaitingPixRides.length} corrida(s) Pix`}
                     {awaitingPixRides.length > 0 &&
                       (pendingDeposits.length > 0 ||
                         pendingWithdrawals.length > 0 ||
                         supportAlerts.length > 0) &&
                       ' · '}
-                    {pendingDeposits.length > 0 && `${pendingDeposits.length} depósito(s) 66 Pay`}
+                    {pendingDeposits.length > 0 && `${pendingDeposits.length} depósito(s) BorealPay`}
                     {pendingDeposits.length > 0 &&
                       (pendingWithdrawals.length > 0 || supportAlerts.length > 0) &&
                       ' · '}
@@ -1803,7 +1803,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setTab('payments')}
-                className="min-h-[42px] shrink-0 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-extrabold text-[#FFD100] dark:text-neutral-950 shadow-sm"
+                className="min-h-[42px] shrink-0 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-4 text-xs font-extrabold text-white dark:text-[#071513] shadow-sm"
               >
                 Conferir &amp; Confirmar
               </button>
@@ -1815,7 +1815,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   key={`alert-pix-${r.id}`}
                   type="button"
                   onClick={() => setTab('payments')}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 px-3 py-1.5 text-[11px] font-extrabold text-amber-950 dark:text-amber-100 animate-pulse"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500/20 border border-teal-500/40 px-3 py-1.5 text-[11px] font-extrabold text-[#065F46] dark:text-[#6EE7B7] animate-pulse"
                 >
                   <QrCode className="h-3.5 w-3.5" />
                   Pix Corrida · {r.driver?.full_name?.split(' ')[0] || 'Motorista'} ·{' '}
@@ -1879,10 +1879,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* Active Section Pill + Quick Drawer Trigger */}
-        <div className="no-print flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5">
+        <div className="no-print flex items-center justify-between gap-3 rounded-2xl border border-[#D4EDE7] dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5">
           <div className="flex items-center gap-2 min-w-0">
-            <activeNavItem.icon className="h-4 w-4 text-amber-600 dark:text-[#FFD100] shrink-0" />
-            <span className="font-display text-sm font-extrabold text-neutral-950 dark:text-white truncate">
+            <activeNavItem.icon className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0" />
+            <span className="font-display text-sm font-extrabold text-[#0F2421] dark:text-white truncate">
               {activeNavItem.label}
             </span>
           </div>
@@ -1975,7 +1975,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <button
                             type="button"
                             onClick={() => setChatTargetUser(d)}
-                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950"
+                            className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#071513]"
                             title="Conversar"
                           >
                             <MessageSquare className="h-4 w-4" />
@@ -2182,8 +2182,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   onClick={() => handleToggleClientStatus(c)}
                                   className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${
                                     c.status === 'active'
-                                      ? 'border border-amber-200 bg-amber-50 text-amber-800'
-                                      : 'bg-[#FFD100] text-neutral-950'
+                                      ? 'border border-rose-200 bg-rose-50 text-rose-800'
+                                      : 'aurora-accent-flow text-white'
                                   }`}
                                 >
                                   {c.status === 'active' ? 'Bloquear' : 'Desbloquear'}
@@ -2284,46 +2284,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   r.payment_status === 'paid_cash' ||
                                   r.payment_status === 'admin_settled'
                                 ? 'text-emerald-700'
-                                : 'text-amber-700'
-                            }`}
-                          >
-                            {r.payment_method === 'wallet'
-                              ? 'SALDO APP'
-                              : r.payment_method.toUpperCase()}{' '}
-                            · {r.payment_status}
-                          </span>
-                          {r.dispute_reason && (
-                            <p className="text-[11px] text-red-600 truncate max-w-[180px]">
-                              {r.dispute_reason}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono-num font-bold">
-                          {formatBRL(r.final_fare ?? r.estimated_fare)}
-                        </td>
-                        <td className="px-4 py-3 font-bold">{r.status}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                            {r.status === 'completed' &&
-                              r.payment_status === 'pending' &&
-                              (r.payment_method === 'pix' || Boolean(r.pix_declared_at)) && (
-                                <button
-                                  type="button"
-                                  disabled={confirmingPixRideId === r.id}
-                                  onClick={() => handleConfirmPixRide(r)}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-extrabold text-white"
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                  {confirmingPixRideId === r.id ? 'Confirmando...' : 'Confirmar Pix'}
-                                </button>
-                              )}
-                            {r.payment_status === 'disputed' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSettleDispute(r, false)}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-2.5 py-1.5 text-[11px] font-extrabold text-neutral-950"
-                                >
+                                  : 'text-teal-700'
+                              }`}
+                            >
+                              {r.payment_method === 'wallet'
+                                ? 'SALDO APP'
+                                : r.payment_method.toUpperCase()}{' '}
+                              · {r.payment_status}
+                            </span>
+                            {r.dispute_reason && (
+                              <p className="text-[11px] text-red-600 truncate max-w-[180px]">
+                                {r.dispute_reason}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono-num font-bold">
+                            {formatBRL(r.final_fare ?? r.estimated_fare)}
+                          </td>
+                          <td className="px-4 py-3 font-bold">{r.status}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                              {r.status === 'completed' &&
+                                r.payment_status === 'pending' &&
+                                (r.payment_method === 'pix' || Boolean(r.pix_declared_at)) && (
+                                  <button
+                                    type="button"
+                                    disabled={confirmingPixRideId === r.id}
+                                    onClick={() => handleConfirmPixRide(r)}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-extrabold text-white"
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                    {confirmingPixRideId === r.id ? 'Confirmando...' : 'Confirmar Pix'}
+                                  </button>
+                                )}
+                              {r.payment_status === 'disputed' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSettleDispute(r, false)}
+                                    className="inline-flex items-center gap-1 rounded-lg aurora-accent-flow px-2.5 py-1.5 text-[11px] font-extrabold text-white"
+                                  >
                                   <ShieldAlert className="h-3.5 w-3.5" />
                                   Quitar Motorista
                                 </button>
@@ -2364,8 +2364,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="font-display text-lg font-extrabold text-neutral-950 flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-amber-600" />
+                  <h2 className="font-display text-lg font-extrabold text-[#0F2421] flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-[#047857]" />
                     Confirmações de Pix Pendentes ({awaitingPixRides.length})
                   </h2>
                   <p className="text-xs text-neutral-600">
@@ -2385,7 +2385,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {awaitingPixRides.map((r) => (
                     <div
                       key={r.id}
-                      className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex flex-col justify-between gap-3"
+                      className="rounded-2xl border border-[#2DD4BF]/40 bg-[#ECFDF5]/70 p-4 flex flex-col justify-between gap-3"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-2">
@@ -2403,7 +2403,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <p className="text-[11px] text-neutral-600 truncate">
                           {r.destination_address}
                         </p>
-                        <p className="text-[11px] font-bold text-amber-800">
+                        <p className="text-[11px] font-bold text-[#047857]">
                           {r.pix_declared_at
                             ? `Cliente/Motorista informou envio em ${new Date(
                                 r.pix_declared_at
@@ -2536,8 +2536,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white flex items-center gap-2">
-                    <QrCode className="h-5 w-5 text-amber-600" />
+                  <h2 className="font-display text-lg font-extrabold text-[#0F2421] dark:text-white flex items-center gap-2">
+                    <QrCode className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                     Saques Solicitados (Motoristas &amp; Entregadores) ({pendingWithdrawals.length})
                   </h2>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400">
@@ -2558,19 +2558,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     return (
                       <div
                         key={w.id}
-                        className="rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/20 p-4 flex flex-col justify-between gap-3"
+                        className="rounded-2xl border border-[#2DD4BF]/50 dark:border-[#2DD4BF]/30 bg-[#ECFDF5]/70 dark:bg-[#047857]/20 p-4 flex flex-col justify-between gap-3"
                       >
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
+                            <span className="text-xs font-extrabold text-[#0F2421] dark:text-white">
                               {w.user?.full_name || 'Motorista'}
                             </span>
-                            <span className="font-mono-num text-lg font-extrabold text-amber-700 dark:text-[#FFD100]">
+                            <span className="font-mono-num text-lg font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                               {formatBRL(w.amount)}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-3 py-2 text-xs">
-                            <span className="font-mono-num font-bold text-neutral-900 dark:text-white truncate">
+                          <div className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-neutral-800 border border-[#D4EDE7] dark:border-neutral-700 px-3 py-2 text-xs">
+                            <span className="font-mono-num font-bold text-[#0F2421] dark:text-white truncate">
                               Pix: {w.pix_key}
                             </span>
                             <button
@@ -2580,7 +2580,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 setCopiedWithdrawPixId(w.id);
                                 setTimeout(() => setCopiedWithdrawPixId(null), 2000);
                               }}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-950 dark:bg-[#FFD100] px-2.5 py-1 text-[10px] font-extrabold text-[#FFD100] dark:text-neutral-950"
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[10px] font-extrabold text-white dark:text-[#071513]"
                             >
                               {copiedWithdrawPixId === w.id ? (
                                 <Check className="h-3 w-3" />
@@ -2657,8 +2657,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onSubmit={handleSavePlatformConfig}
                 className="lg:col-span-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-4 h-fit"
               >
-                <div className="flex items-center gap-2.5 text-neutral-950 dark:text-white font-extrabold text-sm">
-                  <QrCode className="h-5 w-5 text-amber-600" />
+                <div className="flex items-center gap-2.5 text-[#0F2421] dark:text-white font-extrabold text-sm">
+                  <QrCode className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                   <span>Minha Conta Pix Oficial (Dono)</span>
                 </div>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400">
@@ -2668,7 +2668,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div>
                   <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                    <MapPin className="h-3.5 w-3.5 text-amber-600" />
+                    <MapPin className="h-3.5 w-3.5 text-[#047857] dark:text-[#6EE7B7]" />
                     Endereço Central da Empresa
                   </label>
                   <input
@@ -2681,7 +2681,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       }))
                     }
                     placeholder="Ex: Av. Rui Barbosa, 450 - Heliópolis, Garanhuns - PE"
-                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-semibold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                    className="min-h-[46px] w-full rounded-xl border border-[#D4EDE7] dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-semibold text-[#0F2421] dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                   />
                 </div>
 
@@ -2696,7 +2696,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) =>
                       setPlatformConfig((prev) => ({ ...prev, platform_pix_key: e.target.value }))
                     }
-                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-sm font-bold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                    className="min-h-[46px] w-full rounded-xl border border-[#D4EDE7] dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-sm font-bold text-[#0F2421] dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                   />
                 </div>
 
@@ -2714,7 +2714,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         platform_pix_receiver: e.target.value,
                       }))
                     }
-                    className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-sm font-semibold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                    className="min-h-[46px] w-full rounded-xl border border-[#D4EDE7] dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-sm font-semibold text-[#0F2421] dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
                   />
                 </div>
 
@@ -2722,7 +2722,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-xs font-extrabold text-neutral-900 dark:text-white">
-                      <ImageIcon className="h-4 w-4 text-amber-600" />
+                      <ImageIcon className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                       Imagem do QR Code Pix (Opcional)
                     </span>
                     {platformConfig.platform_pix_qr_url && (
@@ -2754,7 +2754,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )}
 
                   <label className="flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 text-xs font-extrabold text-neutral-950 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800">
-                    <ImageIcon className="h-4 w-4 text-amber-600" />
+                    <ImageIcon className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                     <span>
                       {uploadingAssetKind === 'pix_qr'
                         ? 'Enviando QR Code...'
@@ -2774,7 +2774,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="submit"
                   disabled={savingPlatform}
-                  className="min-h-[48px] w-full rounded-2xl bg-neutral-950 dark:bg-[#FFD100] text-sm font-extrabold text-[#FFD100] dark:text-neutral-950"
+                  className="min-h-[48px] w-full rounded-2xl aurora-accent-flow text-sm font-extrabold text-white"
                 >
                   {savingPlatform ? 'Salvando...' : 'Salvar Conta & Endereço'}
                 </button>
@@ -2806,7 +2806,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onClick={() => setSettlementPeriod(p.id)}
                         className={`min-h-[34px] rounded-lg px-2.5 text-[11px] font-bold transition ${
                           settlementPeriod === p.id
-                            ? 'bg-white dark:bg-neutral-950 text-neutral-950 dark:text-[#FFD100] shadow-xs'
+                            ? 'bg-white dark:bg-neutral-950 text-[#047857] dark:text-[#6EE7B7] shadow-xs'
                             : 'text-neutral-600 dark:text-neutral-300'
                         }`}
                       >
@@ -2879,7 +2879,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <td className="px-4 py-3 text-right font-mono-num text-sky-700 dark:text-sky-400">
                               {formatBRL(paidOut)}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono-num font-extrabold text-amber-700 dark:text-[#FFD100]">
+                            <td className="px-4 py-3 text-right font-mono-num font-extrabold text-[#047857] dark:text-[#6EE7B7]">
                               {formatBRL(d.wallet_balance)}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -2910,7 +2910,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         `Repasse Pix para ${d.driver?.pix_key || d.email}`
                                       );
                                     }}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-[#FFD100] px-3 py-1.5 text-[11px] font-extrabold text-neutral-950"
+                                    className="inline-flex items-center gap-1 rounded-lg aurora-accent-flow px-3 py-1.5 text-[11px] font-extrabold text-white"
                                   >
                                     <Wallet className="h-3.5 w-3.5" />
                                     Pagar Pix
@@ -2982,7 +2982,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               className="lg:col-span-5 rounded-3xl border border-neutral-200 bg-white p-5 space-y-4 h-fit"
             >
               <div className="flex items-center gap-2 text-neutral-950 font-extrabold text-sm">
-                <Sparkles className="h-5 w-5 text-amber-600" />
+                <Sparkles className="h-5 w-5 text-[#047857]" />
                 <span>Criar Evento / Bônus para Parceiros</span>
               </div>
               <p className="text-xs text-neutral-600">
@@ -3050,12 +3050,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 cursor-pointer">
+              <label className="flex items-start gap-2.5 rounded-xl border border-[#D4EDE7] bg-[#ECFDF5]/70 p-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={notifyDriversOnEventCreate}
                   onChange={(e) => setNotifyDriversOnEventCreate(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-neutral-950"
+                  className="mt-0.5 h-4 w-4 accent-[#047857]"
                 />
                 <div className="text-xs">
                   <span className="font-extrabold text-neutral-950 block">
@@ -3071,7 +3071,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="submit"
                 disabled={savingEvent}
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm"
               >
                 <Plus className="h-4 w-4" />
                 {savingEvent ? 'Publicando...' : 'Publicar Evento Agora'}
@@ -3092,14 +3092,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div
                       key={ev.id}
                       className={`rounded-2xl border p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        ev.active ? 'border-amber-300' : 'border-neutral-200 opacity-75'
+                        ev.active ? 'border-[#2DD4BF]' : 'border-neutral-200 opacity-75'
                       }`}
                     >
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-sm font-extrabold text-neutral-950">{ev.title}</h3>
                           {ev.bonus_amount > 0 && (
-                            <span className="rounded-lg bg-[#FFD100] px-2 py-0.5 font-mono-num text-[11px] font-extrabold text-neutral-950">
+                            <span className="rounded-lg aurora-accent-flow px-2 py-0.5 font-mono-num text-[11px] font-extrabold text-white">
                               +{formatBRL(ev.bonus_amount)}
                             </span>
                           )}
@@ -3118,7 +3118,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           type="button"
                           disabled={notifyingEventId === ev.id}
                           onClick={() => handleNotifyDriversForEvent(ev)}
-                          className="inline-flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100"
+                          className="inline-flex items-center gap-1 rounded-xl border border-[#D4EDE7] bg-[#ECFDF5] px-3 py-2 text-xs font-bold text-[#065F46] hover:bg-teal-100"
                           title="Enviar notificação apenas para motoristas/entregadores"
                         >
                           <Bell className="h-3.5 w-3.5" />
@@ -3161,7 +3161,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               className="lg:col-span-5 rounded-3xl border border-neutral-200 bg-white p-5 space-y-4 h-fit"
             >
               <div className="flex items-center gap-2 text-neutral-950 font-extrabold text-sm">
-                <Bell className="h-5 w-5 text-amber-600" />
+                <Bell className="h-5 w-5 text-[#047857]" />
                 <span>Disparar Notificação no Celular</span>
               </div>
               <p className="text-xs text-neutral-600">
@@ -3181,7 +3181,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setNotifCategory('payment');
                       setNotifTitle('Pendência identificada na conta');
                       setNotifMessage(
-                        'Verificamos uma pendência financeira em sua conta. Acesse sua carteira 66pay ou entre em contato com o suporte para regularizar.'
+                        'Verificamos uma pendência financeira em sua conta. Acesse sua carteira BorealPay ou entre em contato com o suporte para regularizar.'
                       );
                     }}
                     className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-100"
@@ -3192,7 +3192,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="button"
                     onClick={() => {
                       setNotifCategory('general');
-                      setNotifTitle('Comunicado da Equipe 66 Mobilidade');
+                      setNotifTitle('Comunicado da Equipe Boreal Mobilidade');
                       setNotifMessage(
                         'Informamos uma atualização importante no atendimento da sua região. Conte com a nossa equipe!'
                       );
@@ -3205,14 +3205,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="button"
                     onClick={() => {
                       setNotifCategory('wallet');
-                      setNotifTitle('Novidade na Carteira 66pay');
+                      setNotifTitle('Novidade na Carteira BorealPay');
                       setNotifMessage(
-                        'Seu saldo 66pay permite pagar corridas com QR Code e fazer transferências instantâneas sem sair do app!'
+                        'Seu saldo BorealPay permite pagar corridas com QR Code e fazer transferências instantâneas sem sair do app!'
                       );
                     }}
-                    className="rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-900 hover:bg-amber-100"
+                    className="rounded-xl border border-[#D4EDE7] bg-[#ECFDF5] px-2.5 py-1.5 text-[11px] font-bold text-[#065F46] hover:bg-teal-100"
                   >
-                    Comunicado 66pay
+                    Comunicado BorealPay
                   </button>
                 </div>
               </div>
@@ -3249,7 +3249,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <option value="general">Aviso Geral</option>
                     <option value="payment">Pagamento / Cobrança</option>
-                    <option value="wallet">66pay / Carteira</option>
+                    <option value="wallet">BorealPay / Carteira</option>
                     <option value="coupon">Cupom</option>
                     <option value="event">Evento / Bônus</option>
                   </select>
@@ -3311,7 +3311,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="submit"
                 disabled={sendingNotif}
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm"
               >
                 <Bell className="h-4 w-4" />
                 {sendingNotif ? 'Enviando...' : 'Enviar Notificação'}
@@ -3335,7 +3335,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="rounded-lg bg-neutral-950 px-2 py-0.5 text-[10px] font-extrabold text-[#FFD100] uppercase">
+                          <span className="rounded-lg bg-[#047857] px-2 py-0.5 text-[10px] font-extrabold text-[#6EE7B7] uppercase">
                             {n.category}
                           </span>
                           <span className="rounded-lg bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
@@ -3386,14 +3386,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 mb-1">
-                    Código (ex: MEIA20)
+                    Código (ex: BOREAL20)
                   </label>
                   <input
                     type="text"
                     required
                     value={couponCode}
                     onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                    placeholder="MEIA15"
+                    placeholder="BOREAL15"
                     className="min-h-[44px] w-full rounded-xl border border-neutral-200 px-3 font-mono-num text-sm font-extrabold uppercase outline-none focus:border-neutral-950"
                   />
                 </div>
@@ -3484,7 +3484,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="submit"
                 disabled={savingCoupon}
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm"
               >
                 <Plus className="h-4 w-4" />
                 {savingCoupon ? 'Criando...' : 'Criar Cupom'}
@@ -3526,7 +3526,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-lg bg-neutral-950 px-2.5 py-1 font-mono-num text-xs font-extrabold text-[#FFD100]">
+                              <span className="rounded-lg bg-[#071513] px-2.5 py-1 font-mono-num text-xs font-extrabold text-[#6EE7B7]">
                                 {c.code}
                               </span>
                               <span className="rounded-lg bg-emerald-100 px-2 py-0.5 font-mono-num text-xs font-extrabold text-emerald-800">
@@ -3600,7 +3600,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="button"
                               disabled={!c.active || !couponGrantUserId || grantingCouponId === c.id}
                               onClick={() => handleGrantCoupon(c.id, couponGrantUserId)}
-                              className="min-h-[38px] shrink-0 rounded-xl bg-neutral-950 px-3 text-xs font-extrabold text-[#FFD100] disabled:opacity-40"
+                              className="min-h-[38px] shrink-0 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-xs font-extrabold text-white dark:text-[#071513] disabled:opacity-40"
                             >
                               Liberar
                             </button>
@@ -3634,7 +3634,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               g.status === 'used'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : g.status === 'available'
-                                ? 'bg-amber-100 text-amber-800'
+                                ? 'bg-teal-100 text-[#065F46]'
                                 : 'bg-neutral-100 text-neutral-600'
                             }`}
                           >
@@ -3758,7 +3758,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="submit"
                   disabled={savingPricing}
-                  className="min-h-[48px] rounded-2xl bg-[#FFD100] px-6 text-sm font-extrabold text-neutral-950 shadow-sm"
+                  className="min-h-[48px] rounded-2xl aurora-accent-flow px-6 text-sm font-extrabold text-white shadow-sm"
                 >
                   {savingPricing ? 'Salvando...' : 'Salvar Tarifas'}
                 </button>
@@ -3771,7 +3771,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4"
               >
                 <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950">
-                  <Settings className="h-5 w-5 text-amber-600" />
+                  <Settings className="h-5 w-5 text-[#047857]" />
                   <span>Configurações Gerais do Site</span>
                 </div>
 
@@ -3848,7 +3848,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5">
                       <input
                         type="color"
-                        value={platformConfig.primary_color || '#FFD100'}
+                        value={platformConfig.primary_color || '#047857'}
                         onChange={(e) =>
                           setPlatformConfig((prev) => ({
                             ...prev,
@@ -3859,7 +3859,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                       <input
                         type="text"
-                        value={platformConfig.primary_color || '#FFD100'}
+                        value={platformConfig.primary_color || '#047857'}
                         onChange={(e) =>
                           setPlatformConfig((prev) => ({
                             ...prev,
@@ -3877,7 +3877,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 py-1.5">
                       <input
                         type="color"
-                        value={platformConfig.secondary_color || '#111827'}
+                        value={platformConfig.secondary_color || '#071513'}
                         onChange={(e) =>
                           setPlatformConfig((prev) => ({
                             ...prev,
@@ -3888,7 +3888,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                       <input
                         type="text"
-                        value={platformConfig.secondary_color || '#111827'}
+                        value={platformConfig.secondary_color || '#071513'}
                         onChange={(e) =>
                           setPlatformConfig((prev) => ({
                             ...prev,
@@ -3901,11 +3901,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5 space-y-3">
+                <div className="rounded-2xl border border-[#D4EDE7] bg-[#ECFDF5]/70 p-3.5 space-y-3">
                   <label className="flex items-center justify-between cursor-pointer gap-2">
                     <div>
                       <p className="text-xs font-extrabold text-neutral-950">
-                        Horário Automático de Depósitos Pix (66pay)
+                        Horário Automático de Depósitos Pix (BorealPay)
                       </p>
                       <p className="text-[11px] text-neutral-600">
                         Pausa novos depósitos fora do horário comercial (quem já tem saldo usa 24h normalmente).
@@ -3985,7 +3985,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="submit"
                   disabled={savingPlatform}
-                  className="min-h-[46px] w-full rounded-2xl bg-neutral-950 text-sm font-extrabold text-[#FFD100]"
+                  className="min-h-[46px] w-full rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm"
                 >
                   {savingPlatform ? 'Salvando...' : 'Salvar Configurações do Site'}
                 </button>
@@ -3994,7 +3994,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* Identidade Visual, Logo & Imagens dos Veículos */}
               <div className="rounded-3xl border border-neutral-200 bg-white p-5 space-y-4">
                 <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950">
-                  <ImageIcon className="h-5 w-5 text-amber-600" />
+                  <ImageIcon className="h-5 w-5 text-[#047857]" />
                   <span>Logo & Imagens dos Veículos (White-Label)</span>
                 </div>
                 <p className="text-xs text-neutral-600">
@@ -4019,12 +4019,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="min-w-0">
                         <p className="text-xs font-extrabold text-neutral-950 dark:text-white">Logo Principal</p>
                         <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                          {platformConfig.app_logo_url ? 'Personalizada' : 'Padrão 66 Mobilidade'}
+                          {platformConfig.app_logo_url ? 'Personalizada' : 'Padrão Boreal Mobilidade'}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <label className="cursor-pointer rounded-xl bg-neutral-950 px-3 py-2 text-[11px] font-bold text-[#FFD100]">
+                      <label className="cursor-pointer rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 py-2 text-[11px] font-bold text-white dark:text-[#071513]">
                         {uploadingAssetKind === 'logo' ? 'Enviando...' : 'Trocar'}
                         <input
                           type="file"
@@ -4093,7 +4093,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <label className="cursor-pointer rounded-xl bg-neutral-950 px-3 py-2 text-[11px] font-bold text-[#FFD100]">
+                        <label className="cursor-pointer rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 py-2 text-[11px] font-bold text-white dark:text-[#071513]">
                           {uploadingAssetKind === item.kind ? 'Enviando...' : 'Trocar'}
                           <input
                             type="file"
@@ -4122,7 +4122,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* Gerenciador Completo de Sons do Sistema (7 Cues MP3/WAV/OGG) */}
               <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-4">
                 <div className="flex items-center gap-2 text-sm font-extrabold text-neutral-950 dark:text-white">
-                  <Music className="h-5 w-5 text-amber-600" />
+                  <Music className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                   <span>Gerenciador Completo de Sons do Sistema (7 Cues)</span>
                 </div>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400">
@@ -4199,7 +4199,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <Volume2 className="h-3.5 w-3.5" />
                           Testar
                         </button>
-                        <label className="cursor-pointer rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-3 py-2 text-[11px] font-bold text-[#FFD100] dark:text-neutral-950">
+                        <label className="cursor-pointer rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 py-2 text-[11px] font-bold text-white dark:text-[#071513]">
                           {uploadingAssetKind === snd.kind ? 'Enviando...' : 'Enviar Áudio'}
                           <input
                             type="file"
@@ -4227,11 +4227,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {/* Atualização Automática OTA do APK */}
                 <form
                   onSubmit={handleSavePlatformConfig}
-                  className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-3"
+                  className="mt-4 rounded-2xl border border-[#D4EDE7] dark:border-[#065F46] bg-[#ECFDF5]/60 dark:bg-[#102924]/50 p-4 space-y-3"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 text-xs font-extrabold text-neutral-950 dark:text-white">
-                      <DownloadCloud className="h-4 w-4 text-amber-600" />
+                      <DownloadCloud className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                       Publicar Atualização OTA do APK
                     </span>
                     <span className="font-mono-num text-[11px] font-bold text-neutral-500">
@@ -4269,7 +4269,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ota_apk_url: e.target.value,
                           }))
                         }
-                        placeholder="https://github.com/.../66mobilidade-v1.2.2.apk"
+                        placeholder="https://github.com/.../borealmobilidade-v1.2.2.apk"
                         className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs"
                       />
                     </div>
@@ -4311,7 +4311,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="submit"
                     disabled={savingPlatform}
-                    className="min-h-[42px] w-full rounded-xl bg-neutral-950 dark:bg-[#FFD100] text-xs font-extrabold text-[#FFD100] dark:text-neutral-950"
+                    className="min-h-[42px] w-full rounded-xl aurora-accent-flow text-xs font-extrabold text-white shadow-sm"
                   >
                     {savingPlatform ? 'Publicando...' : 'Salvar Versão OTA'}
                   </button>
@@ -4322,7 +4322,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onClick={() => setShowLegalDocs(true)}
                   className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-extrabold text-neutral-900 dark:text-white hover:bg-neutral-100"
                 >
-                  <FileText className="h-4 w-4 text-amber-600" />
+                  <FileText className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
                   Visualizar Termos, Privacidade, Segurança &amp; Cookies
                 </button>
               </div>
@@ -4346,7 +4346,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <section className="mt-5 space-y-6">
             <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5">
               <div className="flex items-center gap-2.5">
-                <Smartphone className="h-5 w-5 text-neutral-950 dark:text-[#FFD100]" />
+                <Smartphone className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
                 <h3 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
                   Conexão Direta Supabase (Web, PWA &amp; Capacitor APK)
                 </h3>
@@ -4366,13 +4366,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Incremental — Apenas Alterações e Tabelas Novas
                   </h3>
                   <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Contém somente o que foi adicionado/alterado (Seções 1–9: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">update_my_pay66_key</span>, <span className="font-mono-num">deposit_window_enabled/start_time/end_time</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, status <span className="font-mono-num">'paid'</span>, trava de segurança 66pay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem apagar saldos ou recriar tabelas antigas.
+                    Contém somente o que foi adicionado/alterado (Seções 1–9: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">update_my_pay66_key</span>, <span className="font-mono-num">deposit_window_enabled/start_time/end_time</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, status <span className="font-mono-num">'paid'</span>, trava de segurança BorealPay (66pay) e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem apagar saldos ou recriar tabelas antigas.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={copySql}
-                  className="flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-xl bg-neutral-950 dark:bg-[#FFD100] px-4 text-xs font-bold text-[#FFD100] dark:text-neutral-950"
+                  className="flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-4 text-xs font-bold text-white dark:text-[#071513]"
                 >
                   <Copy className="h-4 w-4" />
                   {copiedSql ? 'Copiado!' : 'Copiar SQL'}
@@ -4439,7 +4439,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder="Motivo caso reprove ou suspenda (opcional)"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
               <div className="flex flex-wrap items-center justify-end gap-2.5">
                 <button
@@ -4459,7 +4459,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => handleReviewDriver(inspectDriver.id, 'active')}
-                  className="min-h-[46px] flex items-center gap-1.5 rounded-xl bg-[#FFD100] px-5 text-xs font-extrabold text-neutral-950"
+                  className="min-h-[46px] flex items-center gap-1.5 rounded-xl aurora-accent-flow px-5 text-xs font-extrabold text-white shadow-sm"
                 >
                   <Check className="h-4 w-4" />
                   Aprovar Cadastro
@@ -4517,7 +4517,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 required
                 value={payoutAmount}
                 onChange={(e) => setPayoutAmount(e.target.value)}
-                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
             </div>
 
@@ -4530,13 +4530,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={payoutNote}
                 onChange={(e) => setPayoutNote(e.target.value)}
                 placeholder="Ex: Pix enviado às 18:30"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
             </div>
 
             <button
               type="submit"
-              className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950"
+              className="min-h-[48px] w-full rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm"
             >
               Confirmar Repasse e Abater Saldo
             </button>
@@ -4581,7 +4581,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
-            <p className="rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-900 dark:text-amber-200">
+            <p className="rounded-2xl bg-[#ECFDF5] dark:bg-[#102924] border border-[#D4EDE7] dark:border-[#065F46] p-3 text-xs text-[#065F46] dark:text-[#6EE7B7]">
               O valor definido aqui será exibido como pendência para o cliente e somado
               automaticamente na próxima corrida que ele solicitar (ou digite <strong>0</strong>{' '}
               para limpar a dívida).
@@ -4599,7 +4599,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={debtAmountInput}
                 onChange={(e) => setDebtAmountInput(e.target.value)}
                 placeholder="0.00"
-                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
             </div>
 
@@ -4612,7 +4612,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={debtNoteInput}
                 onChange={(e) => setDebtNoteInput(e.target.value)}
                 placeholder="Ex: Corrida não paga"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
             </div>
 
@@ -4722,7 +4722,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`min-h-[38px] rounded-xl text-[11px] font-extrabold transition ${
                       balanceMode === m.id
-                        ? 'bg-neutral-950 dark:bg-[#FFD100] text-[#FFD100] dark:text-neutral-950 shadow-xs'
+                        ? 'bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#071513] shadow-xs'
                         : 'text-neutral-700 dark:text-neutral-300'
                     }`}
                   >
@@ -4748,7 +4748,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={balanceAmountInput}
                 onChange={(e) => setBalanceAmountInput(e.target.value)}
                 placeholder="0.00"
-                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[46px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 font-mono-num text-base font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
             </div>
 
@@ -4761,14 +4761,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={balanceNoteInput}
                 onChange={(e) => setBalanceNoteInput(e.target.value)}
                 placeholder="Ex: Crédito confirmado / Ajuste manual / Bônus"
-                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-neutral-950 dark:focus:border-[#FFD100]"
+                className="min-h-[44px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
               />
             </div>
 
             <button
               type="submit"
               disabled={savingBalance}
-              className="min-h-[48px] w-full rounded-2xl bg-[#FFD100] text-sm font-extrabold text-neutral-950 shadow-sm disabled:opacity-60"
+              className="min-h-[48px] w-full rounded-2xl aurora-accent-flow text-sm font-extrabold text-white shadow-sm disabled:opacity-60"
             >
               {savingBalance
                 ? 'Salvando no Supabase...'

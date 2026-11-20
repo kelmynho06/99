@@ -232,6 +232,14 @@ CREATE POLICY "Usuário vê próprio perfil ou participante em corrida ativa"
   USING (
     auth.uid() = id
     OR public.is_admin()
+    OR (
+      public.is_online_approved_driver()
+      AND EXISTS (
+        SELECT 1 FROM public.rides r
+        WHERE r.passenger_id = profiles.id
+          AND r.status = 'searching'
+      )
+    )
     OR EXISTS (
       SELECT 1 FROM public.rides r
       WHERE r.status IN ('accepted', 'arrived', 'in_progress')
