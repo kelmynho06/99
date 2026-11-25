@@ -26,17 +26,31 @@ const DEFAULT_APP_CONFIG: AppConfig = {
 
 function upgradeLegacyAppName(name?: unknown): string {
   const clean = String(name || '').trim();
+  const lower = clean.toLowerCase();
   if (
     !clean ||
-    clean === 'Boreal Mobilidade' ||
-    clean === '66 Mobilidade' ||
-    clean === 'Meia Meia' ||
-    clean === 'Meia Meia Mobilidade' ||
-    clean === 'Go Driver' ||
-    clean === 'Velo99' ||
-    clean === 'Velo99 Mobilidade'
+    lower.includes('66') ||
+    lower.includes('meia meia') ||
+    lower.includes('boreal') ||
+    lower.includes('velo99') ||
+    lower === 'go driver'
   ) {
     return 'Go Driver Mobilidade';
+  }
+  return clean;
+}
+
+function upgradeLegacyLogoUrl(url?: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  const clean = url.trim();
+  if (!clean) return null;
+  const lower = clean.toLowerCase();
+  if (
+    lower.includes('mobilidade66_logo') ||
+    lower.includes('boreal_brand_logo') ||
+    lower.includes('velo_brand_icon')
+  ) {
+    return null;
   }
   return clean;
 }
@@ -64,14 +78,21 @@ function readInitialCachedConfig(): AppConfig {
     const raw = localStorage.getItem(PLATFORM_BRAND_CACHE_KEY);
     if (!raw) return DEFAULT_APP_CONFIG;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const normalizedName = upgradeLegacyAppName(parsed.site_name || parsed.app_name);
+    const normalizedLogo = upgradeLegacyLogoUrl(parsed.app_logo_url ?? parsed.logo_url);
+    if (parsed.site_name !== normalizedName || parsed.app_logo_url !== normalizedLogo) {
+      localStorage.setItem(
+        PLATFORM_BRAND_CACHE_KEY,
+        JSON.stringify({
+          ...parsed,
+          site_name: normalizedName,
+          app_logo_url: normalizedLogo,
+        })
+      );
+    }
     return {
-      app_name: upgradeLegacyAppName(parsed.site_name || parsed.app_name),
-      logo_url:
-        typeof parsed.app_logo_url === 'string'
-          ? parsed.app_logo_url
-          : typeof parsed.logo_url === 'string'
-          ? parsed.logo_url
-          : null,
+      app_name: normalizedName,
+      logo_url: normalizedLogo,
       primary_color: upgradeLegacyPrimaryColor(parsed.primary_color),
       secondary_color: upgradeLegacySecondaryColor(parsed.secondary_color),
     };

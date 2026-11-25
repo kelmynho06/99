@@ -60,8 +60,8 @@ export async function initLocalNotifications(): Promise<void> {
       if (Capacitor.getPlatform() === 'android') {
         await LocalNotifications.createChannel({
           id: VOICE_ALERT_CHANNEL_ID,
-          name: 'Go Driver · Assistente Evelyn',
-          description: 'Alertas discretos em segundo plano enquanto a assistente Evelyn fala',
+          name: 'Go Driver · Assistente Évelyn',
+          description: 'Alertas discretos em segundo plano enquanto a assistente Évelyn fala',
           importance: 4,
           visibility: 1,
           vibration: true,

@@ -1,6 +1,6 @@
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "apk_url": "https://github.com/kelmynho06/99/releases/latest/download/app-debug.apk",
-  "release_notes": "Identidade oficial Go Driver no APK e PWA, busca instantânea de endereços e comércios locais, notificações de transferência GoPay, assistente de voz Aline e acessibilidade.",
-  "published_at": "2026-11-18T12:00:00Z"
+  "release_notes": "Identidade oficial Go Driver Mobilidade no início, PWA e APK, tradução completa em todos os idiomas e assistente de voz Évelyn mais humana e natural.",
+  "published_at": "2026-11-25T17:30:00Z"
 }

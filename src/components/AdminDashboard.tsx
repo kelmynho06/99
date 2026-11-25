@@ -1554,7 +1554,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 });
                 setAdminPrefs(next);
                 if (!nextAllOn) stopSpeech();
-                else speakPtBr('Olá, administrador! A assistente Evelyn está ativada.', true);
+                else speakPtBr('Oi, administrador! Aqui é a Évelyn, já estou ativada e acompanhando tudo com você.', true);
               }}
               className={`flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold transition ${
                 adminPrefs.voice_enabled || adminPrefs.sounds_enabled
@@ -4193,7 +4193,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onClick={() => {
                             syncPlatformSounds(platformConfig);
                             speakPtBr(
-                              `Evelyn informando: prévia de ${snd.label.replace(/^\d+\.\s*/, '')}.`,
+                              `Aqui é a Évelyn! Prévia de ${snd.label.replace(/^\d+\.\s*/, '')}.`,
                               true
                             );
                           }}

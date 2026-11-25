@@ -55,7 +55,7 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   sound_completed_url: null,
   sound_chat_url: null,
   sound_cancel_url: null,
-  ota_latest_version: '1.2.2',
+  ota_latest_version: '1.2.3',
   ota_apk_url: null,
   ota_web_url: null,
   ota_release_notes: null,
@@ -878,15 +878,14 @@ function readCachedPlatformBrand(): Partial<PlatformConfig> {
 
 function resolveNormalizedBrandName(raw?: unknown): string {
   const clean = String(raw || '').trim();
+  const lower = clean.toLowerCase();
   if (
     !clean ||
-    clean === 'Boreal Mobilidade' ||
-    clean === '66 Mobilidade' ||
-    clean === 'Meia Meia' ||
-    clean === 'Meia Meia Mobilidade' ||
-    clean === 'Go Driver' ||
-    clean === 'Velo99' ||
-    clean === 'Velo99 Mobilidade'
+    lower.includes('66') ||
+    lower.includes('meia meia') ||
+    lower.includes('boreal') ||
+    lower.includes('velo99') ||
+    lower === 'go driver'
   ) {
     return DEFAULT_PLATFORM_CONFIG.site_name;
   }
@@ -1036,7 +1035,7 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     sound_cancel_url:
       (data.sound_cancel_url as string | null | undefined) ?? cached.sound_cancel_url ?? null,
     ota_latest_version:
-      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.2',
+      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.3',
     ota_apk_url:
       (data.ota_apk_url as string | null | undefined) ?? cached.ota_apk_url ?? null,
     ota_web_url:

@@ -1419,7 +1419,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       });
                       setUserPrefs(next);
                       if (next.voice_enabled) {
-                        speakPtBr('Olá! Eu sou a Evelyn, sua assistente da Go Driver. Voz ativada!', true);
+                        speakPtBr('Oi! Aqui é a Évelyn, da Go Driver. Que bom falar com você — minha voz já está ativada!', true);
                       }
                     }}
                     className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
@@ -1435,7 +1435,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() =>
-                      speakPtBr('Olá! Aqui é a Evelyn, da Go Driver. Tudo pronto para seguir viagem com segurança.', true)
+                      speakPtBr('Oi! Aqui é a Évelyn, da Go Driver. Vou acompanhar cada detalhe da sua viagem com calma e clareza. Tudo pronto para seguir!', true)
                     }
                     className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F172A] hover:bg-[#F1F5F9]"
                   >

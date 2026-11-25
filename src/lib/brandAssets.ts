@@ -16,7 +16,17 @@ export const DEFAULT_VEHICLE_IMAGES: Record<RideCategory, string> = {
 };
 
 export function resolveBrandLogo(config?: PlatformConfig | null): string {
-  return config?.app_logo_url || DEFAULT_BRAND_LOGO;
+  const raw = config?.app_logo_url?.trim();
+  if (!raw) return DEFAULT_BRAND_LOGO;
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('mobilidade66_logo') ||
+    lower.includes('boreal_brand_logo') ||
+    lower.includes('velo_brand_icon')
+  ) {
+    return DEFAULT_BRAND_LOGO;
+  }
+  return raw;
 }
 
 export function resolveCategoryVehicleImage(
