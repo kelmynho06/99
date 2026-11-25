@@ -121,7 +121,7 @@
 .dark .aurora-border-glow {
   background-image:
     linear-gradient(#0f172a, #0f172a),
-    linear-gradient(120deg, rgba(59, 130, 246, 0.65), rgba(14, 165, 233, 0.6), rgba(37, 99, 235, 0.65));
+    linear-gradient(120deg, rgba(59, 130, 246, 0.72), rgba(14, 165, 233, 0.65), rgba(37, 99, 235, 0.72));
 }
 
 .aurora-search-trigger {
@@ -145,8 +145,167 @@
 }
 
 .dark .aurora-search-trigger {
-  background: linear-gradient(115deg, rgba(15, 23, 42, 0.94) 0%, rgba(30, 58, 138, 0.45) 50%, rgba(14, 116, 144, 0.35) 100%);
-  border-color: rgba(59, 130, 246, 0.45);
+  background: linear-gradient(115deg, rgba(15, 23, 42, 0.96) 0%, rgba(30, 58, 138, 0.52) 50%, rgba(14, 116, 144, 0.42) 100%);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #F8FAFC;
+}
+
+.dark .aurora-surface-flow {
+  background: linear-gradient(125deg, #020617 0%, #0F172A 38%, #172554 70%, #0F172A 100%);
+  background-size: 220% 220%;
+}
+
+/* Comprehensive Dark Mode readability across all panels, pickup/destination bars, inputs, and modals */
+.dark body,
+.dark #root {
+  background-color: #020617;
+  color: #F8FAFC;
+}
+
+.dark .leaflet-container {
+  background: #0F172A;
+}
+
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip {
+  background-color: #0F172A !important;
+  color: #F8FAFC !important;
+  border: 1px solid #334155;
+}
+
+.dark .bg-white {
+  background-color: #0F172A;
+}
+
+.dark .bg-white\/95 {
+  background-color: rgba(15, 23, 42, 0.95);
+}
+
+.dark .bg-white\/90 {
+  background-color: rgba(15, 23, 42, 0.9);
+}
+
+.dark .bg-\[\#F4F6F9\],
+.dark .bg-\[\#F1F5F9\],
+.dark .bg-\[\#F8FAFC\] {
+  background-color: #1E293B;
+}
+
+.dark .bg-\[\#EFF6FF\],
+.dark .bg-\[\#DBEAFE\] {
+  background-color: rgba(37, 99, 235, 0.18);
+}
+
+.dark .bg-\[\#ECFDF5\],
+.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.16);
+}
+
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.16);
+}
+
+.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.16);
+}
+
+.dark .focus-within\:bg-white:focus-within {
+  background-color: #0F172A;
+}
+
+.dark .hover\:bg-\[\#F1F5F9\]:hover,
+.dark .hover\:bg-\[\#F4F6F9\]:hover,
+.dark .hover\:bg-\[\#E2E8F0\]:hover {
+  background-color: #334155;
+}
+
+.dark .hover\:bg-\[\#EFF6FF\]:hover,
+.dark .hover\:bg-\[\#DBEAFE\]:hover {
+  background-color: rgba(37, 99, 235, 0.28);
+}
+
+.dark .border-\[\#E2E8F0\],
+.dark .border-\[\#CBD5E1\] {
+  border-color: #334155;
+}
+
+.dark .divide-\[\#E2E8F0\] > :not(:last-child) {
+  border-color: #334155;
+}
+
+.dark .border-\[\#BFDBFE\] {
+  border-color: rgba(96, 165, 250, 0.38);
+}
+
+.dark .border-\[\#A7F3D0\],
+.dark .border-emerald-300 {
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.dark .border-amber-200,
+.dark .border-amber-300 {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.dark .border-red-200,
+.dark .border-red-300 {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.dark .text-\[\#0F172A\],
+.dark .text-\[\#1E293B\],
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-neutral-900 {
+  color: #F8FAFC;
+}
+
+.dark .text-\[\#334155\],
+.dark .text-\[\#475569\],
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-neutral-600 {
+  color: #CBD5E1;
+}
+
+.dark .text-\[\#64748B\],
+.dark .text-\[\#94A3B8\] {
+  color: #94A3B8;
+}
+
+.dark .text-\[\#2563EB\],
+.dark .text-\[\#1D4ED8\],
+.dark .text-\[\#1E3A8A\] {
+  color: #60A5FA;
+}
+
+.dark .text-\[\#047857\],
+.dark .text-\[\#059669\] {
+  color: #34D399;
+}
+
+.dark .text-red-700,
+.dark .text-red-900 {
+  color: #FCA5A5;
+}
+
+.dark .text-amber-950,
+.dark .text-amber-900,
+.dark .text-amber-800,
+.dark .text-amber-700 {
+  color: #FCD34D;
+}
+
+.dark input,
+.dark select,
+.dark textarea {
+  color: #F8FAFC;
+  color-scheme: dark;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94A3B8;
 }
 
 @media (prefers-reduced-motion: reduce) {

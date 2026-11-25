@@ -2111,6 +2111,41 @@ UPDATE public.profiles
 SET pay66_key = 'BOREAL-' || UPPER(SUBSTRING(REPLACE(id::TEXT, '-', ''), 1, 8))
 WHERE pay66_key IS NULL OR TRIM(pay66_key) = '';
 
+-- ============================================================================
+-- 11. Upload Direto de APK & Identidade Separada (PWA vs APK)
+-- ============================================================================
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS pwa_app_name TEXT,
+  ADD COLUMN IF NOT EXISTS pwa_icon_url TEXT,
+  ADD COLUMN IF NOT EXISTS apk_app_name TEXT,
+  ADD COLUMN IF NOT EXISTS apk_icon_url TEXT;
 
+INSERT INTO storage.buckets (id, name, public, allowed_mime_types)
+VALUES ('public-assets', 'public-assets', TRUE, NULL)
+ON CONFLICT (id) DO UPDATE
+  SET public = TRUE,
+      allowed_mime_types = NULL;
 
+DROP POLICY IF EXISTS "Public read public-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Auth upload public-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Auth update public-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Admin delete public-assets" ON storage.objects;
 
+CREATE POLICY "Public read public-assets"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'public-assets');
+
+CREATE POLICY "Auth upload public-assets"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'public-assets');
+
+CREATE POLICY "Auth update public-assets"
+  ON storage.objects FOR UPDATE
+  TO authenticated
+  USING (bucket_id = 'public-assets');
+
+CREATE POLICY "Admin delete public-assets"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (bucket_id = 'public-assets' AND public.is_admin());

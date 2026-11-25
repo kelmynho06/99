@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
   Apple,
+  CheckCircle2,
   ChevronRight,
   Download,
-  ExternalLink,
   Info,
   Share,
   Smartphone,
@@ -13,9 +13,7 @@ import {
 import { useOnlineStatus, usePWAInstall } from '../hooks/usePWAInstall';
 import { isNativeAndroidApp } from '../lib/floatingBubble';
 import { useTranslation } from '../lib/i18n';
-
-const DEFAULT_APK_URL =
-  'https://github.com/kelmynho06/99/releases/latest/download/app-debug.apk';
+import { triggerDirectApkDownload } from '../lib/otaUpdate';
 
 interface PWAInstallButtonProps {
   variant?: 'compact' | 'menu' | 'settings';
@@ -31,14 +29,40 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   const { t } = useTranslation();
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [modalOpen, setModalOpen] = useState(false);
+  const [downloadingApk, setDownloadingApk] = useState(false);
+  const [apkFeedback, setApkFeedback] = useState<string | null>(null);
 
-  // Inside the native Android APK there is no need to show an installer button
-  if (isNativeAndroidApp()) return null;
+  // Hide download/install options completely once the app (APK or PWA) is installed
+  if (isNativeAndroidApp() || isInstalled) return null;
 
-  const resolvedApkUrl =
+  const attachedApkUrl =
     apkUrl && (apkUrl.startsWith('http://') || apkUrl.startsWith('https://'))
-      ? apkUrl
-      : DEFAULT_APK_URL;
+      ? apkUrl.trim()
+      : null;
+
+  const handleDirectApkDownload = async () => {
+    if (!attachedApkUrl) {
+      setApkFeedback(
+        'Nenhum arquivo .APK foi anexado pelo administrador ainda. Utilize a opção Instalar PWA abaixo.'
+      );
+      return;
+    }
+    setDownloadingApk(true);
+    setApkFeedback(null);
+    try {
+      const slug =
+        siteName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '') || 'godriver-mobilidade';
+      await triggerDirectApkDownload(attachedApkUrl, `${slug}.apk`);
+      setApkFeedback('Download do APK iniciado automaticamente no seu dispositivo!');
+    } catch {
+      setApkFeedback('Não foi possível iniciar o download agora. Tente novamente.');
+    } finally {
+      setDownloadingApk(false);
+    }
+  };
 
   return (
     <>
@@ -119,20 +143,20 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             <div className="flex items-start gap-2.5 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 text-xs text-[#1E3A8A] leading-relaxed">
               <Info className="h-4 w-4 shrink-0 text-[#2563EB] mt-0.5" />
               <p>
-                <strong>Android vs iPhone (iOS):</strong> No momento, o instalador nativo{' '}
-                <strong>(.APK)</strong> está disponível apenas para celulares{' '}
-                <strong>Android</strong> (com suporte a balão flutuante e GPS em segundo plano). Se
-                o seu celular for <strong>iPhone / iOS</strong>, utilize a opção{' '}
-                <strong>Instalar PWA</strong> abaixo para rodar em tela cheia direto da tela inicial.
+                <strong>Android vs iPhone (iOS):</strong> O instalador nativo{' '}
+                <strong>(.APK)</strong> é exclusivo para celulares <strong>Android</strong>. Se o
+                seu aparelho for <strong>iPhone / iOS</strong>, utilize a opção{' '}
+                <strong>Instalar PWA</strong> abaixo para rodar em tela cheia direto da tela
+                inicial.
               </p>
             </div>
 
-            {/* 1. Android APK Download */}
+            {/* 1. Direct Android APK Download (no external redirect) */}
             <div className="rounded-2xl border-2 border-[#2563EB] bg-[#F4F6F9] p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#2563EB] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white">
-                    Recomendado · Android
+                    {attachedApkUrl ? 'Download Direto · Android' : 'Android (.APK)'}
                   </span>
                   <h4 className="mt-1 font-display text-base font-extrabold text-[#0F172A]">
                     Aplicativo Android (.APK)
@@ -140,19 +164,37 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </div>
               </div>
               <p className="text-xs text-[#475569] leading-relaxed">
-                Baixe e instale o app oficial completo para Android com notificações prioritárias e
-                ícone do {siteName} na tela inicial.
+                {attachedApkUrl
+                  ? `Clique abaixo para baixar o arquivo .APK oficial do ${siteName} diretamente para o seu celular, sem sair do aplicativo.`
+                  : 'Use o aplicativo web (PWA) abaixo ou aguarde o administrador anexar o pacote .APK oficial.'}
               </p>
-              <a
-                href={resolvedApkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="aurora-accent-flow flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-md active:scale-[0.98] transition"
+
+              <button
+                type="button"
+                disabled={downloadingApk || !attachedApkUrl}
+                onClick={handleDirectApkDownload}
+                className={`flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-md active:scale-[0.98] transition ${
+                  attachedApkUrl
+                    ? 'aurora-accent-flow text-white'
+                    : 'bg-[#E2E8F0] text-[#475569] cursor-not-allowed'
+                }`}
               >
                 <Download className="h-4 w-4" />
-                <span>{t.install_apk_btn}</span>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+                <span>
+                  {downloadingApk
+                    ? 'Baixando APK...'
+                    : attachedApkUrl
+                    ? t.install_apk_btn
+                    : 'APK ainda não anexado'}
+                </span>
+              </button>
+
+              {apkFeedback && (
+                <p className="flex items-center gap-1.5 text-[11px] font-bold text-[#059669]">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>{apkFeedback}</span>
+                </p>
+              )}
             </div>
 
             {/* 2. PWA & iOS Tutorial */}
@@ -185,12 +227,6 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </button>
               )}
 
-              {isInstalled && (
-                <div className="rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-2 text-xs font-bold text-[#059669]">
-                  {t.install_pwa_installed}
-                </div>
-              )}
-
               <div className="rounded-2xl bg-[#F4F6F9] p-3.5 space-y-2 border border-[#E2E8F0]">
                 <p className="text-xs font-extrabold text-[#0F172A] flex items-center gap-1.5">
                   <Share className="h-3.5 w-3.5 text-[#2563EB]" />
@@ -198,20 +234,22 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </p>
                 <ol className="space-y-1.5 text-xs text-[#475569] leading-relaxed">
                   <li>
-                    <strong className="text-[#0F172A]">1.</strong> Abra este site no navegador <strong className="text-[#0F172A]">Safari</strong> do seu
-                    iPhone.
+                    <strong className="text-[#0F172A]">1.</strong> Abra este site no navegador{' '}
+                    <strong className="text-[#0F172A]">Safari</strong> do seu iPhone.
                   </li>
                   <li>
-                    <strong className="text-[#0F172A]">2.</strong> Toque no botão <strong className="text-[#0F172A]">Compartilhar</strong> (quadrado com
-                    seta para cima) na barra inferior.
+                    <strong className="text-[#0F172A]">2.</strong> Toque no botão{' '}
+                    <strong className="text-[#0F172A]">Compartilhar</strong> (quadrado com seta
+                    para cima) na barra inferior.
                   </li>
                   <li>
                     <strong className="text-[#0F172A]">3.</strong> Role para baixo e toque em{' '}
                     <strong className="text-[#0F172A]">Adicionar à Tela de Início</strong>.
                   </li>
                   <li>
-                    <strong className="text-[#0F172A]">4.</strong> Toque em <strong className="text-[#0F172A]">Adicionar</strong> no canto superior
-                    direito para criar o atalho do app.
+                    <strong className="text-[#0F172A]">4.</strong> Toque em{' '}
+                    <strong className="text-[#0F172A]">Adicionar</strong> no canto superior direito
+                    para criar o atalho do app.
                   </li>
                 </ol>
                 {!isIOS && (

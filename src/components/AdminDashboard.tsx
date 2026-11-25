@@ -35,6 +35,7 @@ import {
   Smartphone,
   Sparkles,
   Trash2,
+  Upload,
   Users,
   Volume2,
   VolumeX,
@@ -76,6 +77,7 @@ import {
   fetchAdminOverview,
   fetchPlatformEvents,
   resolveDocumentDisplayUrl,
+  uploadApkPackageFile,
   uploadPlatformAssetFile,
 } from '../lib/mobilityApi';
 import { CURRENT_APP_VERSION } from '../lib/otaUpdate';
@@ -187,6 +189,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [showLegalDocs, setShowLegalDocs] = useState(false);
   const [uploadingAssetKind, setUploadingAssetKind] = useState<string | null>(null);
+  const [apkUploading, setApkUploading] = useState(false);
 
   const [chatTargetUser, setChatTargetUser] = useState<UserProfile | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
@@ -749,9 +752,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         logo_url: platformConfig.app_logo_url ?? null,
         primary_color: platformConfig.primary_color || '#2563EB',
         secondary_color: platformConfig.secondary_color || '#0F172A',
+        pwa_app_name: platformConfig.pwa_app_name?.trim() || null,
+        pwa_icon_url: platformConfig.pwa_icon_url ?? null,
+        apk_app_name: platformConfig.apk_app_name?.trim() || null,
+        apk_icon_url: platformConfig.apk_icon_url ?? null,
       });
       void refreshConfig();
-      showToast('Configurações, Marca, Cores, Pix Oficial e Sons salvos!');
+      showToast('Configurações, Marca, PWA/APK, Pix Oficial e Sons salvos!');
     } catch (err) {
       showToast(
         err instanceof Error
@@ -913,6 +920,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     file: File | undefined,
     kind:
       | 'logo'
+      | 'pwa_icon'
+      | 'apk_icon'
       | 'pix_qr'
       | 'moto'
       | 'pop'
@@ -932,6 +941,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const uploadedUrl = await uploadPlatformAssetFile(file, kind);
       const fieldMap: Record<typeof kind, keyof PlatformConfig> = {
         logo: 'app_logo_url',
+        pwa_icon: 'pwa_icon_url',
+        apk_icon: 'apk_icon_url',
         pix_qr: 'platform_pix_qr_url',
         moto: 'vehicle_img_moto',
         pop: 'vehicle_img_pop',
@@ -954,6 +965,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await adminSavePlatformConfig(updatedCfg);
       if (kind === 'logo') {
         applyLocalConfig({ logo_url: uploadedUrl });
+      } else if (kind === 'pwa_icon') {
+        applyLocalConfig({ pwa_icon_url: uploadedUrl });
+      } else if (kind === 'apk_icon') {
+        applyLocalConfig({ apk_icon_url: uploadedUrl });
       }
       void refreshConfig();
       showToast('Mídia atualizada e salva com sucesso!');
@@ -967,6 +982,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleResetPlatformAsset = async (
     field:
       | 'app_logo_url'
+      | 'pwa_icon_url'
+      | 'apk_icon_url'
       | 'platform_pix_qr_url'
       | 'vehicle_img_moto'
       | 'vehicle_img_pop'
@@ -987,11 +1004,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await adminSavePlatformConfig(updatedCfg);
       if (field === 'app_logo_url') {
         applyLocalConfig({ logo_url: null });
+      } else if (field === 'pwa_icon_url') {
+        applyLocalConfig({ pwa_icon_url: null });
+      } else if (field === 'apk_icon_url') {
+        applyLocalConfig({ apk_icon_url: null });
       }
       void refreshConfig();
       showToast('Restaurado para o padrão original!');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao restaurar padrão.');
+    }
+  };
+
+  const handleUploadApkFile = async (file: File | undefined) => {
+    if (!file) return;
+    setApkUploading(true);
+    try {
+      const apkPublicUrl = await uploadApkPackageFile(
+        file,
+        platformConfig.ota_latest_version || CURRENT_APP_VERSION
+      );
+      const updatedCfg: PlatformConfig = {
+        ...platformConfig,
+        ota_apk_url: apkPublicUrl,
+      };
+      setPlatformConfig(updatedCfg);
+      await adminSavePlatformConfig(updatedCfg);
+      void refreshConfig();
+      showToast('Arquivo .APK anexado! Os clientes já podem baixá-lo diretamente.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao anexar arquivo APK.');
+    } finally {
+      setApkUploading(false);
     }
   };
 
@@ -1554,7 +1598,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 });
                 setAdminPrefs(next);
                 if (!nextAllOn) stopSpeech();
-                else speakPtBr('Oi, administrador! Aqui é a Évelyn, já estou ativada e acompanhando tudo com você.', true);
+                else speakPtBr('Oi, administrador! Aqui é a Luana, já estou ativada e acompanhando tudo com você.', true);
               }}
               className={`flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold transition ${
                 adminPrefs.voice_enabled || adminPrefs.sounds_enabled
@@ -4193,7 +4237,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onClick={() => {
                             syncPlatformSounds(platformConfig);
                             speakPtBr(
-                              `Aqui é a Évelyn! Prévia de ${snd.label.replace(/^\d+\.\s*/, '')}.`,
+                              `Aqui é a Luana! Prévia de ${snd.label.replace(/^\d+\.\s*/, '')}.`,
                               true
                             );
                           }}
@@ -4344,9 +4388,272 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           />
         )}
 
-        {/* TAB 7: SQL INCREMENTAL & APK */}
+        {/* TAB 7: SQL INCREMENTAL, ANEXO APK & IDENTIDADE PWA/APK */}
         {tab === 'infra' && (
           <section className="mt-5 space-y-6">
+            {/* Gerenciador Completo de APK & Identidade Separada (PWA vs APK) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Card 1: Anexo Direto do Arquivo .APK */}
+              <form
+                onSubmit={handleSavePlatformConfig}
+                className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-xs space-y-4"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <DownloadCloud className="h-5 w-5 text-[#2563EB]" />
+                    <h3 className="font-display text-base font-extrabold text-[#0F172A]">
+                      Anexar Arquivo APK (Download Direto)
+                    </h3>
+                  </div>
+                  <span className="font-mono-num text-[11px] font-bold text-[#475569]">
+                    v{CURRENT_APP_VERSION}
+                  </span>
+                </div>
+
+                <p className="text-xs text-[#475569] leading-relaxed">
+                  Anexe aqui o arquivo <strong className="text-[#0F172A]">.apk</strong> compilado do
+                  seu aplicativo. Quando os clientes clicarem em <strong>Baixar APK</strong> no
+                  site, o download começará automaticamente sem redirecionar para links externos.
+                </p>
+
+                <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-extrabold text-[#0F172A]">
+                        {platformConfig.ota_apk_url
+                          ? 'Arquivo .APK anexado e pronto para download'
+                          : 'Nenhum arquivo .APK anexado ainda'}
+                      </p>
+                      {platformConfig.ota_apk_url && (
+                        <p className="text-[11px] font-mono-num text-[#2563EB] truncate max-w-[260px]">
+                          {platformConfig.ota_apk_url.split('/').pop()?.split('?')[0] ||
+                            platformConfig.ota_apk_url}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] px-3.5 py-2 text-xs font-extrabold text-white transition shadow-xs">
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>{apkUploading ? 'Enviando APK...' : 'Anexar .APK'}</span>
+                        <input
+                          type="file"
+                          accept=".apk,application/vnd.android.package-archive"
+                          disabled={apkUploading}
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = '';
+                            void handleUploadApkFile(f);
+                          }}
+                        />
+                      </label>
+                      {platformConfig.ota_apk_url && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const nextCfg: PlatformConfig = { ...platformConfig, ota_apk_url: null };
+                            setPlatformConfig(nextCfg);
+                            await adminSavePlatformConfig(nextCfg).catch(() => {});
+                            showToast('Arquivo APK removido.');
+                          }}
+                          className="rounded-xl border border-[#E2E8F0] bg-white px-2.5 py-2 text-xs font-bold text-[#475569] hover:bg-[#F1F5F9]"
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F172A] mb-1">
+                      Versão do APK
+                    </label>
+                    <input
+                      type="text"
+                      value={platformConfig.ota_latest_version || CURRENT_APP_VERSION}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          ota_latest_version: e.target.value,
+                        }))
+                      }
+                      placeholder={CURRENT_APP_VERSION}
+                      className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 font-mono-num text-xs font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-[#0F172A] mb-1">
+                      Notas da Versão
+                    </label>
+                    <input
+                      type="text"
+                      value={platformConfig.ota_release_notes || ''}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          ota_release_notes: e.target.value,
+                        }))
+                      }
+                      placeholder="Novidades exibidas ao atualizar o aplicativo"
+                      className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingPlatform}
+                  className="min-h-[44px] w-full rounded-xl aurora-accent-flow text-xs font-extrabold text-white shadow-sm"
+                >
+                  {savingPlatform ? 'Salvando...' : 'Salvar Dados do APK'}
+                </button>
+              </form>
+
+              {/* Card 2: Nome e Imagem do App no PWA e no APK */}
+              <form
+                onSubmit={handleSavePlatformConfig}
+                className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-xs space-y-4"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="h-5 w-5 text-[#2563EB]" />
+                  <h3 className="font-display text-base font-extrabold text-[#0F172A]">
+                    Nome e Ícone do PWA &amp; do APK
+                  </h3>
+                </div>
+                <p className="text-xs text-[#475569] leading-relaxed">
+                  Personalize separadamente o nome e a imagem exibidos quando o cliente instala o{' '}
+                  <strong className="text-[#0F172A]">PWA</strong> (tela inicial do navegador/iOS) ou
+                  usa o <strong className="text-[#0F172A]">APK Android</strong>.
+                </p>
+
+                {/* PWA Block */}
+                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-3">
+                  <p className="text-xs font-extrabold text-[#2563EB] uppercase tracking-wide">
+                    Configuração do PWA (Web / iPhone / Android)
+                  </p>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F172A] mb-1">
+                      Nome no PWA
+                    </label>
+                    <input
+                      type="text"
+                      value={platformConfig.pwa_app_name || ''}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({ ...prev, pwa_app_name: e.target.value }))
+                      }
+                      placeholder={platformConfig.site_name || 'Go Driver Mobilidade'}
+                      className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={platformConfig.pwa_icon_url || resolveBrandLogo(platformConfig)}
+                        alt="Ícone PWA"
+                        className="h-12 w-12 rounded-xl object-cover border border-[#E2E8F0] bg-white shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-[#0F172A]">Imagem / Ícone PWA</p>
+                        <p className="text-[11px] text-[#475569]">
+                          {platformConfig.pwa_icon_url ? 'Personalizada para PWA' : 'Usa logo padrão'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <label className="cursor-pointer rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] px-3 py-2 text-[11px] font-bold text-white transition">
+                        {uploadingAssetKind === 'pwa_icon' ? 'Enviando...' : 'Trocar'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) =>
+                            handleUploadPlatformAsset(e.target.files?.[0], 'pwa_icon')
+                          }
+                        />
+                      </label>
+                      {platformConfig.pwa_icon_url && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetPlatformAsset('pwa_icon_url')}
+                          className="rounded-xl border border-[#E2E8F0] bg-white px-2.5 py-2 text-[11px] font-bold text-[#475569] hover:bg-[#F1F5F9]"
+                        >
+                          Padrão
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* APK Block */}
+                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-3">
+                  <p className="text-xs font-extrabold text-[#059669] uppercase tracking-wide">
+                    Configuração do APK (Android Nativo)
+                  </p>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F172A] mb-1">
+                      Nome no APK
+                    </label>
+                    <input
+                      type="text"
+                      value={platformConfig.apk_app_name || ''}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({ ...prev, apk_app_name: e.target.value }))
+                      }
+                      placeholder={platformConfig.site_name || 'Go Driver Mobilidade'}
+                      className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={platformConfig.apk_icon_url || resolveBrandLogo(platformConfig)}
+                        alt="Ícone APK"
+                        className="h-12 w-12 rounded-xl object-cover border border-[#E2E8F0] bg-white shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-[#0F172A]">Imagem / Ícone APK</p>
+                        <p className="text-[11px] text-[#475569]">
+                          {platformConfig.apk_icon_url ? 'Personalizada para APK' : 'Usa logo padrão'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <label className="cursor-pointer rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] px-3 py-2 text-[11px] font-bold text-white transition">
+                        {uploadingAssetKind === 'apk_icon' ? 'Enviando...' : 'Trocar'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) =>
+                            handleUploadPlatformAsset(e.target.files?.[0], 'apk_icon')
+                          }
+                        />
+                      </label>
+                      {platformConfig.apk_icon_url && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetPlatformAsset('apk_icon_url')}
+                          className="rounded-xl border border-[#E2E8F0] bg-white px-2.5 py-2 text-[11px] font-bold text-[#475569] hover:bg-[#F1F5F9]"
+                        >
+                          Padrão
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingPlatform}
+                  className="min-h-[44px] w-full rounded-xl aurora-accent-flow text-xs font-extrabold text-white shadow-sm"
+                >
+                  {savingPlatform ? 'Salvando...' : 'Salvar Identidade PWA & APK'}
+                </button>
+              </form>
+            </div>
+
             <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-xs">
               <div className="flex items-center gap-2.5">
                 <Smartphone className="h-5 w-5 text-[#2563EB]" />
@@ -4369,7 +4676,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Incremental — Apenas Alterações e Tabelas Novas
                   </h3>
                   <p className="text-xs text-[#475569]">
-                    Contém somente o que foi adicionado/alterado (Seções 1–10: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">update_my_pay66_key</span>, <span className="font-mono-num">deposit_window_enabled/start_time/end_time</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, multi-veículos <span className="font-mono-num">vehicles/active_vehicle_id</span>, status <span className="font-mono-num">'paid'</span>, trava de segurança GoPay e privilégio <span className="font-mono-num">is_admin</span> para <span className="font-mono-num">driver@admin.com</span>), sem apagar saldos ou recriar tabelas antigas.
+                    Contém somente o que foi adicionado/alterado (Seções 1–11: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">update_my_pay66_key</span>, <span className="font-mono-num">deposit_window_enabled/start_time/end_time</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, multi-veículos <span className="font-mono-num">vehicles/active_vehicle_id</span>, bucket <span className="font-mono-num">public-assets</span> para APK e campos <span className="font-mono-num">pwa_app_name/pwa_icon_url/apk_app_name/apk_icon_url</span>), sem apagar saldos ou recriar tabelas antigas.
                   </p>
                 </div>
                 <button

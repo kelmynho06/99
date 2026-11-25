@@ -55,10 +55,14 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   sound_completed_url: null,
   sound_chat_url: null,
   sound_cancel_url: null,
-  ota_latest_version: '1.2.3',
+  ota_latest_version: '1.2.4',
   ota_apk_url: null,
   ota_web_url: null,
   ota_release_notes: null,
+  pwa_app_name: null,
+  pwa_icon_url: null,
+  apk_app_name: null,
+  apk_icon_url: null,
   deposit_window_enabled: true,
   deposit_start_time: '07:00',
   deposit_end_time: '23:30',
@@ -556,6 +560,8 @@ export async function uploadPlatformAssetFile(
   file: File,
   kind:
     | 'logo'
+    | 'pwa_icon'
+    | 'apk_icon'
     | 'pix_qr'
     | 'moto'
     | 'pop'
@@ -570,11 +576,30 @@ export async function uploadPlatformAssetFile(
     | 'sound_cancel'
 ): Promise<string> {
   const isImage = file.type.startsWith('image/');
-  const dataUrl = isImage
-    ? await compressImageFileToDataUrl(file, 720, kind === 'pix_qr' ? 0.88 : 0.72)
+  const isSmallPngIcon =
+    isImage &&
+    (kind === 'pwa_icon' || kind === 'apk_icon') &&
+    file.type === 'image/png' &&
+    file.size <= 700_000;
+  const dataUrl = isSmallPngIcon
+    ? await fileToDataUrl(file)
+    : isImage
+    ? await compressImageFileToDataUrl(
+        file,
+        kind === 'pwa_icon' || kind === 'apk_icon' ? 512 : 720,
+        kind === 'pix_qr' || kind === 'pwa_icon' || kind === 'apk_icon' ? 0.9 : 0.72
+      )
     : await fileToDataUrl(file);
-  const ext = isImage ? 'jpg' : file.name.split('.').pop()?.toLowerCase() || 'mp3';
-  const contentType = isImage ? 'image/jpeg' : file.type || 'audio/mpeg';
+  const ext = isSmallPngIcon
+    ? 'png'
+    : isImage
+    ? 'jpg'
+    : file.name.split('.').pop()?.toLowerCase() || 'mp3';
+  const contentType = isSmallPngIcon
+    ? 'image/png'
+    : isImage
+    ? 'image/jpeg'
+    : file.type || 'audio/mpeg';
 
   try {
     const blob = await dataUrlToBlob(dataUrl);
@@ -583,6 +608,38 @@ export async function uploadPlatformAssetFile(
   } catch {
     return dataUrl;
   }
+}
+
+export async function uploadApkPackageFile(file: File, version?: string): Promise<string> {
+  const cleanName = file.name.toLowerCase();
+  if (!cleanName.endsWith('.apk')) {
+    throw new Error('Selecione um arquivo válido no formato .apk.');
+  }
+
+  const safeVer = String(version || 'latest')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = `platform/apk/godriver-${safeVer}-${Date.now()}.apk`;
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+
+  const { error: uploadErr } = await supabase.storage.from('public-assets').upload(filePath, file, {
+    contentType: 'application/vnd.android.package-archive',
+    upsert: true,
+    cacheControl: '3600',
+  });
+
+  if (uploadErr) {
+    throw new Error(
+      `Não foi possível anexar o APK (${sizeMb} MB) no Supabase Storage. Execute o SQL incremental na aba SQL & APK e tente novamente. Detalhe: ${uploadErr.message}`
+    );
+  }
+
+  const { data: pub } = supabase.storage.from('public-assets').getPublicUrl(filePath);
+  if (!pub?.publicUrl) {
+    throw new Error('Arquivo enviado, mas não foi possível gerar o link direto de download.');
+  }
+
+  return pub.publicUrl;
 }
 
 export async function resolveDocumentDisplayUrl(rawUrl?: string | null): Promise<string> {
@@ -915,6 +972,10 @@ export async function fetchAppBrandConfig(): Promise<{
   logo_url: string | null;
   primary_color: string;
   secondary_color: string;
+  pwa_app_name: string | null;
+  pwa_icon_url: string | null;
+  apk_app_name: string | null;
+  apk_icon_url: string | null;
 }> {
   const cached = readCachedPlatformBrand();
   const [{ data: appCfg }, { data: platCfg }] = await Promise.all([
@@ -927,8 +988,21 @@ export async function fetchAppBrandConfig(): Promise<{
     (platCfg?.app_logo_url as string | null | undefined) ??
     cached.app_logo_url ??
     null;
+  const rawPwaIcon =
+    (platCfg?.pwa_icon_url as string | null | undefined) ?? cached.pwa_icon_url ?? null;
+  const rawApkIcon =
+    (platCfg?.apk_icon_url as string | null | undefined) ?? cached.apk_icon_url ?? null;
 
-  const resolvedLogo = rawLogo ? await resolveDocumentDisplayUrl(rawLogo) : null;
+  const [resolvedLogo, resolvedPwaIcon, resolvedApkIcon] = await Promise.all([
+    rawLogo ? resolveDocumentDisplayUrl(rawLogo) : Promise.resolve(null),
+    rawPwaIcon ? resolveDocumentDisplayUrl(rawPwaIcon) : Promise.resolve(null),
+    rawApkIcon ? resolveDocumentDisplayUrl(rawApkIcon) : Promise.resolve(null),
+  ]);
+
+  const rawPwaName =
+    (platCfg?.pwa_app_name as string | null | undefined) ?? cached.pwa_app_name ?? null;
+  const rawApkName =
+    (platCfg?.apk_app_name as string | null | undefined) ?? cached.apk_app_name ?? null;
 
   return {
     app_name: resolveNormalizedBrandName(
@@ -941,6 +1015,10 @@ export async function fetchAppBrandConfig(): Promise<{
     secondary_color: resolveNormalizedSecondaryColor(
       appCfg?.secondary_color || platCfg?.secondary_color || cached.secondary_color
     ),
+    pwa_app_name: rawPwaName?.trim() || null,
+    pwa_icon_url: resolvedPwaIcon || rawPwaIcon,
+    apk_app_name: rawApkName?.trim() || null,
+    apk_icon_url: resolvedApkIcon || rawApkIcon,
   };
 }
 
@@ -954,18 +1032,25 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
   if (error || !data) {
     const fallbackLogo =
       (appCfg?.logo_url as string | null | undefined) ?? cached.app_logo_url ?? null;
-    const resolvedFallbackLogo = fallbackLogo
-      ? await resolveDocumentDisplayUrl(fallbackLogo)
-      : null;
-    const resolvedFallbackQr = cached.platform_pix_qr_url
-      ? await resolveDocumentDisplayUrl(cached.platform_pix_qr_url)
-      : null;
+    const [resolvedFallbackLogo, resolvedFallbackQr, resolvedFallbackPwaIcon, resolvedFallbackApkIcon] =
+      await Promise.all([
+        fallbackLogo ? resolveDocumentDisplayUrl(fallbackLogo) : Promise.resolve(null),
+        cached.platform_pix_qr_url
+          ? resolveDocumentDisplayUrl(cached.platform_pix_qr_url)
+          : Promise.resolve(null),
+        cached.pwa_icon_url ? resolveDocumentDisplayUrl(cached.pwa_icon_url) : Promise.resolve(null),
+        cached.apk_icon_url ? resolveDocumentDisplayUrl(cached.apk_icon_url) : Promise.resolve(null),
+      ]);
     return {
       ...DEFAULT_PLATFORM_CONFIG,
       ...cached,
       site_name: resolveNormalizedBrandName(appCfg?.app_name || cached.site_name),
       app_logo_url: resolvedFallbackLogo,
       platform_pix_qr_url: resolvedFallbackQr,
+      pwa_app_name: cached.pwa_app_name ?? null,
+      pwa_icon_url: resolvedFallbackPwaIcon ?? null,
+      apk_app_name: cached.apk_app_name ?? null,
+      apk_icon_url: resolvedFallbackApkIcon ?? null,
       primary_color: resolveNormalizedPrimaryColor(appCfg?.primary_color || cached.primary_color),
       secondary_color: resolveNormalizedSecondaryColor(appCfg?.secondary_color || cached.secondary_color),
       ota_web_url: cached.ota_web_url ?? null,
@@ -981,9 +1066,16 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     (data.app_logo_url as string | null | undefined) ??
     cached.app_logo_url ??
     null;
-  const [resolvedQrUrl, resolvedLogoUrl] = await Promise.all([
+  const rawPwaIconUrl =
+    (data.pwa_icon_url as string | null | undefined) ?? cached.pwa_icon_url ?? null;
+  const rawApkIconUrl =
+    (data.apk_icon_url as string | null | undefined) ?? cached.apk_icon_url ?? null;
+
+  const [resolvedQrUrl, resolvedLogoUrl, resolvedPwaIconUrl, resolvedApkIconUrl] = await Promise.all([
     rawQrUrl ? resolveDocumentDisplayUrl(rawQrUrl) : Promise.resolve(null),
     rawLogoUrl ? resolveDocumentDisplayUrl(rawLogoUrl) : Promise.resolve(null),
+    rawPwaIconUrl ? resolveDocumentDisplayUrl(rawPwaIconUrl) : Promise.resolve(null),
+    rawApkIconUrl ? resolveDocumentDisplayUrl(rawApkIconUrl) : Promise.resolve(null),
   ]);
 
   return {
@@ -1035,13 +1127,19 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     sound_cancel_url:
       (data.sound_cancel_url as string | null | undefined) ?? cached.sound_cancel_url ?? null,
     ota_latest_version:
-      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.3',
+      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.4',
     ota_apk_url:
       (data.ota_apk_url as string | null | undefined) ?? cached.ota_apk_url ?? null,
     ota_web_url:
       (data.ota_web_url as string | null | undefined) ?? cached.ota_web_url ?? null,
     ota_release_notes:
       (data.ota_release_notes as string | null | undefined) ?? cached.ota_release_notes ?? null,
+    pwa_app_name:
+      (data.pwa_app_name as string | null | undefined) ?? cached.pwa_app_name ?? null,
+    pwa_icon_url: resolvedPwaIconUrl || null,
+    apk_app_name:
+      (data.apk_app_name as string | null | undefined) ?? cached.apk_app_name ?? null,
+    apk_icon_url: resolvedApkIconUrl || null,
     deposit_window_enabled:
       data.deposit_window_enabled === undefined
         ? cached.deposit_window_enabled ?? true
@@ -2509,10 +2607,14 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         sound_completed_url: config.sound_completed_url ?? null,
         sound_chat_url: config.sound_chat_url ?? null,
         sound_cancel_url: config.sound_cancel_url ?? null,
-        ota_latest_version: config.ota_latest_version ?? '1.2.2',
+        ota_latest_version: config.ota_latest_version ?? '1.2.4',
         ota_apk_url: config.ota_apk_url ?? null,
         ota_web_url: config.ota_web_url ?? null,
         ota_release_notes: config.ota_release_notes ?? null,
+        pwa_app_name: config.pwa_app_name?.trim() || null,
+        pwa_icon_url: config.pwa_icon_url ?? null,
+        apk_app_name: config.apk_app_name?.trim() || null,
+        apk_icon_url: config.apk_icon_url ?? null,
         deposit_window_enabled: config.deposit_window_enabled !== false,
         deposit_start_time: normalizeHHMM(config.deposit_start_time, '07:00'),
         deposit_end_time: normalizeHHMM(config.deposit_end_time, '23:30'),
@@ -2560,10 +2662,14 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     sound_completed_url: config.sound_completed_url ?? null,
     sound_chat_url: config.sound_chat_url ?? null,
     sound_cancel_url: config.sound_cancel_url ?? null,
-    ota_latest_version: config.ota_latest_version?.trim() || '1.2.2',
+    ota_latest_version: config.ota_latest_version?.trim() || '1.2.4',
     ota_apk_url: config.ota_apk_url?.trim() || null,
     ota_web_url: config.ota_web_url?.trim() || null,
     ota_release_notes: config.ota_release_notes?.trim() || null,
+    pwa_app_name: config.pwa_app_name?.trim() || null,
+    pwa_icon_url: config.pwa_icon_url ?? null,
+    apk_app_name: config.apk_app_name?.trim() || null,
+    apk_icon_url: config.apk_icon_url ?? null,
     deposit_window_enabled: config.deposit_window_enabled !== false,
     deposit_start_time: normalizeHHMM(config.deposit_start_time, '07:00'),
     deposit_end_time: normalizeHHMM(config.deposit_end_time, '23:30'),

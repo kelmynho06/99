@@ -1,9 +1,79 @@
 import { Capacitor } from '@capacitor/core';
 import type { PlatformConfig } from '../types/mobility';
-import { getInstalledNativeVersion } from './floatingBubble';
+import { getInstalledNativeVersion, isNativeAndroidApp, openExternalDownloadUrl } from './floatingBubble';
 
-export const CURRENT_APP_VERSION = '1.2.3';
+export const CURRENT_APP_VERSION = '1.2.4';
 const WEB_RELOAD_GUARD_KEY = 'mobilidade66_web_auto_reloaded_v';
+
+function buildDirectDownloadHref(rawUrl: string, filename: string): string {
+  try {
+    const u = new URL(rawUrl, window.location.origin);
+    if (u.pathname.includes('/storage/v1/object/public/')) {
+      u.searchParams.set('download', filename);
+    }
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+export async function triggerDirectApkDownload(
+  rawUrl: string,
+  filename = 'GoDriver-Mobilidade.apk'
+): Promise<boolean> {
+  const cleanUrl = rawUrl.trim();
+  if (!cleanUrl) return false;
+
+  if (isNativeAndroidApp()) {
+    const handled = await openExternalDownloadUrl(cleanUrl);
+    if (handled) return true;
+  }
+
+  const safeName = filename.toLowerCase().endsWith('.apk') ? filename : `${filename}.apk`;
+  const directHref = buildDirectDownloadHref(cleanUrl, safeName);
+
+  // Trigger browser native attachment download directly without opening external tabs
+  try {
+    if (cleanUrl.includes('/storage/v1/object/public/')) {
+      const a = document.createElement('a');
+      a.href = directHref;
+      a.setAttribute('download', safeName);
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(() => a.remove(), 1000);
+      return true;
+    }
+
+    const res = await fetch(cleanUrl);
+    if (res.ok) {
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = safeName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
+      }, 60_000);
+      return true;
+    }
+  } catch {
+    // Fallback to direct anchor download attribute below
+  }
+
+  const a = document.createElement('a');
+  a.href = directHref;
+  a.setAttribute('download', safeName);
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  window.setTimeout(() => a.remove(), 1000);
+  return true;
+}
 
 export interface OtaUpdateInfo {
   currentVersion: string;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { BellRing, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -269,17 +270,34 @@ export default function App() {
     emitDriverLocation,
   } = useRealtimeMobility(currentUser, handleUserUpdated);
 
-  const effectivePlatformConfig = useMemo(
-    () => ({
+  const effectivePlatformConfig = useMemo(() => {
+    const isNative = Capacitor.isNativePlatform();
+    const resolvedPwaName = appConfig.pwa_app_name ?? platformConfig.pwa_app_name ?? null;
+    const resolvedPwaIcon = appConfig.pwa_icon_url ?? platformConfig.pwa_icon_url ?? null;
+    const resolvedApkName = appConfig.apk_app_name ?? platformConfig.apk_app_name ?? null;
+    const resolvedApkIcon = appConfig.apk_icon_url ?? platformConfig.apk_icon_url ?? null;
+
+    const activeName =
+      (isNative ? resolvedApkName : resolvedPwaName)?.trim() ||
+      appConfig.app_name ||
+      platformConfig.site_name ||
+      'Go Driver Mobilidade';
+    const activeLogo =
+      (isNative ? resolvedApkIcon : resolvedPwaIcon) ||
+      (appConfig.logo_url !== undefined ? appConfig.logo_url : platformConfig.app_logo_url);
+
+    return {
       ...platformConfig,
-      site_name: appConfig.app_name || platformConfig.site_name || 'Go Driver Mobilidade',
-      app_logo_url:
-        appConfig.logo_url !== undefined ? appConfig.logo_url : platformConfig.app_logo_url,
+      site_name: activeName,
+      app_logo_url: activeLogo,
+      pwa_app_name: resolvedPwaName,
+      pwa_icon_url: resolvedPwaIcon,
+      apk_app_name: resolvedApkName,
+      apk_icon_url: resolvedApkIcon,
       primary_color: appConfig.primary_color || platformConfig.primary_color || '#2563EB',
       secondary_color: appConfig.secondary_color || platformConfig.secondary_color || '#0F172A',
-    }),
-    [platformConfig, appConfig]
-  );
+    };
+  }, [platformConfig, appConfig]);
 
   // Sync native Android background-only bubble state & active ride badge (zero in-app overlay)
   const hasActiveRide = useMemo(

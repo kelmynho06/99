@@ -208,7 +208,7 @@ export function useRealtimeMobility(
                   });
                 }
 
-                // Passenger receives PT-BR voice on status changes (conversational Évelyn)
+                // Passenger receives PT-BR voice on status changes (conversational Luana)
                 if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
                   const driverDisplayName =
                     enriched.driver?.full_name?.trim() || 'seu parceiro';

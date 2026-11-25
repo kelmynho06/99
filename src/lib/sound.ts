@@ -11,7 +11,7 @@ export type SoundCueType =
   | 'cancel';
 
 export function syncPlatformSounds(_config?: PlatformConfig | null): void {
-  // Toques musicais/bipes removidos: alertas utilizam exclusivamente a assistente de voz Évelyn.
+  // Toques musicais/bipes removidos: alertas utilizam exclusivamente a assistente de voz Luana.
 }
 
 let sharedAudioCtx: AudioContext | null = null;
@@ -85,18 +85,18 @@ export function primeSpeechEngine(): void {
 }
 
 export async function playSoundCue(_cue: SoundCueType): Promise<void> {
-  // Bipes e toques de notificação removidos: somente a assistente Évelyn fala.
+  // Bipes e toques de notificação removidos: somente a assistente Luana fala.
 }
 
 export function playRideAcceptedChime(): void {
-  // Silenciado: somente a assistente Évelyn anuncia o aceite.
+  // Silenciado: somente a assistente Luana anuncia o aceite.
 }
 
 export function playOfferAlertSound(): void {
   // Silenciado: sem toque de notificação.
 }
 
-function scoreEvelynVoice(voice: SpeechSynthesisVoice, activeLang: string): number {
+function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): number {
   const name = voice.name.toLowerCase();
   const lang = voice.lang.toLowerCase();
   const targetLang = activeLang.toLowerCase();
@@ -165,8 +165,7 @@ function scoreEvelynVoice(voice: SpeechSynthesisVoice, activeLang: string): numb
     'maria',
     'helena',
     'fernanda',
-    'évelyn',
-    'evelyn',
+    'luana',
     'google português do brasil',
     'jenny',
     'aria',
@@ -197,7 +196,7 @@ function scoreEvelynVoice(voice: SpeechSynthesisVoice, activeLang: string): numb
   return score;
 }
 
-function resolveEvelynVoice(activeLang: string): SpeechSynthesisVoice | null {
+function resolveLuanaVoice(activeLang: string): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
   bindVoicesChangedListener();
   const voices = window.speechSynthesis.getVoices();
@@ -208,7 +207,7 @@ function resolveEvelynVoice(activeLang: string): SpeechSynthesisVoice | null {
   let bestScore = -Infinity;
 
   for (const voice of voices) {
-    const s = scoreEvelynVoice(voice, activeLang);
+    const s = scoreLuanaVoice(voice, activeLang);
     if (s > bestScore) {
       bestScore = s;
       bestVoice = voice;
@@ -225,7 +224,7 @@ function resolveEvelynVoice(activeLang: string): SpeechSynthesisVoice | null {
 
 function humanizeSpeechText(raw: string): string {
   return raw
-    .replace(/\bEvelyn\b/g, 'Évelyn')
+    .replace(/\b(?:Évelyn|Evelyn)\b/g, 'Luana')
     .replace(/R\$\s*(\d+)[,.](\d{2})/g, (_m, reais: string, cents: string) =>
       cents === '00' ? `${reais} reais` : `${reais} reais e ${Number(cents)} centavos`
     )
@@ -302,7 +301,7 @@ function pumpSpeechQueue(): void {
     isSpeakingFromQueue = true;
     const utterance = new SpeechSynthesisUtterance(next.text);
     const activeLang = prefs.language || 'pt-BR';
-    const voice = resolveEvelynVoice(activeLang);
+    const voice = resolveLuanaVoice(activeLang);
     const { rate, pitch } = computeNaturalSpeechParams(voice);
 
     utterance.lang = voice?.lang || activeLang;
@@ -405,12 +404,12 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
         ? 'good afternoon'
         : 'good evening';
     if (user.is_admin || user.role === 'admin') {
-      return `Hi, ${enGreet}, ${displayName}! I'm Évelyn from Go Driver. Your admin dashboard is ready whenever you need it.`;
+      return `Hi, ${enGreet}, ${displayName}! I'm Luana from Go Driver. Your admin dashboard is ready whenever you need it.`;
     }
     if (user.role === 'driver') {
-      return `Hi, ${enGreet}, ${displayName}! I'm Évelyn from Go Driver. Ready to hit the road whenever you go online!`;
+      return `Hi, ${enGreet}, ${displayName}! I'm Luana from Go Driver. Ready to hit the road whenever you go online!`;
     }
-    return `Hi, ${enGreet}, ${displayName}! I'm Évelyn from Go Driver. Where are we heading today?`;
+    return `Hi, ${enGreet}, ${displayName}! I'm Luana from Go Driver. Where are we heading today?`;
   }
 
   if (activeLang.startsWith('es')) {
@@ -421,18 +420,18 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
         ? 'buenas tardes'
         : 'buenas noches';
     if (user.is_admin || user.role === 'admin') {
-      return `¡Hola, ${esGreet}, ${displayName}! Soy Évelyn, de Go Driver. El panel administrativo ya está listo.`;
+      return `¡Hola, ${esGreet}, ${displayName}! Soy Luana, de Go Driver. El panel administrativo ya está listo.`;
     }
     if (user.role === 'driver') {
-      return `¡Hola, ${esGreet}, ${displayName}! Soy Évelyn, de Go Driver. Conéctate cuando quieras empezar a recibir viajes.`;
+      return `¡Hola, ${esGreet}, ${displayName}! Soy Luana, de Go Driver. Conéctate cuando quieras empezar a recibir viajes.`;
     }
-    return `¡Hola, ${esGreet}, ${displayName}! Soy Évelyn, de Go Driver. ¿A dónde vamos hoy?`;
+    return `¡Hola, ${esGreet}, ${displayName}! Soy Luana, de Go Driver. ¿A dónde vamos hoy?`;
   }
 
   const greeting = getTimeOfDayGreeting().toLowerCase();
 
   if (user.is_admin || user.role === 'admin') {
-    return `Oi, ${greeting}, ${displayName}! Aqui é a Évelyn, da Go Driver. O painel já está todo pronto pra você acompanhar corridas, depósitos e saques.`;
+    return `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. O painel já está todo pronto pra você acompanhar corridas, depósitos e saques.`;
   }
 
   if (user.role === 'driver') {
@@ -440,12 +439,12 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
     const isOnline = Boolean(user.driver?.is_online);
     if (isDelivery) {
       return isOnline
-        ? `Oi, ${greeting}, ${displayName}! Aqui é a Évelyn, da Go Driver. Você já está online e pronto para receber novas entregas.`
-        : `Oi, ${greeting}, ${displayName}! Aqui é a Évelyn, da Go Driver. Quando quiser começar as entregas, é só ficar online.`;
+        ? `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Você já está online e pronto para receber novas entregas.`
+        : `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Quando quiser começar as entregas, é só ficar online.`;
     }
     return isOnline
-      ? `Oi, ${greeting}, ${displayName}! Aqui é a Évelyn, da Go Driver. Você já está online e pronto para receber corridas.`
-      : `Oi, ${greeting}, ${displayName}! Aqui é a Évelyn, da Go Driver. Tudo pronto para rodar hoje — assim que quiser, é só ficar online.`;
+      ? `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Você já está online e pronto para receber corridas.`
+      : `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Tudo pronto para rodar hoje — assim que quiser, é só ficar online.`;
   }
 
   const debtNote =
@@ -457,7 +456,7 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
           .replace('.', ',')} reais, que será somada na próxima corrida.`
       : '';
 
-  return `Oi, ${greeting}, ${displayName}! Aqui é a Évelyn, da Go Driver. Pra onde a gente vai hoje? É só escolher seu destino no mapa.${debtNote}`;
+  return `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Pra onde a gente vai hoje? É só escolher seu destino no mapa.${debtNote}`;
 }
 
 export function resetSessionGreeting(): void {

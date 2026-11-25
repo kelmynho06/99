@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { DownloadCloud, ExternalLink, RefreshCw, Sparkles, X } from 'lucide-react';
-import { applyNativeWebUpdate, isNativeAndroidApp, openExternalDownloadUrl } from '../lib/floatingBubble';
+import { DownloadCloud, RefreshCw, Sparkles, X } from 'lucide-react';
+import { applyNativeWebUpdate, isNativeAndroidApp } from '../lib/floatingBubble';
 import { useTranslation } from '../lib/i18n';
-import type { OtaUpdateInfo } from '../lib/otaUpdate';
+import { triggerDirectApkDownload, type OtaUpdateInfo } from '../lib/otaUpdate';
 
 interface OtaUpdateModalProps {
   updateInfo: OtaUpdateInfo;
@@ -19,6 +19,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [applyingWeb, setApplyingWeb] = useState(false);
+  const [downloadingApk, setDownloadingApk] = useState(false);
 
   const hasWebUpdate = Boolean(updateInfo.webUrl && updateInfo.webUrl.startsWith('http'));
   const isDirectApk =
@@ -26,17 +27,19 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
     updateInfo.apkUrl.startsWith('https://') ||
     updateInfo.apkUrl.toLowerCase().includes('.apk');
 
-  const primarySiteOrApkUrl = (hasWebUpdate ? updateInfo.webUrl : updateInfo.apkUrl) || updateInfo.apkUrl;
-
-  const handleOpenExternalUrl = async (
-    url: string,
-    e: React.MouseEvent<HTMLAnchorElement>
-  ) => {
-    const handledNative = await openExternalDownloadUrl(url);
-    if (handledNative) {
-      e.preventDefault();
+  const handleDownloadApk = async (url: string) => {
+    setDownloadingApk(true);
+    try {
+      const slug =
+        siteName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '') || 'godriver-mobilidade';
+      await triggerDirectApkDownload(url, `${slug}-v${updateInfo.latestVersion}.apk`);
+    } finally {
+      setDownloadingApk(false);
+      onClose();
     }
-    onClose();
   };
 
   const handleApplyLiveWeb = async () => {
@@ -122,18 +125,26 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
         <div className="flex flex-col gap-2 pt-1">
           {mandatory ? (
             <>
-              {primarySiteOrApkUrl ? (
-                <a
-                  href={primarySiteOrApkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => handleOpenExternalUrl(primarySiteOrApkUrl, e)}
+              {hasWebUpdate ? (
+                <button
+                  type="button"
+                  disabled={applyingWeb}
+                  onClick={handleApplyLiveWeb}
+                  className="aurora-accent-flow flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
+                >
+                  <RefreshCw className={`h-5 w-5 ${applyingWeb ? 'animate-spin' : ''}`} />
+                  <span>{t.ota_apply_web}</span>
+                </button>
+              ) : isDirectApk ? (
+                <button
+                  type="button"
+                  disabled={downloadingApk}
+                  onClick={() => handleDownloadApk(updateInfo.apkUrl)}
                   className="aurora-accent-flow flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                 >
                   <DownloadCloud className="h-5 w-5" />
-                  <span>{t.ota_download_now}</span>
-                  <ExternalLink className="h-4 w-4" />
-                </a>
+                  <span>{downloadingApk ? 'Baixando APK...' : t.ota_download_now}</span>
+                </button>
               ) : (
                 <button
                   type="button"
@@ -146,17 +157,15 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                 </button>
               )}
               {hasWebUpdate && isDirectApk && updateInfo.apkUrl !== updateInfo.webUrl && (
-                <a
-                  href={updateInfo.apkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => handleOpenExternalUrl(updateInfo.apkUrl, e)}
+                <button
+                  type="button"
+                  disabled={downloadingApk}
+                  onClick={() => handleDownloadApk(updateInfo.apkUrl)}
                   className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] text-xs font-extrabold text-[#0F172A] active:scale-[0.98] transition"
                 >
                   <DownloadCloud className="h-4 w-4" />
-                  <span>{t.ota_download_now} (.apk)</span>
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                  <span>{downloadingApk ? 'Baixando APK...' : `${t.ota_download_now} (.apk)`}</span>
+                </button>
               )}
             </>
           ) : (
@@ -173,11 +182,10 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                 </button>
               )}
               {isDirectApk ? (
-                <a
-                  href={updateInfo.apkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => handleOpenExternalUrl(updateInfo.apkUrl, e)}
+                <button
+                  type="button"
+                  disabled={downloadingApk}
+                  onClick={() => handleDownloadApk(updateInfo.apkUrl)}
                   className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition ${
                     hasWebUpdate
                       ? 'border border-[#E2E8F0] bg-[#F1F5F9] text-[#0F172A]'
@@ -185,9 +193,8 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   }`}
                 >
                   <DownloadCloud className="h-5 w-5" />
-                  <span>{t.ota_download_now}</span>
-                  <ExternalLink className="h-4 w-4" />
-                </a>
+                  <span>{downloadingApk ? 'Baixando APK...' : t.ota_download_now}</span>
+                </button>
               ) : !hasWebUpdate ? (
                 <button
                   type="button"

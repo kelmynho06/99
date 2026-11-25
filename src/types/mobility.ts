@@ -64,6 +64,10 @@ export interface PlatformConfig {
   ota_apk_url?: string | null;
   ota_web_url?: string | null;
   ota_release_notes?: string | null;
+  pwa_app_name?: string | null;
+  pwa_icon_url?: string | null;
+  apk_app_name?: string | null;
+  apk_icon_url?: string | null;
   deposit_window_enabled?: boolean;
   deposit_start_time?: string;
   deposit_end_time?: string;

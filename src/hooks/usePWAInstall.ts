@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isNativeAndroidApp } from '../lib/floatingBubble';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -11,10 +12,36 @@ export function usePWAInstall() {
   const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    setIsInstalled(isStandalone);
+    const checkStandaloneOrInstalled = async () => {
+      const isStandalone =
+        isNativeAndroidApp() ||
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+        document.referrer.startsWith('android-app://');
+
+      if (isStandalone) {
+        setIsInstalled(true);
+        return;
+      }
+
+      try {
+        const navWithRelated = navigator as unknown as {
+          getInstalledRelatedApps?: () => Promise<Array<{ platform?: string }>>;
+        };
+        if (typeof navWithRelated.getInstalledRelatedApps === 'function') {
+          const related = await navWithRelated.getInstalledRelatedApps();
+          if (Array.isArray(related) && related.length > 0) {
+            setIsInstalled(true);
+          }
+        }
+      } catch {
+        // Ignore unsupported related-apps query
+      }
+    };
+
+    void checkStandaloneOrInstalled();
 
     const ua = window.navigator.userAgent.toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(ua));

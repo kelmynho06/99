@@ -1,6 +1,6 @@
 {
-  "version": "1.2.3",
-  "apk_url": "https://github.com/kelmynho06/99/releases/latest/download/app-debug.apk",
-  "release_notes": "Identidade oficial Go Driver Mobilidade no início, PWA e APK, tradução completa em todos os idiomas e assistente de voz Évelyn mais humana e natural.",
-  "published_at": "2026-11-25T17:30:00Z"
+  "version": "1.2.4",
+  "apk_url": "",
+  "release_notes": "Assistente de voz Luana, modo escuro com leitura nítida em todas as telas e download direto do APK configurado no painel.",
+  "published_at": "2026-11-25T18:30:00Z"
 }
