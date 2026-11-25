@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useOnlineStatus, usePWAInstall } from '../hooks/usePWAInstall';
 import { isNativeAndroidApp } from '../lib/floatingBubble';
+import { useTranslation } from '../lib/i18n';
 
 const DEFAULT_APK_URL =
   'https://github.com/kelmynho06/99/releases/latest/download/app-debug.apk';
@@ -25,8 +26,9 @@ interface PWAInstallButtonProps {
 export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   variant = 'menu',
   apkUrl,
-  siteName = 'Boreal Mobilidade',
+  siteName = 'Go Driver Mobilidade',
 }) => {
+  const { t } = useTranslation();
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -44,22 +46,22 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800 transition"
+          className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9] transition"
         >
           <span className="flex items-center gap-3">
             <span className="aurora-accent-flow flex h-8 w-8 items-center justify-center rounded-xl text-white shrink-0">
               <Smartphone className="h-4 w-4" />
             </span>
             <span>
-              <span className="block text-sm font-extrabold text-neutral-950 dark:text-white">
-                Instalar Aplicativo (Android APK &amp; iOS PWA)
+              <span className="block text-sm font-extrabold text-[#0F172A]">
+                {t.install_app_label}
               </span>
-              <span className="block text-[11px] text-neutral-500 dark:text-neutral-400">
-                Baixe o APK no Android ou siga o tutorial PWA no iPhone
+              <span className="block text-[11px] text-[#475569]">
+                {t.install_app_sub}
               </span>
             </span>
           </span>
-          <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />
+          <ChevronRight className="h-4 w-4 text-[#64748B] shrink-0" />
         </button>
       ) : variant === 'menu' ? (
         <button
@@ -69,7 +71,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         >
           <span className="flex items-center gap-2.5 min-w-0">
             <Smartphone className="h-4 w-4 shrink-0" />
-            <span className="truncate">Instalar Aplicativo</span>
+            <span className="truncate">{t.install_app_short}</span>
           </span>
           <span className="rounded-lg bg-white/20 px-2 py-0.5 text-[10px] font-extrabold text-white shrink-0">
             APK / PWA
@@ -79,43 +81,43 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="flex min-h-[42px] items-center gap-2 rounded-full bg-[#047857] px-3.5 py-2 text-xs font-extrabold text-white shadow-lg transition hover:bg-[#065F46] whitespace-nowrap shrink-0"
+          className="aurora-accent-flow flex min-h-[42px] items-center gap-2 rounded-full px-3.5 py-2 text-xs font-extrabold text-white shadow-lg transition hover:brightness-95 whitespace-nowrap shrink-0"
         >
           <Download className="h-4 w-4" />
-          <span>Instalar App (Android)</span>
+          <span>{t.install_app_android}</span>
         </button>
       )}
 
       {modalOpen && (
-        <div className="fixed inset-0 z-[1300] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 p-5 sm:p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800 space-y-4 text-neutral-950 dark:text-neutral-100">
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
+        <div className="fixed inset-0 z-[1300] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-[#E2E8F0] space-y-4 text-[#0F172A]">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="aurora-accent-flow flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-xs">
                   <Smartphone className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white leading-tight">
-                    Instalar {siteName}
+                  <h3 className="font-display text-lg font-extrabold text-[#0F172A] leading-tight">
+                    {t.install_app_short} · {siteName}
                   </h3>
-                  <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
-                    Escolha a opção ideal para o seu celular
+                  <p className="text-[11px] font-semibold text-[#475569]">
+                    {t.install_choose_option}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
-                aria-label="Fechar"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0]"
+                aria-label={t.close}
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Difference Banner: Android APK vs iOS PWA */}
-            <div className="flex items-start gap-2.5 rounded-2xl border border-[#6EE7B7] dark:border-emerald-800/70 bg-[#ECFDF5] dark:bg-emerald-950/30 p-3.5 text-xs text-[#065F46] dark:text-emerald-100 leading-relaxed">
-              <Info className="h-4 w-4 shrink-0 text-[#047857] dark:text-[#6EE7B7] mt-0.5" />
+            <div className="flex items-start gap-2.5 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 text-xs text-[#1E3A8A] leading-relaxed">
+              <Info className="h-4 w-4 shrink-0 text-[#2563EB] mt-0.5" />
               <p>
                 <strong>Android vs iPhone (iOS):</strong> No momento, o instalador nativo{' '}
                 <strong>(.APK)</strong> está disponível apenas para celulares{' '}
@@ -126,20 +128,20 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             </div>
 
             {/* 1. Android APK Download */}
-            <div className="rounded-2xl border-2 border-[#2DD4BF] bg-[#F7FBFA] dark:bg-neutral-800/70 p-4 space-y-3">
+            <div className="rounded-2xl border-2 border-[#2563EB] bg-[#F4F6F9] p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#047857] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#2563EB] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white">
                     Recomendado · Android
                   </span>
-                  <h4 className="mt-1 font-display text-base font-extrabold text-neutral-950 dark:text-white">
+                  <h4 className="mt-1 font-display text-base font-extrabold text-[#0F172A]">
                     Aplicativo Android (.APK)
                   </h4>
                 </div>
               </div>
-              <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+              <p className="text-xs text-[#475569] leading-relaxed">
                 Baixe e instale o app oficial completo para Android com notificações prioritárias e
-                ícone Boreal na tela inicial.
+                ícone do {siteName} na tela inicial.
               </p>
               <a
                 href={resolvedApkUrl}
@@ -148,21 +150,21 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 className="aurora-accent-flow flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-md active:scale-[0.98] transition"
               >
                 <Download className="h-4 w-4" />
-                <span>Baixar Aplicativo Android (APK)</span>
+                <span>{t.install_apk_btn}</span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </div>
 
             {/* 2. PWA & iOS Tutorial */}
-            <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800/40 p-4 space-y-3">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Apple className="h-5 w-5 text-neutral-900 dark:text-white shrink-0" />
+                  <Apple className="h-5 w-5 text-[#0F172A] shrink-0" />
                   <div>
-                    <h4 className="font-display text-sm font-extrabold text-neutral-950 dark:text-white">
+                    <h4 className="font-display text-sm font-extrabold text-[#0F172A]">
                       Instalar PWA (iPhone iOS &amp; Navegador)
                     </h4>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <p className="text-[11px] text-[#475569]">
                       Funciona em iPhone, iPad, Android e computador sem ocupar espaço
                     </p>
                   </div>
@@ -176,46 +178,46 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                     await install();
                     setModalOpen(false);
                   }}
-                  className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#047857] dark:border-[#2DD4BF] bg-white dark:bg-neutral-900 text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7] active:scale-[0.98] transition"
+                  className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#2563EB] bg-white text-xs font-extrabold text-[#2563EB] hover:bg-[#EFF6FF] active:scale-[0.98] transition"
                 >
                   <Download className="h-4 w-4" />
-                  <span>Instalar App Web (PWA) Agora</span>
+                  <span>{t.install_pwa_btn}</span>
                 </button>
               )}
 
               {isInstalled && (
-                <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs font-bold text-emerald-800 dark:text-emerald-200">
-                  PWA já instalado neste dispositivo!
+                <div className="rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-2 text-xs font-bold text-[#059669]">
+                  {t.install_pwa_installed}
                 </div>
               )}
 
-              <div className="rounded-2xl bg-neutral-50 dark:bg-neutral-900/70 p-3.5 space-y-2 border border-neutral-200/80 dark:border-neutral-700/80">
-                <p className="text-xs font-extrabold text-neutral-950 dark:text-white flex items-center gap-1.5">
-                  <Share className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+              <div className="rounded-2xl bg-[#F4F6F9] p-3.5 space-y-2 border border-[#E2E8F0]">
+                <p className="text-xs font-extrabold text-[#0F172A] flex items-center gap-1.5">
+                  <Share className="h-3.5 w-3.5 text-[#2563EB]" />
                   Tutorial para iPhone / iOS (Safari):
                 </p>
-                <ol className="space-y-1.5 text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
+                <ol className="space-y-1.5 text-xs text-[#475569] leading-relaxed">
                   <li>
-                    <strong>1.</strong> Abra este site no navegador <strong>Safari</strong> do seu
+                    <strong className="text-[#0F172A]">1.</strong> Abra este site no navegador <strong className="text-[#0F172A]">Safari</strong> do seu
                     iPhone.
                   </li>
                   <li>
-                    <strong>2.</strong> Toque no botão <strong>Compartilhar</strong> (quadrado com
+                    <strong className="text-[#0F172A]">2.</strong> Toque no botão <strong className="text-[#0F172A]">Compartilhar</strong> (quadrado com
                     seta para cima) na barra inferior.
                   </li>
                   <li>
-                    <strong>3.</strong> Role para baixo e toque em{' '}
-                    <strong>Adicionar à Tela de Início</strong>.
+                    <strong className="text-[#0F172A]">3.</strong> Role para baixo e toque em{' '}
+                    <strong className="text-[#0F172A]">Adicionar à Tela de Início</strong>.
                   </li>
                   <li>
-                    <strong>4.</strong> Toque em <strong>Adicionar</strong> no canto superior
+                    <strong className="text-[#0F172A]">4.</strong> Toque em <strong className="text-[#0F172A]">Adicionar</strong> no canto superior
                     direito para criar o atalho do app.
                   </li>
                 </ol>
                 {!isIOS && (
-                  <p className="pt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                  <p className="pt-1 text-[11px] text-[#475569]">
                     No Chrome/Android, você também pode tocar nos 3 pontinhos do navegador →{' '}
-                    <strong>Instalar aplicativo</strong>.
+                    <strong className="text-[#0F172A]">Instalar aplicativo</strong>.
                   </p>
                 )}
               </div>
@@ -228,13 +230,14 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 };
 
 export const OfflineIndicator: React.FC = () => {
+  const { t } = useTranslation();
   const isOnline = useOnlineStatus();
   if (isOnline) return null;
 
   return (
-    <div className="fixed top-16 left-1/2 z-[1100] -translate-x-1/2 flex items-center gap-2 rounded-full bg-[#071513] border border-[#2DD4BF]/40 px-4 py-2 text-xs font-semibold text-[#6EE7B7] shadow-xl">
-      <WifiOff className="h-4 w-4 shrink-0" />
-      <span>Sem conexão — exibindo dados em cache</span>
+    <div className="fixed top-16 left-1/2 z-[1100] -translate-x-1/2 flex items-center gap-2 rounded-full bg-white border border-[#E2E8F0] px-4 py-2 text-xs font-semibold text-[#0F172A] shadow-xl">
+      <WifiOff className="h-4 w-4 shrink-0 text-[#2563EB]" />
+      <span>{t.offline_cached}</span>
     </div>
   );
 };

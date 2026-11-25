@@ -1,58 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
   <defs>
-    <linearGradient id="borealBg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0A2A25" />
-      <stop offset="55%" stop-color="#0F2421" />
-      <stop offset="100%" stop-color="#064E3B" />
+    <linearGradient id="goDriverBg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F4F6F9" />
     </linearGradient>
-    <radialGradient id="auroraGlow" cx="35%" cy="28%" r="70%">
-      <stop offset="0%" stop-color="#2DD4BF" stop-opacity="0.32" />
-      <stop offset="55%" stop-color="#047857" stop-opacity="0.12" />
-      <stop offset="100%" stop-color="#0F2421" stop-opacity="0" />
-    </radialGradient>
-    <linearGradient id="auroraWavePrimary" x1="120" y1="390" x2="395" y2="120" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#047857" />
-      <stop offset="45%" stop-color="#2DD4BF" />
-      <stop offset="100%" stop-color="#6EE7B7" />
-    </linearGradient>
-    <linearGradient id="auroraWaveBright" x1="130" y1="130" x2="390" y2="380" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#A7F3D0" />
-      <stop offset="50%" stop-color="#34D399" />
-      <stop offset="100%" stop-color="#06B6D4" />
+    <linearGradient id="goDriverBlue" x1="120" y1="390" x2="395" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1D4ED8" />
+      <stop offset="52%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#0EA5E9" />
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" rx="116" fill="url(#borealBg)" />
-  <rect width="512" height="512" rx="116" fill="url(#auroraGlow)" />
+  <rect width="512" height="512" rx="116" fill="url(#goDriverBg)" />
+  <rect x="10" y="10" width="492" height="492" rx="108" stroke="#E2E8F0" stroke-width="8" />
 
-  <!-- Subtle compass horizon ring -->
-  <circle cx="256" cy="256" r="158" stroke="#6EE7B7" stroke-opacity="0.16" stroke-width="4" />
-
-  <!-- Stylized Boreal vertical stem + forward aurora ribbon forming an original "B" crest -->
+  <!-- Geometric G + Forward Arrow Emblem -->
   <path
-    d="M158 378V154C158 139.6 169.6 128 184 128H262C312.8 128 350 156.5 350 198C350 223.8 334.4 244.6 308 254.2C342.4 263.4 364 290.8 364 323C364 366.8 325.6 396 268 396H176C166.1 396 158 387.9 158 378Z"
-    stroke="url(#auroraWavePrimary)"
-    stroke-width="28"
+    d="M324 196C305 168 274 152 240 152C179 152 132 199 132 260C132 321 179 368 240 368C295 368 338 331 346 278H258"
+    stroke="url(#goDriverBlue)"
+    stroke-width="46"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
-
-  <!-- Inner sweeping northern aurora route curve -->
   <path
-    d="M164 260C208 260 242 246 274 226C298 211 312 195 312 178"
-    stroke="url(#auroraWaveBright)"
-    stroke-width="22"
+    d="M214 294L348 160M348 160H268M348 160V240"
+    stroke="url(#goDriverBlue)"
+    stroke-width="42"
     stroke-linecap="round"
+    stroke-linejoin="round"
   />
-
-  <!-- Forward motion chevron & polar star -->
-  <path
-    d="M214 334H268C294 334 312 321 312 303C312 286 296 274 269 274H208"
-    stroke="#ECFDF5"
-    stroke-opacity="0.92"
-    stroke-width="18"
-    stroke-linecap="round"
-  />
-  <circle cx="352" cy="144" r="16" fill="#6EE7B7" />
-  <circle cx="352" cy="144" r="7" fill="#FFFFFF" />
 </svg>

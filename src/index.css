@@ -8,16 +8,18 @@
     --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-    --boreal-canvas: #F7FBFA;
-    --boreal-surface: #FFFFFF;
-    --boreal-ink: #0F2421;
-    --boreal-ink-muted: #334E4A;
-    --boreal-mint: #6EE7B7;
-    --boreal-mint-vivid: #34D399;
-    --boreal-cyan: #2DD4BF;
-    --boreal-cyan-vivid: #06B6D4;
-    --boreal-emerald: #047857;
-    --boreal-emerald-deep: #065F46;
+    --godriver-canvas: #F4F6F9;
+    --godriver-surface: #FFFFFF;
+    --godriver-surface-muted: #F1F5F9;
+    --godriver-border: #E2E8F0;
+    --godriver-ink: #0F172A;
+    --godriver-ink-muted: #475569;
+    --godriver-blue: #2563EB;
+    --godriver-blue-hover: #1D4ED8;
+    --godriver-sky: #0EA5E9;
+    --godriver-blue-tint: #EFF6FF;
+    --godriver-emerald: #10B981;
+    --godriver-emerald-deep: #059669;
   }
 
   html,
@@ -45,6 +47,7 @@
   height: 100%;
   z-index: 0;
   font-family: var(--font-body);
+  background: #F4F6F9;
 }
 
 .leaflet-hud-viewport {
@@ -78,8 +81,8 @@
   animation: velo-radar-ring 2s cubic-bezier(0.16, 1, 0.3, 1) 0.7s infinite;
 }
 
-/* Aurora Boreal calm light-wave & border transition utilities */
-@keyframes boreal-aurora-drift {
+/* Electric Blue + Clean Daylight animated gradient transitions for buttons & start surfaces */
+@keyframes godriver-color-flow {
   0% {
     background-position: 0% 50%;
   }
@@ -92,58 +95,58 @@
 }
 
 .aurora-surface-flow {
-  background: linear-gradient(125deg, #FFFFFF 0%, #ECFEF8 28%, #E6FAF7 58%, #E6F8FC 82%, #F7FBFA 100%);
+  background: linear-gradient(125deg, #FFFFFF 0%, #F4F6F9 32%, #EFF6FF 65%, #E0F2FE 88%, #FFFFFF 100%);
   background-size: 220% 220%;
-  animation: boreal-aurora-drift 11s ease-in-out infinite;
+  animation: godriver-color-flow 10s ease-in-out infinite;
 }
 
 .aurora-accent-flow {
-  background: linear-gradient(115deg, #065F46 0%, #047857 35%, #0D9488 68%, #0891B2 100%);
-  background-size: 200% 200%;
-  animation: boreal-aurora-drift 9s ease-in-out infinite;
+  background: linear-gradient(115deg, #1D4ED8 0%, #2563EB 38%, #0EA5E9 72%, #2563EB 100%);
+  background-size: 220% 220%;
+  animation: godriver-color-flow 7.5s ease-in-out infinite;
 }
 
 .aurora-border-glow {
   position: relative;
   background-image:
     linear-gradient(#ffffff, #ffffff),
-    linear-gradient(120deg, rgba(110, 231, 183, 0.85), rgba(45, 212, 191, 0.8), rgba(6, 182, 212, 0.75), rgba(4, 120, 87, 0.75));
+    linear-gradient(120deg, rgba(37, 99, 235, 0.85), rgba(14, 165, 233, 0.8), rgba(59, 130, 246, 0.8), rgba(29, 78, 216, 0.85));
   background-origin: border-box;
   background-clip: padding-box, border-box;
   background-size: 100% 100%, 220% 220%;
   border: 1.5px solid transparent;
-  animation: boreal-aurora-drift 8.5s ease-in-out infinite;
+  animation: godriver-color-flow 8s ease-in-out infinite;
 }
 
 .dark .aurora-border-glow {
   background-image:
-    linear-gradient(#0b1d1a, #0b1d1a),
-    linear-gradient(120deg, rgba(110, 231, 183, 0.55), rgba(45, 212, 191, 0.5), rgba(6, 182, 212, 0.5), rgba(4, 120, 87, 0.55));
+    linear-gradient(#0f172a, #0f172a),
+    linear-gradient(120deg, rgba(59, 130, 246, 0.65), rgba(14, 165, 233, 0.6), rgba(37, 99, 235, 0.65));
 }
 
 .aurora-search-trigger {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(115deg, #F0FDF9 0%, #E6FAF6 48%, #ECFEFF 100%);
+  background: linear-gradient(115deg, #FFFFFF 0%, #EFF6FF 50%, #F0F9FF 100%);
   background-size: 200% 200%;
-  border: 1.5px solid rgba(45, 212, 191, 0.55);
+  border: 1.5px solid rgba(37, 99, 235, 0.28);
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 240ms ease, box-shadow 240ms ease;
-  animation: boreal-aurora-drift 10s ease-in-out infinite;
+  animation: godriver-color-flow 9s ease-in-out infinite;
 }
 
 .aurora-search-trigger:hover {
-  border-color: #0D9488;
-  box-shadow: 0 6px 20px -6px rgba(13, 148, 136, 0.25);
+  border-color: #2563EB;
+  box-shadow: 0 8px 22px -6px rgba(37, 99, 235, 0.22);
 }
 
 .aurora-search-trigger:active {
   transform: scale(0.985);
-  background: linear-gradient(115deg, #CCFBF1 0%, #A7F3D0 52%, #CFFAFE 100%);
+  background: linear-gradient(115deg, #EFF6FF 0%, #DBEAFE 52%, #E0F2FE 100%);
 }
 
 .dark .aurora-search-trigger {
-  background: linear-gradient(115deg, rgba(15, 36, 33, 0.92) 0%, rgba(19, 78, 74, 0.45) 50%, rgba(14, 116, 144, 0.35) 100%);
-  border-color: rgba(45, 212, 191, 0.4);
+  background: linear-gradient(115deg, rgba(15, 23, 42, 0.94) 0%, rgba(30, 58, 138, 0.45) 50%, rgba(14, 116, 144, 0.35) 100%);
+  border-color: rgba(59, 130, 246, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -177,7 +180,7 @@
     height: auto !important;
     overflow: visible !important;
     background: #ffffff !important;
-    color: #0F2421 !important;
+    color: #0F172A !important;
   }
 
   .no-print {
@@ -194,6 +197,6 @@
     box-shadow: none !important;
     border: none !important;
     background: #ffffff !important;
-    color: #0F2421 !important;
+    color: #0F172A !important;
   }
 }

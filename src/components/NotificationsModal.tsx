@@ -30,29 +30,29 @@ const CATEGORY_META: Record<
   { label: string; icon: React.ComponentType<{ className?: string }>; badgeClass: string }
 > = {
   wallet: {
-    label: 'BorealPay',
+    label: 'GoPay',
     icon: Wallet,
-    badgeClass: 'bg-[#ECFDF5] dark:bg-emerald-950/60 text-[#047857] dark:text-[#6EE7B7] border-[#6EE7B7]/60 dark:border-emerald-800',
+    badgeClass: 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]',
   },
   coupon: {
     label: 'Cupom',
     icon: Gift,
-    badgeClass: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+    badgeClass: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]',
   },
   event: {
     label: 'Evento',
     icon: Flame,
-    badgeClass: 'bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border-orange-300 dark:border-orange-800',
+    badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
   },
   payment: {
     label: 'Pagamento',
     icon: CreditCard,
-    badgeClass: 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-800',
+    badgeClass: 'bg-sky-50 text-sky-700 border-sky-200',
   },
   general: {
     label: 'Aviso',
     icon: Bell,
-    badgeClass: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700',
+    badgeClass: 'bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]',
   },
 };
 
@@ -96,19 +96,19 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1260] flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-xs p-0 sm:p-4">
-      <div className="flex max-h-[88vh] w-full max-w-md flex-col rounded-t-[28px] sm:rounded-[28px] bg-white dark:bg-neutral-900 shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+    <div className="fixed inset-0 z-[1260] flex items-end sm:items-center justify-center bg-[#0F172A]/60 backdrop-blur-xs p-0 sm:p-4">
+      <div className="flex max-h-[88vh] w-full max-w-md flex-col rounded-t-[28px] sm:rounded-[28px] bg-white shadow-2xl border border-[#E2E8F0] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
           <div className="flex items-center gap-2.5">
             <span className="aurora-accent-flow flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-2xs">
               <Bell className="h-5 w-5" />
             </span>
             <div>
-              <h3 className="font-display text-base font-extrabold text-neutral-950 dark:text-white">
+              <h3 className="font-display text-base font-extrabold text-[#0F172A]">
                 Notificações
               </h3>
-              <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+              <p className="text-[11px] font-medium text-[#475569]">
                 {unreadCount > 0
                   ? `${unreadCount} não lida(s)`
                   : 'Tudo atualizado por aqui'}
@@ -120,16 +120,16 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
               <button
                 type="button"
                 onClick={onMarkAllRead}
-                className="flex min-h-[38px] items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2.5 text-[11px] font-extrabold text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition whitespace-nowrap"
+                className="flex min-h-[38px] items-center gap-1 rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-2.5 text-[11px] font-extrabold text-[#0F172A] hover:bg-[#E2E8F0]/60 transition whitespace-nowrap"
               >
-                <CheckCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <CheckCheck className="h-3.5 w-3.5 text-[#10B981]" />
                 <span>Ler todas</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A]"
               aria-label="Fechar"
             >
               <X className="h-5 w-5" />
@@ -138,19 +138,19 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-[#F4F6F9]">
           {loading && notifications.length === 0 ? (
-            <div className="py-12 text-center text-xs font-semibold text-neutral-500">
+            <div className="py-12 text-center text-xs font-semibold text-[#475569]">
               Carregando notificações...
             </div>
           ) : notifications.length === 0 ? (
-            <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-8 text-center space-y-2">
-              <Bell className="mx-auto h-8 w-8 text-neutral-400" />
-              <p className="text-sm font-extrabold text-neutral-900 dark:text-white">
+            <div className="rounded-3xl border border-[#E2E8F0] bg-white p-8 text-center space-y-2">
+              <Bell className="mx-auto h-8 w-8 text-[#94A3B8]" />
+              <p className="text-sm font-extrabold text-[#0F172A]">
                 Nenhuma notificação ainda
               </p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Avisos da plataforma, transferências BorealPay, eventos e cupons aparecerão aqui.
+              <p className="text-xs text-[#475569]">
+                Avisos da plataforma, transferências GoPay, eventos e cupons aparecerão aqui.
               </p>
             </div>
           ) : (
@@ -166,8 +166,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                   onClick={() => handleTapNotification(notif)}
                   className={`w-full rounded-2xl border p-3.5 text-left transition active:scale-[0.99] ${
                     notif.is_read
-                      ? 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900'
-                      : 'border-[#2DD4BF] bg-[#ECFDF5]/80 dark:bg-emerald-950/30 shadow-2xs'
+                      ? 'border-[#E2E8F0] bg-white'
+                      : 'border-[#2563EB] bg-[#EFF6FF] shadow-2xs'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -178,7 +178,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                       {meta.label}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-mono-num text-[10px] font-semibold text-neutral-400">
+                      <span className="font-mono-num text-[10px] font-semibold text-[#64748B]">
                         {new Date(notif.created_at).toLocaleString('pt-BR', {
                           day: '2-digit',
                           month: '2-digit',
@@ -191,16 +191,16 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                       )}
                     </div>
                   </div>
-                  <p className="mt-2 text-xs font-extrabold text-neutral-950 dark:text-white">
+                  <p className="mt-2 text-xs font-extrabold text-[#0F172A]">
                     {notif.title}
                   </p>
-                  <p className="mt-0.5 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                  <p className="mt-0.5 text-xs text-[#475569] leading-relaxed">
                     {notif.message}
                   </p>
                   {receiptTx && onOpenReceipt && (
-                    <span className="mt-2 inline-flex items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#0F2421]">
+                    <span className="mt-2 inline-flex items-center gap-1 rounded-xl bg-[#2563EB] px-2.5 py-1 text-[11px] font-extrabold text-white">
                       <Receipt className="h-3.5 w-3.5" />
-                      Ver Comprovante BorealPay
+                      Ver Comprovante GoPay
                     </span>
                   )}
                   {!receiptTx && isEvent && onOpenEvents && (

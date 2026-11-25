@@ -13,7 +13,7 @@ interface OtaUpdateModalProps {
 
 export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
   updateInfo,
-  siteName = 'Boreal Mobilidade',
+  siteName = 'Go Driver Mobilidade',
   mandatory = false,
   onClose,
 }) => {
@@ -56,19 +56,19 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1400] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
-      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-4 border border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-start justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-3">
+    <div className="fixed inset-0 z-[1400] flex items-end sm:items-center justify-center bg-[#0F172A]/65 p-0 sm:p-4">
+      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl space-y-4 border border-[#E2E8F0]">
+        <div className="flex items-start justify-between gap-3 border-b border-[#E2E8F0] pb-3">
           <div className="flex items-center gap-3">
             <div className="aurora-accent-flow flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm">
               <DownloadCloud className="h-6 w-6" />
             </div>
             <div>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#2563EB]">
                 <Sparkles className="h-3 w-3" /> {siteName}
               </span>
-              <h3 className="mt-1 font-display text-lg font-extrabold text-neutral-950 dark:text-white">
-                {mandatory ? 'Atualização Obrigatória Disponível' : t.ota_new_update}
+              <h3 className="mt-1 font-display text-lg font-extrabold text-[#0F172A]">
+                {mandatory ? t.ota_mandatory_title : t.ota_new_update}
               </h3>
             </div>
           </div>
@@ -76,7 +76,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A]"
               aria-label={t.close}
             >
               <X className="h-4 w-4" />
@@ -84,45 +84,36 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
           )}
         </div>
 
-        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
-          {mandatory ? (
-            <>
-              Uma nova versão do <strong>{siteName}</strong> foi publicada. Para continuar com segurança
-              e acesso completo, baixe e instale a atualização mais recente pelo nosso site oficial.
-            </>
-          ) : (
-            <>
-              Uma nova versão do <strong>{siteName}</strong> está pronta para você. Atualize para
-              aproveitar as melhorias mais recentes.
-            </>
-          )}
+        <p className="text-sm font-medium text-[#475569] leading-relaxed">
+          <strong className="text-[#0F172A]">{siteName}</strong> ·{' '}
+          {mandatory ? t.ota_mandatory_desc : t.ota_optional_desc}
         </p>
 
-        <div className="grid grid-cols-2 gap-2.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 p-3.5 border border-neutral-200 dark:border-neutral-700">
+        <div className="grid grid-cols-2 gap-2.5 rounded-2xl bg-[#F4F6F9] p-3.5 border border-[#E2E8F0]">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#475569]">
               {t.app_version_label}
             </p>
-            <p className="font-mono-num text-sm font-extrabold text-neutral-900 dark:text-neutral-100">
+            <p className="font-mono-num text-sm font-extrabold text-[#0F172A]">
               v{updateInfo.currentVersion}
             </p>
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
               {t.ota_new_update}
             </p>
-            <p className="font-mono-num text-sm font-extrabold text-emerald-700 dark:text-emerald-300">
+            <p className="font-mono-num text-sm font-extrabold text-[#2563EB]">
               v{updateInfo.latestVersion}
             </p>
           </div>
         </div>
 
         {updateInfo.releaseNotes && (
-          <div className="rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 p-3.5">
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-amber-900 dark:text-amber-300 mb-1">
-              Novidades desta versão
+          <div className="rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] p-3.5">
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#1D4ED8] mb-1">
+              {t.ota_whats_new}
             </p>
-            <p className="text-xs text-amber-950 dark:text-amber-100 whitespace-pre-line leading-relaxed">
+            <p className="text-xs text-[#1E3A8A] whitespace-pre-line leading-relaxed">
               {updateInfo.releaseNotes}
             </p>
           </div>
@@ -140,7 +131,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   className="aurora-accent-flow flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
                 >
                   <DownloadCloud className="h-5 w-5" />
-                  <span>Atualizar Agora (Baixar APK no Site)</span>
+                  <span>{t.ota_download_now}</span>
                   <ExternalLink className="h-4 w-4" />
                 </a>
               ) : (
@@ -160,10 +151,10 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => handleOpenExternalUrl(updateInfo.apkUrl, e)}
-                  className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-extrabold text-neutral-900 dark:text-white active:scale-[0.98] transition"
+                  className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] text-xs font-extrabold text-[#0F172A] active:scale-[0.98] transition"
                 >
                   <DownloadCloud className="h-4 w-4" />
-                  <span>Baixar APK Direto (.apk)</span>
+                  <span>{t.ota_download_now} (.apk)</span>
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
@@ -189,7 +180,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
                   onClick={(e) => handleOpenExternalUrl(updateInfo.apkUrl, e)}
                   className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold shadow-sm active:scale-[0.98] transition ${
                     hasWebUpdate
-                      ? 'border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white'
+                      ? 'border border-[#E2E8F0] bg-[#F1F5F9] text-[#0F172A]'
                       : 'aurora-accent-flow text-white'
                   }`}
                 >
@@ -210,7 +201,7 @@ export const OtaUpdateModal: React.FC<OtaUpdateModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-[42px] w-full rounded-xl text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                className="min-h-[42px] w-full rounded-xl text-xs font-bold text-[#475569] hover:text-[#0F172A]"
               >
                 {t.ota_later}
               </button>

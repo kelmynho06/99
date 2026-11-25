@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { BorealLogoMark } from './BorealBrandAssets';
+import { resolveBrandLogo } from '../lib/brandAssets';
+import { useTranslation } from '../lib/i18n';
 import type { PlatformConfig } from '../types/mobility';
 
 interface AnimatedSplashScreenProps {
@@ -8,59 +9,57 @@ interface AnimatedSplashScreenProps {
 }
 
 export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ platformConfig }) => {
-  const brandName = platformConfig?.site_name?.trim() || 'Boreal Mobilidade';
-  const customLogo = platformConfig?.app_logo_url;
+  const { t } = useTranslation();
+  const brandName = platformConfig?.site_name?.trim() || 'Go Driver Mobilidade';
+  const brandLogoUrl = resolveBrandLogo(platformConfig);
 
   return (
     <motion.div
-      key="splash-boreal"
+      key="splash-godriver"
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, scale: 1.03 }}
       transition={{ duration: 0.42, ease: 'easeOut' }}
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-between aurora-surface-flow px-6 py-12 text-[#0F2421] overflow-hidden select-none"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-between aurora-surface-flow px-6 py-12 text-[#0F172A] overflow-hidden select-none"
     >
-      {/* Subtle Aurora Boreal ribbons backdrop */}
+      {/* Clean sky-blue light ribbons backdrop */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-85"
+        className="pointer-events-none absolute inset-0 opacity-90"
         style={{
           background:
-            'radial-gradient(circle at 22% 24%, rgba(110, 231, 183, 0.34) 0%, rgba(247, 251, 250, 0) 52%), radial-gradient(circle at 80% 30%, rgba(45, 212, 191, 0.28) 0%, rgba(247, 251, 250, 0) 48%), radial-gradient(circle at 50% 80%, rgba(6, 182, 212, 0.16) 0%, rgba(247, 251, 250, 0) 56%)',
+            'radial-gradient(circle at 22% 24%, rgba(37, 99, 235, 0.12) 0%, rgba(255, 255, 255, 0) 52%), radial-gradient(circle at 80% 30%, rgba(14, 165, 233, 0.14) 0%, rgba(255, 255, 255, 0) 48%), radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.08) 0%, rgba(255, 255, 255, 0) 56%)',
         }}
       />
 
       <div className="relative z-10 h-6" />
 
-      {/* Center animated Boreal mark + accelerating urban car */}
+      {/* Center unified Go Driver logo + accelerating urban car */}
       <div className="relative z-10 flex flex-col items-center text-center">
         <div className="relative flex items-center justify-center">
           <motion.div
             animate={{ scale: [1, 1.28, 1], opacity: [0.45, 0.08, 0.45] }}
             transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute h-32 w-32 rounded-[2.25rem] border-2 border-[#2DD4BF]/55"
+            className="absolute h-32 w-32 rounded-[2.25rem] border-2 border-[#2563EB]/35"
           />
           <motion.div
-            animate={{ scale: [0.95, 1.15, 0.95], opacity: [0.25, 0.5, 0.25] }}
+            animate={{ scale: [0.95, 1.15, 0.95], opacity: [0.22, 0.48, 0.22] }}
             transition={{ duration: 2.0, repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute h-28 w-28 rounded-[2rem] bg-[#6EE7B7]/30 blur-xl"
+            className="absolute h-28 w-28 rounded-[2rem] bg-[#38BDF8]/25 blur-xl"
           />
 
           <motion.div
             initial={{ scale: 0.72, opacity: 0, y: 12 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.75rem] border-2 border-[#2DD4BF]/60 bg-[#0F2421] shadow-[0_18px_42px_rgba(4,120,87,0.22)]"
+            className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.75rem] border-2 border-[#2563EB]/25 bg-white shadow-[0_18px_42px_rgba(37,99,235,0.18)]"
           >
-            {customLogo ? (
-              <img
-                src={customLogo}
-                alt={brandName}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <BorealLogoMark className="h-full w-full" />
-            )}
+            <img
+              src={brandLogoUrl}
+              alt={brandName}
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-cover"
+            />
           </motion.div>
         </div>
 
@@ -68,7 +67,7 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.22, duration: 0.45 }}
-          className="mt-6 font-display text-3xl font-extrabold tracking-tight text-[#0F2421]"
+          className="mt-6 font-display text-3xl font-extrabold tracking-tight text-[#0F172A]"
         >
           {brandName}
         </motion.h1>
@@ -77,23 +76,23 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.38, duration: 0.4 }}
-          className="mt-1.5 text-xs font-bold uppercase tracking-[0.22em] text-[#047857]"
+          className="mt-1.5 text-xs font-bold uppercase tracking-[0.22em] text-[#2563EB]"
         >
-          Mobilidade urbana &amp; BorealPay
+          {t.brand_tagline}
         </motion.p>
 
-        {/* Speed track + accelerating Aurora SVG car */}
+        {/* Speed track + accelerating Electric Blue SVG car */}
         <div className="relative mt-10 h-14 w-64 overflow-hidden">
-          <div className="absolute bottom-2 left-0 right-0 h-0.5 bg-[#0F2421]/10 rounded-full" />
+          <div className="absolute bottom-2 left-0 right-0 h-0.5 bg-[#0F172A]/10 rounded-full" />
           <motion.div
             animate={{ x: [220, -140] }}
             transition={{ duration: 0.85, repeat: Infinity, ease: 'linear' }}
-            className="absolute bottom-4 left-0 h-0.5 w-16 rounded-full bg-[#2DD4BF]/70"
+            className="absolute bottom-4 left-0 h-0.5 w-16 rounded-full bg-[#0EA5E9]/70"
           />
           <motion.div
             animate={{ x: [260, -120] }}
             transition={{ duration: 0.65, delay: 0.25, repeat: Infinity, ease: 'linear' }}
-            className="absolute bottom-7 left-0 h-0.5 w-10 rounded-full bg-[#047857]/35"
+            className="absolute bottom-7 left-0 h-0.5 w-10 rounded-full bg-[#2563EB]/40"
           />
 
           <motion.div
@@ -105,16 +104,16 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
             <svg width="86" height="36" viewBox="0 0 86 36" fill="none" aria-hidden>
               <path
                 d="M8 23C8 19.5 10.5 16.5 14 15.8L22 14.5L31 7.2C33.2 5.4 36 4.5 38.8 4.5H54.5C58 4.5 61.3 6.1 63.5 8.8L70 16.2L77.5 17.6C80.5 18.2 82.5 20.8 82.5 23.8V26.5C82.5 27.9 81.4 29 80 29H74.5C74.5 32.3 71.8 35 68.5 35C65.2 35 62.5 32.3 62.5 29H27.5C27.5 32.3 24.8 35 21.5 35C18.2 35 15.5 32.3 15.5 29H10.5C9.1 29 8 27.9 8 26.5V23Z"
-                fill="#047857"
+                fill="#2563EB"
               />
               <path
                 d="M32.5 8.5L26 14.5H45V8.5H32.5ZM48.5 8.5V14.5H63.5L59 9.5C57.9 8.9 56.5 8.5 55 8.5H48.5Z"
-                fill="#CCFBF1"
+                fill="#DBEAFE"
               />
-              <path d="M18 22.5H68" stroke="#6EE7B7" strokeWidth="2.2" strokeLinecap="round" />
-              <circle cx="21.5" cy="29" r="4.2" fill="#0F2421" stroke="#6EE7B7" strokeWidth="2" />
-              <circle cx="68.5" cy="29" r="4.2" fill="#0F2421" stroke="#2DD4BF" strokeWidth="2" />
-              <rect x="77" y="20" width="5" height="3" rx="1.5" fill="#6EE7B7" />
+              <path d="M18 22.5H68" stroke="#38BDF8" strokeWidth="2.2" strokeLinecap="round" />
+              <circle cx="21.5" cy="29" r="4.2" fill="#0F172A" stroke="#60A5FA" strokeWidth="2" />
+              <circle cx="68.5" cy="29" r="4.2" fill="#0F172A" stroke="#38BDF8" strokeWidth="2" />
+              <rect x="77" y="20" width="5" height="3" rx="1.5" fill="#38BDF8" />
             </svg>
           </motion.div>
         </div>
@@ -122,16 +121,16 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
 
       {/* Bottom smooth loader */}
       <div className="relative z-10 flex flex-col items-center gap-2.5">
-        <div className="h-1.5 w-36 overflow-hidden rounded-full bg-[#0F2421]/10">
+        <div className="h-1.5 w-36 overflow-hidden rounded-full bg-[#E2E8F0]">
           <motion.div
             initial={{ x: '-100%' }}
             animate={{ x: '100%' }}
             transition={{ duration: 1.15, repeat: Infinity, ease: 'easeInOut' }}
-            className="h-full w-1/2 rounded-full bg-gradient-to-r from-[#047857] via-[#2DD4BF] to-[#06B6D4]"
+            className="h-full w-1/2 rounded-full bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0EA5E9]"
           />
         </div>
-        <span className="text-[11px] font-semibold text-[#334E4A]">
-          Preparando mapa, GPS e carteira segura...
+        <span className="text-[11px] font-semibold text-[#475569]">
+          {t.splash_preparing}
         </span>
       </div>
     </motion.div>

@@ -53,7 +53,7 @@ import {
   checkForOtaUpdate,
   type OtaUpdateInfo,
 } from '../lib/otaUpdate';
-import { playSoundCue, speakPtBr } from '../lib/sound';
+import { speakPtBr } from '../lib/sound';
 import {
   getUserPreferences,
   isDarkThemeActive,
@@ -469,10 +469,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const activeDarkResolved = isDarkThemeActive(userPrefs.theme_mode);
 
   return (
-    <div className="fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="flex h-[90vh] sm:h-auto sm:max-h-[90vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 text-neutral-950 dark:text-neutral-100 shadow-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
+    <div className="fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-[#0F172A]/60 backdrop-blur-xs p-0 sm:p-4">
+      <div className="flex h-[90vh] sm:h-auto sm:max-h-[90vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white text-[#0F172A] shadow-2xl overflow-hidden border border-[#E2E8F0]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 px-5 py-4">
+        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
           <div className="flex items-center gap-2">
             {section !== 'menu' && (
               <button
@@ -481,12 +481,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   setSection('menu');
                   setFeedback(null);
                 }}
-                className="flex h-9 px-2.5 items-center justify-center rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-800 dark:text-neutral-200"
+                className="flex h-9 px-2.5 items-center justify-center rounded-xl bg-[#F1F5F9] border border-[#E2E8F0] text-xs font-bold text-[#0F172A] hover:bg-[#E2E8F0]"
               >
                 {t.back}
               </button>
             )}
-            <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
+            <h3 className="font-display text-lg font-extrabold text-[#0F172A]">
               {section === 'menu' && t.settings_title}
               {section === 'profile' && 'Foto e Personalização'}
               {section === 'password' && 'Alterar Senha'}
@@ -499,20 +499,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white border border-[#E2E8F0] text-[#475569] hover:text-[#0F172A] hover:bg-[#F4F6F9]"
             aria-label="Fechar configurações"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto bg-white p-5 space-y-4">
           {feedback && (
             <div
               className={`rounded-2xl px-4 py-3 text-xs font-bold ${
                 feedback.type === 'ok'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
-                  : 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-200 border border-red-200 dark:border-red-800'
+                  ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
+                  : 'bg-red-50 text-red-700 border border-red-200'
               }`}
             >
               {feedback.msg}
@@ -522,34 +522,34 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'menu' && (
             <div className="space-y-4">
               {/* Profile Summary Card */}
-              <div className="flex items-center gap-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 p-4 border border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3.5 rounded-2xl bg-[#F4F6F9] p-4 border border-[#E2E8F0]">
                 <AvatarImage
                   src={avatarUrl}
                   name={currentUser.full_name}
-                  className="h-14 w-14 rounded-full object-cover border-2 border-[#2DD4BF] shrink-0"
-                  fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-display text-xl font-extrabold"
+                  className="h-14 w-14 rounded-full object-cover border-2 border-[#2563EB] shrink-0"
+                  fallbackClassName="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-white font-display text-xl font-extrabold"
                 />
                 <div className="min-w-0">
-                  <p className="font-display text-base font-extrabold text-neutral-950 dark:text-white truncate">
+                  <p className="font-display text-base font-extrabold text-[#0F172A] truncate">
                     {currentUser.full_name}
                   </p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 font-mono-num truncate">
+                  <p className="text-xs text-[#475569] font-mono-num truncate">
                     {currentUser.phone} · {currentUser.email}
                   </p>
                   {currentUser.bio && (
-                    <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-300 truncate">{currentUser.bio}</p>
+                    <p className="mt-1 text-xs text-[#475569] truncate">{currentUser.bio}</p>
                   )}
                 </div>
               </div>
 
               {/* Quick Theme & Language Switchers */}
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 p-3.5 space-y-3">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-xs font-extrabold text-neutral-900 dark:text-neutral-100">
-                    <SunMoon className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
+                  <span className="flex items-center gap-1.5 text-xs font-extrabold text-[#0F172A]">
+                    <SunMoon className="h-4 w-4 text-[#2563EB]" />
                     {t.theme_label}
                   </span>
-                  <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
+                  <span className="text-[10px] font-bold text-[#475569]">
                     Ativo: {activeDarkResolved ? t.theme_dark : t.theme_light}
                   </span>
                 </div>
@@ -568,8 +568,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         onClick={() => handleThemeChange(opt.id)}
                         className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-extrabold transition ${
                           active
-                            ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421] dark:border-[#2DD4BF]'
-                            : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+                            ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-xs'
+                            : 'bg-white text-[#475569] border-[#E2E8F0] hover:text-[#0F172A]'
                         }`}
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -578,19 +578,19 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                <p className="text-[10px] text-[#475569]">
                   {t.theme_auto_hint}
                 </p>
 
-                <div className="pt-1 border-t border-neutral-200 dark:border-neutral-700 flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-1.5 text-xs font-extrabold text-neutral-900 dark:text-neutral-100 shrink-0">
-                    <Globe className="h-4 w-4 text-blue-500" />
+                <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5 text-xs font-extrabold text-[#0F172A] shrink-0">
+                    <Globe className="h-4 w-4 text-[#2563EB]" />
                     {t.language_label}
                   </span>
                   <select
                     value={userPrefs.language}
                     onChange={(e) => handleLanguageChange(e.target.value)}
-                    className="min-h-[38px] max-w-[190px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-xs font-bold text-neutral-900 dark:text-white outline-none"
+                    className="min-h-[38px] max-w-[190px] rounded-xl border border-[#E2E8F0] bg-white px-2.5 text-xs font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
                   >
                     {SUPPORTED_LANGUAGES.map((lang) => (
                       <option key={lang.code} value={lang.code}>
@@ -602,17 +602,17 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               </div>
 
               {/* Navigation Menu List */}
-              <div className="divide-y divide-neutral-100 dark:divide-neutral-800 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
+              <div className="divide-y divide-[#E2E8F0] rounded-2xl border border-[#E2E8F0] bg-white overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setSection('profile')}
-                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                 >
-                  <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    <User className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                  <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                    <User className="h-4 w-4 text-[#475569]" />
                     Foto de perfil, nome, telefone e recado
                   </span>
-                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  <ChevronRight className="h-4 w-4 text-[#475569]" />
                 </button>
 
                 {onOpenWallet && (
@@ -622,18 +622,18 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClose();
                       onOpenWallet();
                     }}
-                    className="flex min-h-[58px] w-full items-center justify-between px-4 text-left bg-[#ECFDF5]/80 dark:bg-emerald-950/30 hover:bg-[#CCFBF1]/70 dark:hover:bg-emerald-950/50"
+                    className="flex min-h-[58px] w-full items-center justify-between px-4 text-left bg-[#ECFDF5] hover:bg-[#D1FAE5]/70"
                   >
-                    <span className="flex items-center gap-3 text-sm font-extrabold text-neutral-950 dark:text-white">
-                      <Wallet className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7]" />
+                    <span className="flex items-center gap-3 text-sm font-extrabold text-[#0F172A]">
+                      <Wallet className="h-4 w-4 text-[#10B981]" />
                       <span>
                         {t.wallet_title} ({currentUser.role === 'driver' ? `${t.withdraw} / ${t.transfer}` : `${t.deposit} / ${t.transfer}`})
-                        <span className="block text-[11px] font-mono-num font-bold text-emerald-700 dark:text-emerald-400">
+                        <span className="block text-[11px] font-mono-num font-bold text-[#059669]">
                           {t.wallet_balance}: {formatBRL(currentUser.wallet_balance || 0)}
                         </span>
                       </span>
                     </span>
-                    <ChevronRight className="h-4 w-4 text-neutral-500" />
+                    <ChevronRight className="h-4 w-4 text-[#059669]" />
                   </button>
                 )}
 
@@ -641,13 +641,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSection('addresses')}
-                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                   >
-                    <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                      <Home className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                    <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                      <Home className="h-4 w-4 text-[#475569]" />
                       Endereços (Casa, Trabalho) e Pagamento
                     </span>
-                    <ChevronRight className="h-4 w-4 text-neutral-400" />
+                    <ChevronRight className="h-4 w-4 text-[#475569]" />
                   </button>
                 )}
 
@@ -655,38 +655,38 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSection('vehicle')}
-                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                   >
-                    <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                      <Car className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                    <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                      <Car className="h-4 w-4 text-[#475569]" />
                       Veículo e Chave Pix de repasse
                     </span>
-                    <ChevronRight className="h-4 w-4 text-neutral-400" />
+                    <ChevronRight className="h-4 w-4 text-[#475569]" />
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={() => setSection('password')}
-                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                 >
-                  <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    <Lock className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                  <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                    <Lock className="h-4 w-4 text-[#475569]" />
                     Alterar senha de acesso
                   </span>
-                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  <ChevronRight className="h-4 w-4 text-[#475569]" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSection('prefs')}
-                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                 >
-                  <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    <Volume2 className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-                    Acessibilidade · Voz, Sons & Notificações
+                  <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                    <Volume2 className="h-4 w-4 text-[#475569]" />
+                    {t.voice_sounds_btn}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  <ChevronRight className="h-4 w-4 text-[#475569]" />
                 </button>
 
                 {onOpenSupport && (
@@ -696,45 +696,45 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClose();
                       onOpenSupport();
                     }}
-                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                   >
-                    <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                      <Headphones className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                      <Headphones className="h-4 w-4 text-[#2563EB]" />
                       {t.support_admin}
                     </span>
-                    <ChevronRight className="h-4 w-4 text-neutral-400" />
+                    <ChevronRight className="h-4 w-4 text-[#475569]" />
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={() => setSection('privacy')}
-                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
                 >
-                  <span className="flex items-center gap-3 text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    <Shield className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                  <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                    <Shield className="h-4 w-4 text-[#475569]" />
                     {t.privacy_security}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  <ChevronRight className="h-4 w-4 text-[#475569]" />
                 </button>
               </div>
 
               {/* Quick Accessibility 1-tap Mute/Unmute */}
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-4 py-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   {userPrefs.voice_enabled || userPrefs.sounds_enabled ? (
-                    <Volume2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <Volume2 className="h-4 w-4 text-[#2563EB] shrink-0" />
                   ) : (
-                    <VolumeX className="h-4 w-4 text-neutral-400 shrink-0" />
+                    <VolumeX className="h-4 w-4 text-[#475569] shrink-0" />
                   )}
                   <div className="min-w-0">
-                    <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate">
-                      Acessibilidade Rápida
+                    <p className="text-xs font-extrabold text-[#0F172A] truncate">
+                      {t.quick_access_title}
                     </p>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                    <p className="text-[11px] text-[#475569] truncate">
                       {userPrefs.voice_enabled || userPrefs.sounds_enabled || userPrefs.notifications_enabled
-                        ? 'Voz, sons e alertas ativos'
-                        : 'Todos os áudios e alertas silenciados'}
+                        ? t.quick_access_all_on
+                        : t.quick_access_all_off}
                     </p>
                   </div>
                 </div>
@@ -754,34 +754,34 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3 text-xs font-extrabold transition ${
                     userPrefs.voice_enabled || userPrefs.sounds_enabled
-                      ? 'bg-[#047857] text-white dark:bg-neutral-700 dark:text-white'
-                      : 'bg-emerald-600 text-white'
+                      ? 'bg-[#2563EB] text-white'
+                      : 'bg-[#10B981] text-white'
                   }`}
                 >
                   {userPrefs.voice_enabled || userPrefs.sounds_enabled
-                    ? 'Silenciar Tudo'
-                    : 'Reativar Tudo'}
+                    ? t.mute_all_btn
+                    : t.unmute_all_btn}
                 </button>
               </div>
 
               {/* App Version & OTA Check Card */}
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-4 py-3">
                 <div>
-                  <p className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400">
+                  <p className="text-[11px] font-bold text-[#475569]">
                     {t.app_version_label}
                   </p>
-                  <p className="font-mono-num text-sm font-extrabold text-neutral-950 dark:text-white">
-                    v{installedVersion} · {platformConfig?.site_name || 'Boreal Mobilidade'}
+                  <p className="font-mono-num text-sm font-extrabold text-[#0F172A]">
+                    v{installedVersion} · {platformConfig?.site_name || 'Go Driver Mobilidade'}
                   </p>
                 </div>
                 <button
                   type="button"
                   disabled={checkingOta}
                   onClick={handleCheckOta}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-xs font-extrabold text-white dark:text-[#0F2421] disabled:opacity-50"
+                  className="aurora-accent-flow inline-flex min-h-[38px] items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold text-white disabled:opacity-50"
                 >
                   <DownloadCloud className="h-3.5 w-3.5" />
-                  {checkingOta ? 'Verificando...' : t.check_updates}
+                  {checkingOta ? t.checking_updates : t.check_updates}
                 </button>
               </div>
 
@@ -789,20 +789,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <PWAInstallButton
                 variant="settings"
                 apkUrl={platformConfig?.ota_apk_url}
-                siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
+                siteName={platformConfig?.site_name || 'Go Driver Mobilidade'}
               />
             </div>
           )}
 
           {section === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 p-4">
+              <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4">
                 <div className="relative">
                   <AvatarImage
                     src={avatarUrl}
                     name={fullName || currentUser.full_name}
-                    className="h-24 w-24 rounded-full object-cover border-4 border-[#2DD4BF] shadow"
-                    fallbackClassName="flex h-24 w-24 items-center justify-center rounded-full bg-[#047857] text-[#6EE7B7] font-display text-3xl font-extrabold shadow"
+                    className="h-24 w-24 rounded-full object-cover border-4 border-[#2563EB] shadow"
+                    fallbackClassName="flex h-24 w-24 items-center justify-center rounded-full bg-[#2563EB] text-white font-display text-3xl font-extrabold shadow"
                   />
                   <label className="aurora-accent-flow absolute -bottom-1 -right-1 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-white border-2 border-white shadow">
                     <Camera className="h-4 w-4" />
@@ -815,7 +815,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </label>
                 </div>
                 <div className="flex items-center gap-3">
-                  <label className="cursor-pointer text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7] underline">
+                  <label className="cursor-pointer text-xs font-extrabold text-[#2563EB] underline">
                     Escolher foto da galeria / câmera
                     <input
                       type="file"
@@ -828,7 +828,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setAvatarUrl(null)}
-                      className="text-xs font-bold text-red-600 dark:text-red-400"
+                      className="text-xs font-bold text-red-600"
                     >
                       Remover
                     </button>
@@ -837,42 +837,42 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Nome completo
+                <label className="block text-xs font-bold text-[#475569] mb-1">
+                  {t.profile_full_name}
                 </label>
                 <input
                   type="text"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Telefone / WhatsApp
+                <label className="block text-xs font-bold text-[#475569] mb-1">
+                  {t.profile_phone}
                 </label>
                 <input
                   type="tel"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">E-mail</label>
+                <label className="block text-xs font-bold text-[#475569] mb-1">{t.profile_email}</label>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Recado / Observação pessoal (opcional)
+                <label className="block text-xs font-bold text-[#475569] mb-1">
+                  {t.profile_bio}
                 </label>
                 <input
                   type="text"
@@ -880,7 +880,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Ex: Ponto próximo à portaria principal"
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
               <button
@@ -896,7 +896,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'addresses' && (
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div>
-                <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-[#475569] mb-1">
                   <Home className="h-3.5 w-3.5" /> Endereço de Casa
                 </label>
                 <input
@@ -904,12 +904,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   value={homeQuery}
                   onChange={(e) => searchSavedAddress(e.target.value, 'home')}
                   placeholder="Rua com número, bairro ou ponto de referência..."
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs outline-none focus:border-neutral-950"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
               <div>
-                <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-[#475569] mb-1">
                   <Briefcase className="h-3.5 w-3.5" /> Endereço de Trabalho
                 </label>
                 <input
@@ -917,12 +917,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   value={workQuery}
                   onChange={(e) => searchSavedAddress(e.target.value, 'work')}
                   placeholder="Ex: Galeria Rui Barbosa, Av. Santo Antônio..."
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs outline-none focus:border-neutral-950"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
               <div>
-                <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-[#475569] mb-1">
                   <Star className="h-3.5 w-3.5" /> Adicionar Local Favorito
                 </label>
                 <input
@@ -930,12 +930,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   value={favQuery}
                   onChange={(e) => searchSavedAddress(e.target.value, 'favorite')}
                   placeholder="Ex: Parque Euclides Dourado, hospital, mercado..."
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-xs outline-none focus:border-neutral-950"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
               {addrSuggestions.length > 0 && (
-                <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-100 dark:divide-neutral-800 max-h-44 overflow-y-auto bg-white dark:bg-neutral-800">
+                <div className="rounded-2xl border border-[#E2E8F0] divide-y divide-[#E2E8F0] max-h-44 overflow-y-auto bg-white">
                   {addrSuggestions.map((s, idx) => (
                     <button
                       key={idx}
@@ -966,10 +966,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         }
                         setAddrSuggestions([]);
                       }}
-                      className="block w-full px-3.5 py-2.5 text-left text-xs hover:bg-neutral-50 dark:hover:bg-neutral-700"
+                      className="block w-full px-3.5 py-2.5 text-left text-xs hover:bg-[#F4F6F9]"
                     >
-                      <p className="font-bold text-neutral-900 dark:text-white">{s.address}</p>
-                      <p className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{s.subtitle}</p>
+                      <p className="font-bold text-[#0F172A]">{s.address}</p>
+                      <p className="text-[10px] text-[#475569] truncate">{s.subtitle}</p>
                     </button>
                   ))}
                 </div>
@@ -977,13 +977,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
               {favorites.length > 0 && (
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400">Favoritos salvos</p>
+                  <p className="text-[11px] font-bold text-[#475569]">Favoritos salvos</p>
                   {favorites.map((fav, idx) => (
                     <div
                       key={`${fav.address}-${idx}`}
-                      className="flex items-center justify-between rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-xs"
+                      className="flex items-center justify-between rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 py-2 text-xs"
                     >
-                      <span className="truncate font-semibold text-neutral-800 dark:text-neutral-200 pr-2">
+                      <span className="truncate font-semibold text-[#0F172A] pr-2">
                         {fav.label} · {fav.address}
                       </span>
                       <button
@@ -991,7 +991,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         onClick={() =>
                           setFavorites((prev) => prev.filter((_, i) => i !== idx))
                         }
-                        className="text-red-600 dark:text-red-400 font-bold shrink-0 px-2 py-1"
+                        className="text-red-600 font-bold shrink-0 px-2 py-1"
                       >
                         Remover
                       </button>
@@ -1001,10 +1001,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               )}
 
               {onOpenWallet && (
-                <div className="aurora-border-glow flex items-center justify-between gap-3 rounded-2xl border border-[#6EE7B7] bg-[#ECFDF5] dark:bg-emerald-950/60 p-4 text-[#0F2421] dark:text-white">
-                  <div>
-                    <p className="text-[11px] font-bold text-[#334E4A] dark:text-[#6EE7B7]">Meu Saldo no App</p>
-                    <p className="font-mono-num text-xl font-extrabold text-[#047857] dark:text-[#2DD4BF]">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-4 text-[#0F172A]">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold text-[#059669]">Saldo GoPay disponível</p>
+                    <p className="mt-0.5 font-mono-num text-xl font-extrabold text-[#10B981]">
                       {formatBRL(currentUser.wallet_balance || 0)}
                     </p>
                   </div>
@@ -1014,15 +1014,15 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClose();
                       onOpenWallet();
                     }}
-                    className="aurora-accent-flow min-h-[40px] rounded-xl px-3.5 text-xs font-extrabold text-white"
+                    className="aurora-accent-flow min-h-[42px] shrink-0 whitespace-nowrap rounded-xl px-4 text-xs font-extrabold text-white"
                   >
-                    Depositar Saldo (Pix)
+                    Abrir Carteira GoPay
                   </button>
                 </div>
               )}
 
               <div>
-                <label className="flex items-center gap-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-[#475569] mb-2">
                   <CreditCard className="h-3.5 w-3.5" /> Pagamento Preferencial
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -1037,8 +1037,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => setPreferredPayment(m.id)}
                       className={`min-h-[42px] rounded-xl border text-xs font-bold ${
                         preferredPayment === m.id
-                          ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
-                          : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+                          ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                          : 'bg-[#F4F6F9] text-[#0F172A] border-[#E2E8F0]'
                       }`}
                     >
                       {m.label}
@@ -1060,20 +1060,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'vehicle' && (
             <div className="space-y-4">
               {/* Registered Vehicles Switcher */}
-              <div className="rounded-2xl border border-[#2DD4BF]/40 bg-[#ECFDF5]/60 dark:bg-emerald-950/25 p-3.5 space-y-2.5">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
+                    <p className="text-xs font-extrabold text-[#0F172A]">
                       Meus Veículos Cadastrados ({vehiclesList.length})
                     </p>
-                    <p className="text-[11px] text-[#334E4A] dark:text-neutral-300">
+                    <p className="text-[11px] text-[#475569]">
                       Você só recebe chamadas compatíveis com o veículo ativo.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowAddVehicle((v) => !v)}
-                    className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
+                    className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8]"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     {showAddVehicle ? 'Fechar' : 'Novo Veículo'}
@@ -1100,26 +1100,26 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         key={veh.id}
                         className={`flex items-center justify-between gap-2 rounded-2xl border p-3 transition ${
                           isActive
-                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-white dark:bg-neutral-900 shadow-xs'
-                            : 'border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900/60'
+                            ? 'border-[#2563EB] bg-white shadow-xs'
+                            : 'border-[#E2E8F0] bg-white'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div
                             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
                               isActive
-                                ? 'bg-[#047857] text-white dark:bg-[#2DD4BF] dark:text-[#0F2421]'
-                                : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300'
+                                ? 'bg-[#2563EB] text-white'
+                                : 'bg-[#F4F6F9] text-[#475569]'
                             }`}
                           >
                             <Icon className="h-4 w-4" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs font-extrabold text-[#0F2421] dark:text-white truncate">
+                            <p className="text-xs font-extrabold text-[#0F172A] truncate">
                               {veh.vehicle_model || 'Veículo'} ·{' '}
                               <span className="font-mono-num">{veh.vehicle_plate}</span>
                             </p>
-                            <p className="text-[10px] text-[#334E4A] dark:text-neutral-400 truncate">
+                            <p className="text-[10px] text-[#475569] truncate">
                               {typeLabel} · {veh.vehicle_color}
                             </p>
                           </div>
@@ -1127,7 +1127,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
                         <div className="flex items-center gap-1.5 shrink-0">
                           {isActive ? (
-                            <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800 dark:text-emerald-300">
+                            <span className="inline-flex items-center gap-1 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] px-2.5 py-1 text-[10px] font-extrabold text-[#059669]">
                               <Check className="h-3 w-3" />
                               Ativo
                             </span>
@@ -1136,7 +1136,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                               type="button"
                               disabled={saving}
                               onClick={() => void handleSelectSavedVehicle(veh)}
-                              className="min-h-[34px] rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-2.5 text-[11px] font-extrabold text-white dark:text-[#0F2421] disabled:opacity-50"
+                              className="min-h-[34px] rounded-xl bg-[#2563EB] px-2.5 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8] disabled:opacity-50"
                             >
                               Usar este
                             </button>
@@ -1146,7 +1146,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                               type="button"
                               disabled={saving}
                               onClick={() => void handleRemoveSavedVehicle(veh.id)}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
                               aria-label="Remover veículo"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1161,9 +1161,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 {showAddVehicle && (
                   <form
                     onSubmit={handleAddNewVehicle}
-                    className="rounded-2xl border border-[#2DD4BF] bg-white dark:bg-neutral-900 p-3.5 space-y-2.5"
+                    className="rounded-2xl border border-[#BFDBFE] bg-white p-3.5 space-y-2.5"
                   >
-                    <p className="text-xs font-extrabold text-[#0F2421] dark:text-white">
+                    <p className="text-xs font-extrabold text-[#0F172A]">
                       Cadastrar Novo Veículo
                     </p>
                     <div className="grid grid-cols-3 gap-2">
@@ -1178,8 +1178,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                           onClick={() => setNewVehType(vt.id)}
                           className={`min-h-[38px] rounded-xl border text-xs font-bold ${
                             newVehType === vt.id
-                              ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
-                              : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+                              ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                              : 'bg-[#F4F6F9] text-[#475569] border-[#E2E8F0]'
                           }`}
                         >
                           {vt.label}
@@ -1192,7 +1192,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       value={newVehModel}
                       onChange={(e) => setNewVehModel(e.target.value)}
                       placeholder="Modelo (Ex: Honda CG 160 / Onix)"
-                      className="min-h-[42px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white"
+                      className="min-h-[42px] w-full rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                     />
                     <div className="grid grid-cols-2 gap-2">
                       <input
@@ -1201,7 +1201,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         value={newVehPlate}
                         onChange={(e) => setNewVehPlate(e.target.value.toUpperCase())}
                         placeholder="Placa (ABC1D23)"
-                        className="min-h-[42px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 font-mono-num text-xs uppercase text-neutral-950 dark:text-white"
+                        className="min-h-[42px] rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 font-mono-num text-xs uppercase text-[#0F172A] outline-none focus:border-[#2563EB]"
                       />
                       <input
                         type="text"
@@ -1209,7 +1209,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         value={newVehColor}
                         onChange={(e) => setNewVehColor(e.target.value)}
                         placeholder="Cor"
-                        className="min-h-[42px] rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs text-neutral-950 dark:text-white"
+                        className="min-h-[42px] rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                       />
                     </div>
                     <button
@@ -1224,11 +1224,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               </div>
 
               <form onSubmit={handleSaveProfile} className="space-y-3">
-                <p className="text-xs font-extrabold text-neutral-800 dark:text-neutral-200">
+                <p className="text-xs font-extrabold text-[#0F172A]">
                   Editar Veículo Ativo & Chave Pix
                 </p>
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-xs font-bold text-[#475569] mb-1">
                     Categoria do Veículo Ativo
                   </label>
                   <div className="grid grid-cols-3 gap-2">
@@ -1243,8 +1243,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                         onClick={() => setVehicleType(vt.id)}
                         className={`min-h-[42px] rounded-xl border text-xs font-bold ${
                           vehicleType === vt.id
-                            ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421]'
-                            : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700'
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'bg-[#F4F6F9] text-[#475569] border-[#E2E8F0]'
                         }`}
                       >
                         {vt.label}
@@ -1258,7 +1258,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   value={vehicleModel}
                   onChange={(e) => setVehicleModel(e.target.value)}
                   placeholder="Modelo"
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
                 <div className="grid grid-cols-2 gap-2.5">
                   <input
@@ -1267,7 +1267,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     value={vehiclePlate}
                     onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
                     placeholder="Placa"
-                    className="min-h-[46px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 font-mono-num text-sm uppercase"
+                    className="min-h-[46px] rounded-2xl border border-[#E2E8F0] bg-white px-3.5 font-mono-num text-sm uppercase text-[#0F172A] outline-none focus:border-[#2563EB]"
                   />
                   <input
                     type="text"
@@ -1275,11 +1275,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     value={vehicleColor}
                     onChange={(e) => setVehicleColor(e.target.value)}
                     placeholder="Cor"
-                    className="min-h-[46px] rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
+                    className="min-h-[46px] rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-xs font-bold text-[#475569] mb-1">
                     Chave Pix para repasses
                   </label>
                   <input
@@ -1287,7 +1287,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     required
                     value={pixKey}
                     onChange={(e) => setPixKey(e.target.value)}
-                    className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 font-mono-num text-sm"
+                    className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 font-mono-num text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                   />
                 </div>
                 <button
@@ -1304,7 +1304,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'password' && (
             <form onSubmit={handleChangePassword} className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-xs font-bold text-[#475569] mb-1">
                   Nova senha (mínimo 6 caracteres)
                 </label>
                 <input
@@ -1313,7 +1313,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   minLength={6}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 text-sm"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
               <button
@@ -1329,13 +1329,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {section === 'prefs' && (
             <div className="space-y-3">
               {/* Accessibility 1-Tap Master Switch */}
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#6EE7B7] bg-[#ECFDF5] dark:bg-emerald-950/30 p-4">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                    Acessibilidade · Controle Geral
+                  <p className="text-sm font-extrabold text-[#0F172A]">
+                    {t.access_general_title}
                   </p>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                    Silencie ou reative guia por voz, toques sonoros e notificações com 1 toque.
+                  <p className="text-xs text-[#475569]">
+                    {t.access_general_desc}
                   </p>
                 </div>
                 <button
@@ -1356,22 +1356,22 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     userPrefs.voice_enabled ||
                     userPrefs.sounds_enabled ||
                     userPrefs.notifications_enabled
-                      ? 'bg-[#047857] text-white'
-                      : 'bg-emerald-600 text-white'
+                      ? 'bg-[#2563EB] text-white'
+                      : 'bg-[#10B981] text-white'
                   }`}
                 >
                   {userPrefs.voice_enabled ||
                   userPrefs.sounds_enabled ||
                   userPrefs.notifications_enabled
-                    ? 'Silenciar Tudo'
-                    : 'Reativar Tudo'}
+                    ? t.mute_all_btn
+                    : t.unmute_all_btn}
                 </button>
               </div>
 
               {/* Language Selector Grid */}
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 space-y-2.5">
-                <p className="flex items-center gap-2 text-sm font-extrabold text-neutral-950 dark:text-white">
-                  <Globe className="h-4 w-4 text-blue-600" />
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 space-y-2.5">
+                <p className="flex items-center gap-2 text-sm font-extrabold text-[#0F172A]">
+                  <Globe className="h-4 w-4 text-[#2563EB]" />
                   {t.language_label}
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -1382,32 +1382,32 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       onClick={() => handleLanguageChange(lang.code)}
                       className={`rounded-xl border px-2.5 py-2 text-left text-xs transition ${
                         userPrefs.language === lang.code
-                          ? 'bg-[#047857] text-white border-[#047857] dark:bg-[#2DD4BF] dark:text-[#0F2421] font-extrabold'
-                          : 'bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700 font-bold'
+                          ? 'bg-[#2563EB] text-white border-[#2563EB] font-extrabold'
+                          : 'bg-white text-[#0F172A] border-[#E2E8F0] font-bold'
                       }`}
                     >
                       <span className="block truncate">{lang.nativeName}</span>
-                      <span className="block text-[10px] opacity-70 truncate">{lang.label}</span>
+                      <span className="block text-[10px] opacity-75 truncate">{lang.label}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
               {/* Voice Guide */}
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 space-y-3">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
                     {userPrefs.voice_enabled ? (
-                      <Volume2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <Volume2 className="h-5 w-5 text-[#2563EB] shrink-0 mt-0.5" />
                     ) : (
-                      <VolumeX className="h-5 w-5 text-neutral-400 shrink-0 mt-0.5" />
+                      <VolumeX className="h-5 w-5 text-[#475569] shrink-0 mt-0.5" />
                     )}
                     <div>
-                      <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                        Guia por Voz (Navegação GPS)
+                      <p className="text-sm font-extrabold text-[#0F172A]">
+                        {t.voice_assistant_title}
                       </p>
-                      <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                        Lê instruções de rota e avisos da corrida em voz alta no idioma selecionado.
+                      <p className="text-xs text-[#475569]">
+                        {t.voice_assistant_desc}
                       </p>
                     </div>
                   </div>
@@ -1419,90 +1419,41 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       });
                       setUserPrefs(next);
                       if (next.voice_enabled) {
-                        speakPtBr('Guia por voz ativado.');
+                        speakPtBr('Olá! Eu sou a Evelyn, sua assistente da Go Driver. Voz ativada!', true);
                       }
                     }}
                     className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
                       userPrefs.voice_enabled
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                        ? 'bg-[#2563EB] text-white'
+                        : 'bg-[#E2E8F0] text-[#475569]'
                     }`}
                   >
-                    {userPrefs.voice_enabled ? 'Ativada' : 'Silenciada'}
+                    {userPrefs.voice_enabled ? t.voice_enabled_badge : t.voice_muted_badge}
                   </button>
                 </div>
                 {userPrefs.voice_enabled && (
                   <button
                     type="button"
                     onClick={() =>
-                      speakPtBr('Vire à direita em duzentos metros rumo ao destino.')
+                      speakPtBr('Olá! Aqui é a Evelyn, da Go Driver. Tudo pronto para seguir viagem com segurança.', true)
                     }
-                    className="rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-bold text-neutral-900 dark:text-white"
+                    className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F172A] hover:bg-[#F1F5F9]"
                   >
-                    Testar voz agora
+                    {t.voice_test_btn}
                   </button>
                 )}
               </div>
 
-              {/* Sounds */}
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    {userPrefs.sounds_enabled ? (
-                      <Volume2 className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <VolumeX className="h-5 w-5 text-neutral-400 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                        Sons e Toques de Alerta
-                      </p>
-                      <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                        Toca campainha em novas chamadas, entregas, aceite, chat e chegada.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = saveUserPreferences({
-                        sounds_enabled: !userPrefs.sounds_enabled,
-                      });
-                      setUserPrefs(next);
-                      if (next.sounds_enabled) {
-                        void playSoundCue('accepted');
-                      }
-                    }}
-                    className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
-                      userPrefs.sounds_enabled
-                        ? 'bg-[#047857] text-white'
-                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
-                    }`}
-                  >
-                    {userPrefs.sounds_enabled ? 'Ativados' : 'Mudos'}
-                  </button>
-                </div>
-                {userPrefs.sounds_enabled && (
-                  <button
-                    type="button"
-                    onClick={() => void playSoundCue('offer')}
-                    className="rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-bold text-neutral-900 dark:text-white"
-                  >
-                    Testar toque sonoro
-                  </button>
-                )}
-              </div>
-
-              {/* System Notifications */}
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 flex items-center justify-between gap-3">
+              {/* System Notifications (Background only) */}
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 flex items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
-                  <Bell className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                  <Bell className="h-5 w-5 text-[#2563EB] shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                      Notificações Pop-up no Sistema
+                    <p className="text-sm font-extrabold text-[#0F172A]">
+                      {t.bg_alerts_title}
                     </p>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                      Alertas visuais no Android/navegador durante corridas.
+                    <p className="text-xs text-[#475569]">
+                      {t.bg_alerts_desc}
                     </p>
                   </div>
                 </div>
@@ -1516,24 +1467,24 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
                     userPrefs.notifications_enabled
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                      ? 'bg-[#2563EB] text-white'
+                      : 'bg-[#E2E8F0] text-[#475569]'
                   }`}
                 >
-                  {userPrefs.notifications_enabled ? 'Ativas' : 'Desativadas'}
+                  {userPrefs.notifications_enabled ? t.alerts_active_badge : t.alerts_off_badge}
                 </button>
               </div>
 
               {/* Background-Only Floating Bubble Toggle */}
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 flex items-center justify-between gap-3">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 flex items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
-                  <ShieldCheck className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7] shrink-0 mt-0.5" />
+                  <ShieldCheck className="h-5 w-5 text-[#2563EB] shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                      Balão Flutuante em Segundo Plano (APK)
+                    <p className="text-sm font-extrabold text-[#0F172A]">
+                      {t.bubble_bg_title}
                     </p>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                      Aparece apenas fora do app sobre outros apps quando você minimiza, para voltar rápido ao chamado.
+                    <p className="text-xs text-[#475569]">
+                      {t.bubble_bg_desc}
                     </p>
                   </div>
                 </div>
@@ -1549,11 +1500,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
                     (userPrefs.floating_bubble_enabled ?? true)
-                      ? 'bg-[#047857] text-white'
-                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                      ? 'bg-[#2563EB] text-white'
+                      : 'bg-[#E2E8F0] text-[#475569]'
                   }`}
                 >
-                  {(userPrefs.floating_bubble_enabled ?? true) ? 'Ativo' : 'Oculto'}
+                  {(userPrefs.floating_bubble_enabled ?? true) ? t.bubble_active_badge : t.bubble_hidden_badge}
                 </button>
               </div>
 
@@ -1570,8 +1521,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
           {section === 'privacy' && (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4 text-xs text-neutral-700 dark:text-neutral-200 space-y-2 leading-relaxed">
-                <p className="font-extrabold text-neutral-950 dark:text-white">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 text-xs text-[#475569] space-y-2 leading-relaxed">
+                <p className="font-extrabold text-[#0F172A]">
                   Política de Privacidade, Segurança e Isolamento de Dados (RLS)
                 </p>
                 <p>
@@ -1591,9 +1542,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={() => setLegalDocsOpen(true)}
-                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-xs font-extrabold text-neutral-950 dark:text-white hover:bg-neutral-50 dark:hover:bg-neutral-700"
+                className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] text-xs font-extrabold text-[#0F172A] hover:bg-[#E2E8F0]"
               >
-                <FileText className="h-4 w-4" />
+                <FileText className="h-4 w-4 text-[#2563EB]" />
                 Ler Termos de Uso, Segurança, Privacidade e Cookies
               </button>
 
@@ -1601,14 +1552,14 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
-                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-sm font-bold text-red-700 dark:text-red-300 hover:bg-red-100"
+                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100"
                 >
                   <Trash2 className="h-4 w-4" />
                   Excluir / Anonimizar minha conta (LGPD)
                 </button>
               ) : (
-                <div className="rounded-2xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/50 p-4 space-y-3">
-                  <div className="flex items-start gap-2.5 text-red-800 dark:text-red-200">
+                <div className="rounded-2xl border border-red-300 bg-red-50 p-4 space-y-3">
+                  <div className="flex items-start gap-2.5 text-red-800">
                     <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
                     <p className="text-xs font-semibold">
                       Esta ação anonimiza irreversivelmente seu nome, CPF, telefone, e-mail e
@@ -1619,7 +1570,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setConfirmDelete(false)}
-                      className="min-h-[44px] flex-1 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-xs font-bold text-neutral-800 dark:text-neutral-200"
+                      className="min-h-[44px] flex-1 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-[#0F172A]"
                     >
                       Cancelar
                     </button>
@@ -1641,7 +1592,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
       {permsModalOpen && (
         <PermissionsPromptModal
-          siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
+          siteName={platformConfig?.site_name || 'Go Driver Mobilidade'}
           onClose={() => setPermsModalOpen(false)}
         />
       )}
@@ -1649,7 +1600,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       {legalDocsOpen && (
         <LegalDocsModal
           initialTab="terms"
-          siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
+          siteName={platformConfig?.site_name || 'Go Driver Mobilidade'}
           onClose={() => setLegalDocsOpen(false)}
         />
       )}
@@ -1657,7 +1608,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       {otaUpdateInfo && (
         <OtaUpdateModal
           updateInfo={otaUpdateInfo}
-          siteName={platformConfig?.site_name || 'Boreal Mobilidade'}
+          siteName={platformConfig?.site_name || 'Go Driver Mobilidade'}
           onClose={() => setOtaUpdateInfo(null)}
         />
       )}

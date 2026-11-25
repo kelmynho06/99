@@ -53,7 +53,7 @@ import type {
   WalletWithdrawal,
 } from '../types/mobility';
 import { AvatarImage } from './AvatarImage';
-import { BorealLogoMark } from './BorealBrandAssets';
+import { resolveBrandLogo } from '../lib/brandAssets';
 import { Receipt66PayModal } from './Receipt66PayModal';
 
 export type WalletModalTab = 'home' | 'deposit' | 'transfer' | 'qrcode' | 'withdraw' | 'ledger';
@@ -78,8 +78,8 @@ const TX_REASON_LABEL: Record<WalletTransaction['type'], string> = {
   ride_earning: 'Ganho de corrida',
   payout: 'Repasse Pix',
   dispute_settlement: 'Acerto de disputa',
-  transfer_in: 'Transferência BorealPay recebida',
-  transfer_out: 'Transferência BorealPay enviada',
+  transfer_in: 'Transferência GoPay recebida',
+  transfer_out: 'Transferência GoPay enviada',
   withdrawal: 'Saque Pix solicitado',
   withdrawal_refund: 'Estorno de saque Pix',
 };
@@ -155,8 +155,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   });
   const [noteInput, setNoteInput] = useState('');
 
-  // Chave BorealPay editor state
-  const defaultFallback66Key = `BOREAL-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+  // Chave GoPay editor state
+  const defaultFallback66Key = `GO-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   const [editingPay66Key, setEditingPay66Key] = useState(false);
   const [pay66KeyInput, setPay66KeyInput] = useState(
     () => currentUser.pay66_key || defaultFallback66Key
@@ -347,7 +347,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     const startScanner = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
-          setQrScanError('Câmera indisponível neste navegador. Digite a Chave BorealPay manualmente.');
+          setQrScanError('Câmera indisponível neste navegador. Digite a Chave GoPay manualmente.');
           return;
         }
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -422,10 +422,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   setSelectedRecipient(target);
                   setRecipientMatches([]);
                   setRecipientQuery(target.pay66_key || target.full_name);
-                  setSuccessMsg(`QR Code BorealPay lido! Destinatário: ${target.full_name}.`);
+                  setSuccessMsg(`QR Code GoPay lido! Destinatário: ${target.full_name}.`);
                 } else {
                   setRecipientQuery(detected);
-                  setError('QR Code lido, mas nenhum usuário BorealPay ativo foi localizado.');
+                  setError('QR Code lido, mas nenhum usuário GoPay ativo foi localizado.');
                 }
                 return;
               }
@@ -445,7 +445,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
         });
       } catch {
         if (!cancelled) {
-          setQrScanError('Não foi possível acessar a câmera. Informe a Chave BorealPay no campo de busca.');
+          setQrScanError('Não foi possível acessar a câmera. Informe a Chave GoPay no campo de busca.');
         }
       }
     };
@@ -486,13 +486,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     [platformConfig, numericAmount, currentUser.id, cycle]
   );
 
-  // Identificador e Chave exclusiva BorealPay
+  // Identificador e Chave exclusiva GoPay
   const myPay66Key =
     currentUser.pay66_key ||
-    `BOREAL-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    `GO-${currentUser.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   const my66PayIdentifier = currentUser.email || currentUser.phone || currentUser.id;
   const my66PayQrPayload = useMemo(
-    () => `BOREALPAY|${currentUser.id}|${myPay66Key}|${currentUser.email}|${currentUser.full_name}`,
+    () => `GOPAY|${currentUser.id}|${myPay66Key}|${currentUser.email}|${currentUser.full_name}`,
     [currentUser.id, myPay66Key, currentUser.email, currentUser.full_name]
   );
 
@@ -554,7 +554,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       await createWalletDepositRequest(currentUser.id, numericAmount, pixPayload, noteInput);
       setNoteInput('');
       setSuccessMsg(
-        `Solicitação de ${formatBRL(numericAmount)} enviada! Assim que o Administrador confirmar no banco, o valor entra automaticamente na sua carteira BorealPay.`
+        `Solicitação de ${formatBRL(numericAmount)} enviada! Assim que o Administrador confirmar no banco, o valor entra automaticamente na sua carteira GoPay.`
       );
       await loadWalletData();
     } catch (err) {
@@ -567,6 +567,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const canTransferDirect =
     Boolean(selectedRecipient) ||
     recipientQuery.trim().includes('@') ||
+    recipientQuery.trim().toUpperCase().startsWith('GO-') ||
+    recipientQuery.trim().toUpperCase().startsWith('GOPAY|') ||
     recipientQuery.trim().toUpperCase().startsWith('BOREAL-') ||
     recipientQuery.trim().toUpperCase().startsWith('BOREALPAY|') ||
     recipientQuery.trim().toUpperCase().startsWith('66-') ||
@@ -583,10 +585,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       onUserUpdated(updated);
       setEditingPay66Key(false);
       setSuccessMsg(
-        `Chave BorealPay "${updated.pay66_key}" cadastrada! Seu QR Code BorealPay foi atualizado automaticamente.`
+        `Chave GoPay "${updated.pay66_key}" cadastrada! Seu QR Code GoPay foi atualizado automaticamente.`
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar sua Chave BorealPay.');
+      setError(err instanceof Error ? err.message : 'Erro ao salvar sua Chave GoPay.');
     } finally {
       setSavingPay66Key(false);
     }
@@ -603,7 +605,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       return;
     }
     if (numericTransferAmount < 1) {
-      setError('O valor mínimo para transferência BorealPay é R$ 1,00.');
+      setError('O valor mínimo para transferência GoPay é R$ 1,00.');
       return;
     }
     if (numericTransferAmount > currentUser.wallet_balance) {
@@ -616,7 +618,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       const receiptTx = await transferirSaldo66(targetParam, numericTransferAmount, transferNote);
       const targetName = selectedRecipient?.full_name || recipientQuery.trim();
       setSuccessMsg(
-        `Transferência BorealPay de ${formatBRL(numericTransferAmount)} para ${targetName} concluída instantaneamente!`
+        `Transferência GoPay de ${formatBRL(numericTransferAmount)} para ${targetName} concluída instantaneamente!`
       );
       setLastTransferReceiptTx(receiptTx);
       setSelectedRecipient(null);
@@ -624,7 +626,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       setTransferNote('');
       await loadWalletData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao concluir transferência BorealPay.');
+      setError(err instanceof Error ? err.message : 'Erro ao concluir transferência GoPay.');
     } finally {
       setSubmitting(false);
     }
@@ -672,14 +674,14 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
         key={tx.id}
         type="button"
         onClick={() => setSelectedReceiptTx(tx)}
-        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#CCFBF1] dark:border-teal-900/60 bg-white dark:bg-[#0F2421] px-3.5 py-3 text-left shadow-2xs hover:border-[#2DD4BF] active:scale-[0.99] transition"
+        className="flex w-full items-start justify-between gap-3 rounded-2xl border border-[#E2E8F0] bg-white px-3.5 py-3 text-left shadow-2xs hover:border-[#2563EB] active:scale-[0.99] transition"
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
           <span
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
               isPositive
-                ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400'
-                : 'bg-rose-100 dark:bg-neutral-800 text-rose-600 dark:text-rose-400'
+                ? 'bg-[#ECFDF5] text-[#10B981]'
+                : 'bg-rose-50 text-rose-600'
             }`}
           >
             {isPositive ? (
@@ -688,31 +690,31 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               <ArrowUpRight className="h-5 w-5" />
             )}
           </span>
-          <div className="min-w-0">
-            <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-[#0F172A] truncate">
               {reasonLabel}
             </p>
-            <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 truncate">
+            <p className="mt-0.5 text-[11px] font-medium text-[#475569] line-clamp-2 leading-snug">
               {tx.description}
             </p>
-            <p className="mt-0.5 font-mono-num text-[10px] font-bold text-neutral-400 dark:text-neutral-500">
-              {timeStr} · Toque para comprovante
+            <p className="mt-1 font-mono-num text-[10px] font-bold text-[#64748B]">
+              {timeStr} · Ver comprovante
             </p>
           </div>
         </div>
-        <span
-          className={`font-mono-num text-sm font-extrabold shrink-0 ${
-            isPositive
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : 'text-neutral-950 dark:text-neutral-100'
-          }`}
-        >
-          {hideBalance
-            ? 'R$ ••••'
-            : isPositive
-            ? `+ ${formatBRL(tx.amount)}`
-            : `- ${formatBRL(Math.abs(tx.amount))}`}
-        </span>
+        <div className="shrink-0 text-right pt-0.5">
+          <span
+            className={`font-mono-num text-sm font-extrabold whitespace-nowrap block ${
+              isPositive ? 'text-[#10B981]' : 'text-[#0F172A]'
+            }`}
+          >
+            {hideBalance
+              ? 'R$ ••••'
+              : isPositive
+              ? `+ ${formatBRL(tx.amount)}`
+              : `- ${formatBRL(Math.abs(tx.amount))}`}
+          </span>
+        </div>
       </button>
     );
   };
@@ -732,34 +734,38 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-[1220] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-0 sm:p-4">
+    <div className="fixed inset-0 z-[1220] flex items-end sm:items-center justify-center bg-[#0F172A]/60 backdrop-blur-xs p-0 sm:p-4">
       <div
-        className={`relative flex h-[94vh] sm:h-auto sm:max-h-[92vh] w-full max-w-md flex-col rounded-t-[28px] sm:rounded-[28px] bg-[#F7FBFA] dark:bg-[#081513] shadow-2xl overflow-hidden border border-[#2DD4BF]/35 dark:border-teal-900 ${
+        className={`relative flex h-[94vh] sm:h-auto sm:max-h-[92vh] w-full max-w-md flex-col rounded-t-[28px] sm:rounded-[28px] bg-[#F4F6F9] shadow-2xl overflow-hidden border border-[#E2E8F0] ${
           selectedReceiptTx ? 'no-print' : ''
         }`}
       >
-        {/* Top Brand Bar BorealPay (Light Aurora Boreal) */}
-        <div className="aurora-surface-flow flex items-center justify-between px-5 pt-4 pb-3.5 text-[#0F2421] border-b border-[#2DD4BF]/35 shrink-0">
+        {/* Top Brand Bar GoPay */}
+        <div className="aurora-surface-flow flex items-center justify-between px-5 pt-4 pb-3.5 text-[#0F172A] border-b border-[#E2E8F0] shrink-0">
           <div className="flex items-center gap-2.5">
-            <BorealLogoMark className="h-10 w-10 shrink-0 shadow-sm rounded-xl" />
+            <img
+              src={resolveBrandLogo(platformConfig)}
+              alt="GoPay"
+              className="h-10 w-10 shrink-0 rounded-xl object-cover border border-[#BFDBFE] shadow-sm bg-white"
+            />
             <div>
               <div className="flex items-center gap-1.5">
-                <h3 className="font-display text-lg font-extrabold tracking-tight text-[#0F2421]">
-                  BorealPay
+                <h3 className="font-display text-lg font-extrabold tracking-tight text-[#0F172A]">
+                  GoPay
                 </h3>
-                <span className="rounded-full bg-[#CCFBF1] border border-[#2DD4BF]/60 px-2 py-0.5 text-[10px] font-extrabold text-[#065F46]">
+                <span className="rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2 py-0.5 text-[10px] font-extrabold text-[#2563EB]">
                   Carteira Oficial
                 </span>
               </div>
-              <p className="text-[11px] font-medium text-[#334E4A]">
-                {isDriver ? 'Ganhos, saques e recebimentos BorealPay' : 'Saldo exclusivo, depósitos e transferências BorealPay'}
+              <p className="text-[11px] font-medium text-[#475569]">
+                {isDriver ? 'Ganhos, saques e recebimentos GoPay' : 'Saldo exclusivo, depósitos e transferências GoPay'}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 border border-[#2DD4BF]/35 text-[#0F2421] hover:bg-[#ECFDF5] active:scale-95 transition"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white border border-[#E2E8F0] text-[#475569] hover:text-[#0F172A] hover:bg-[#F4F6F9] active:scale-95 transition"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
@@ -768,28 +774,27 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
         {/* Scrollable Body (with extra bottom padding for floating pill dock) */}
         <div className="flex-1 overflow-y-auto px-4 pt-4 pb-24 space-y-4">
-          {/* CABEÇALHO AURORA BOREALPAY */}
-          <div className="aurora-border-glow rounded-3xl bg-white dark:bg-[#0F2421] p-5 text-[#0F2421] dark:text-white shadow-lg space-y-4">
+          {/* CABEÇALHO GOPAY */}
+          <div className="rounded-3xl bg-white border border-[#E2E8F0] p-5 text-[#0F172A] shadow-sm space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-[#334E4A] dark:text-[#6EE7B7]">Saldo disponível BorealPay</span>
+                  <span className="text-xs font-bold text-[#475569]">{t.wallet_available_gopay}</span>
                   <button
                     type="button"
                     onClick={toggleHideBalance}
-                    className="flex h-7 w-7 items-center justify-center rounded-full bg-[#ECFDF5] dark:bg-teal-950/60 border border-[#6EE7B7]/60 dark:border-teal-800 text-[#047857] dark:text-[#6EE7B7] hover:bg-[#CCFBF1] transition"
-                    aria-label={hideBalance ? 'Mostrar saldo' : 'Ocultar saldo'}
-                    title={hideBalance ? 'Mostrar saldo' : 'Ocultar saldo'}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F4F6F9] border border-[#E2E8F0] text-[#2563EB] hover:bg-[#EFF6FF] transition"
+                    aria-label={hideBalance ? 'Show' : 'Hide'}
                   >
                     {hideBalance ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
                 </div>
-                <p className="mt-1 font-display text-4xl font-extrabold text-[#047857] dark:text-[#6EE7B7] font-mono-num tracking-tight">
+                <p className="mt-1 font-display text-4xl font-extrabold text-[#10B981] font-mono-num tracking-tight">
                   {hideBalance ? 'R$ •••••' : formatBRL(currentUser.wallet_balance || 0)}
                 </p>
                 {Number(currentUser.reserved_balance || 0) > 0 && (
-                  <p className="mt-1 text-[11px] font-bold text-[#0891B2] dark:text-[#2DD4BF] font-mono-num">
-                    Reservado em corrida ativa: {hideBalance ? '••••' : formatBRL(currentUser.reserved_balance || 0)}
+                  <p className="mt-1 text-[11px] font-bold text-[#2563EB] font-mono-num">
+                    {formatBRL(currentUser.reserved_balance || 0)}
                   </p>
                 )}
               </div>
@@ -798,81 +803,86 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 type="button"
                 onClick={loadWalletData}
                 disabled={loading}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ECFDF5] dark:bg-teal-950/60 border border-[#6EE7B7]/60 dark:border-teal-800 text-[#047857] dark:text-[#6EE7B7] hover:bg-[#CCFBF1] active:scale-95 transition"
-                aria-label="Atualizar saldo"
-                title="Atualizar saldo"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F4F6F9] border border-[#E2E8F0] text-[#2563EB] hover:bg-[#EFF6FF] active:scale-95 transition"
+                aria-label={t.wallet_refresh}
+                title={t.wallet_refresh}
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
 
             {/* Prominent Deposit CTA + Driver Withdraw shortcut */}
-            <div className="flex items-center gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => switchTab('deposit')}
-                className="aurora-accent-flow flex flex-1 min-h-[46px] items-center justify-center gap-2 rounded-2xl px-4 text-sm font-extrabold text-white shadow-md hover:brightness-105 active:scale-[0.98] transition"
+                className="aurora-accent-flow flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl px-3 text-sm font-extrabold text-white shadow-md hover:brightness-105 active:scale-[0.98] transition whitespace-nowrap"
               >
-                <Plus className="h-4 w-4 stroke-[2.5]" />
-                <span>Depositar</span>
+                <Plus className="h-4 w-4 stroke-[2.5] shrink-0" />
+                <span>{t.deposit}</span>
               </button>
               {isDriver ? (
                 <button
                   type="button"
                   onClick={() => switchTab('withdraw')}
-                  className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl bg-[#ECFDF5] dark:bg-emerald-950/60 border border-[#34D399] px-4 text-xs font-extrabold text-[#065F46] dark:text-[#6EE7B7] shadow-2xs hover:bg-[#CCFBF1] active:scale-[0.98] transition"
+                  className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] px-3 text-xs font-extrabold text-[#059669] shadow-2xs hover:bg-[#D1FAE5]/70 active:scale-[0.98] transition whitespace-nowrap"
                 >
-                  <Banknote className="h-4 w-4" />
-                  <span>Sacar Pix</span>
+                  <Banknote className="h-4 w-4 shrink-0" />
+                  <span>{t.withdraw}</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => switchTab('transfer')}
-                  className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl bg-[#F0FDF9] dark:bg-teal-950/50 border border-[#2DD4BF]/50 px-4 text-xs font-extrabold text-[#0F2421] dark:text-white hover:bg-[#CCFBF1]/60 active:scale-[0.98] transition"
+                  className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-2xl bg-[#F1F5F9] border border-[#E2E8F0] px-3 text-xs font-extrabold text-[#0F172A] hover:bg-[#E2E8F0] active:scale-[0.98] transition whitespace-nowrap"
                 >
-                  <Send className="h-4 w-4 text-[#047857] dark:text-[#2DD4BF]" />
-                  <span>Transferir</span>
+                  <Send className="h-4 w-4 text-[#2563EB] shrink-0" />
+                  <span>{t.transfer}</span>
                 </button>
               )}
             </div>
 
             {/* Exclusivity Notice */}
-            <div className="flex items-start gap-2 rounded-2xl bg-[#F7FBFA] dark:bg-teal-950/40 border border-[#CCFBF1] dark:border-teal-900 px-3 py-2.5 text-[11px] leading-snug text-[#334E4A] dark:text-neutral-300">
-              <Info className="h-4 w-4 shrink-0 text-[#0891B2] dark:text-[#2DD4BF] mt-0.5" />
+            <div className="flex items-start gap-2 rounded-2xl bg-[#F4F6F9] border border-[#E2E8F0] px-3 py-2.5 text-[11px] leading-snug text-[#475569]">
+              <Info className="h-4 w-4 shrink-0 text-[#2563EB] mt-0.5" />
               <span>
-                Saldo exclusivo do ecossistema <strong className="text-[#0F2421] dark:text-white">Boreal Mobilidade</strong> para pagamento ágil de corridas, entregas e transferências instantâneas entre usuários.
+                <strong className="text-[#0F172A]">Go Driver Mobilidade · GoPay:</strong> {t.wallet_ecosystem_notice}
               </span>
             </div>
 
             {pendingDeposits.length > 0 && (
-              <div className="flex items-center gap-2 rounded-2xl bg-[#ECFEFF] dark:bg-cyan-950/40 border border-[#2DD4BF]/50 px-3 py-2 text-xs text-[#0F2421] dark:text-cyan-100">
-                <Clock className="h-4 w-4 shrink-0 text-[#0891B2] dark:text-[#2DD4BF] animate-pulse" />
-                <span>
-                  {pendingDeposits.length} depósito(s) aguardando confirmação:{' '}
-                  <strong className="font-mono-num text-[#047857] dark:text-[#6EE7B7]">
-                    {formatBRL(pendingDeposits.reduce((acc, d) => acc + d.amount, 0))}
-                  </strong>
+              <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-3 py-2 text-xs text-[#0F172A]">
+                <span className="flex items-center gap-2 min-w-0">
+                  <Clock className="h-4 w-4 shrink-0 text-[#2563EB] animate-pulse" />
+                  <span className="truncate">{pendingDeposits.length} depósito(s) pendente(s)</span>
                 </span>
+                <strong className="font-mono-num text-[#2563EB] shrink-0 whitespace-nowrap">
+                  {formatBRL(pendingDeposits.reduce((acc, d) => acc + d.amount, 0))}
+                </strong>
               </div>
             )}
 
             {pendingWithdrawals.length > 0 && (
-              <div className="flex items-center gap-2 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 px-3 py-2 text-xs text-sky-900 dark:text-sky-200">
-                <Clock className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-300 animate-pulse" />
-                <span>
-                  {pendingWithdrawals.length} saque(s) em análise:{' '}
-                  <strong className="font-mono-num text-sky-950 dark:text-white">
-                    {formatBRL(pendingWithdrawals.reduce((acc, w) => acc + w.amount, 0))}
-                  </strong>
+              <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-3 py-2 text-xs text-[#0F172A]">
+                <span className="flex items-center gap-2 min-w-0">
+                  <Clock className="h-4 w-4 shrink-0 text-[#2563EB] animate-pulse" />
+                  <span className="truncate">{pendingWithdrawals.length} saque(s) em análise</span>
                 </span>
+                <strong className="font-mono-num text-[#2563EB] shrink-0 whitespace-nowrap">
+                  {formatBRL(pendingWithdrawals.reduce((acc, w) => acc + w.amount, 0))}
+                </strong>
               </div>
             )}
-            <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#CCFBF1]/45 dark:bg-teal-950/45 border border-[#2DD4BF]/40 px-3 py-2 text-[11px]">
-              <span className="flex items-center gap-1.5 text-[#334E4A] dark:text-teal-200 font-bold truncate">
-                <KeyRound className="h-3.5 w-3.5 text-[#047857] dark:text-[#2DD4BF] shrink-0" />
-                Chave BorealPay: <strong className="font-mono-num text-[#065F46] dark:text-[#6EE7B7] truncate">{myPay66Key}</strong>
-              </span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <span className="flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider text-[#2563EB]">
+                  <KeyRound className="h-3 w-3 shrink-0" />
+                  {t.wallet_key_label}
+                </span>
+                <p className="mt-0.5 font-mono-num text-xs font-extrabold text-[#0F172A] truncate">
+                  {myPay66Key}
+                </p>
+              </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
@@ -880,16 +890,16 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     switchTab('qrcode');
                     setEditingPay66Key(true);
                   }}
-                  className="rounded-lg bg-white dark:bg-teal-900/70 border border-[#2DD4BF]/50 px-2 py-1 text-[10px] font-extrabold text-[#065F46] dark:text-[#6EE7B7] hover:bg-[#ECFDF5]"
+                  className="min-h-[34px] rounded-lg bg-white border border-[#BFDBFE] px-2.5 py-1 text-[11px] font-extrabold text-[#2563EB] hover:bg-[#F4F6F9]"
                 >
-                  Alterar
+                  {t.wallet_change_key}
                 </button>
                 <button
                   type="button"
                   onClick={() => copyValue(myPay66Key, '66pay')}
-                  className="rounded-lg bg-[#047857] px-2.5 py-1 text-[10px] font-extrabold text-white hover:bg-[#065F46]"
+                  className="min-h-[34px] rounded-lg bg-[#2563EB] px-3 py-1 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8]"
                 >
-                  {copiedMy66Pay ? 'Copiada!' : 'Copiar'}
+                  {copiedMy66Pay ? t.wallet_copied_key : t.wallet_copy_key}
                 </button>
               </div>
             </div>
@@ -900,13 +910,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             {[
               {
                 id: 'transfer' as const,
-                label: 'Transferir\n(BorealPay)',
+                label: `${t.transfer}\n(GoPay)`,
                 icon: Send,
                 highlight: tab === 'transfer',
               },
               {
                 id: 'deposit' as const,
-                label: 'Depositar',
+                label: t.deposit,
                 icon: Wallet,
                 highlight: tab === 'deposit',
               },
@@ -918,7 +928,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               },
               {
                 id: 'ledger' as const,
-                label: 'Extrato\nDetalhado',
+                label: t.statement,
                 icon: Receipt,
                 highlight: tab === 'ledger',
               },
@@ -931,15 +941,15 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   onClick={() => switchTab(item.id)}
                   className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl p-2.5 text-center border transition active:scale-95 ${
                     item.highlight
-                      ? 'bg-[#047857] border-[#065F46] text-white shadow-sm'
-                      : 'bg-white dark:bg-[#0F2421] border-[#CCFBF1] dark:border-teal-900 text-[#0F2421] dark:text-neutral-100 hover:border-[#2DD4BF]'
+                      ? 'bg-[#2563EB] border-[#1D4ED8] text-white shadow-sm'
+                      : 'bg-white border-[#E2E8F0] text-[#0F172A] hover:border-[#2563EB]'
                   }`}
                 >
                   <span
                     className={`flex h-9 w-9 items-center justify-center rounded-xl ${
                       item.highlight
-                        ? 'bg-white/15 text-[#6EE7B7]'
-                        : 'bg-[#ECFDF5] dark:bg-teal-950/60 text-[#047857] dark:text-[#2DD4BF]'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#EFF6FF] text-[#2563EB]'
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -953,25 +963,25 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
           </div>
 
           {error && (
-            <div className="rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-3.5 py-2.5 text-xs font-bold text-red-700 dark:text-red-300">
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-bold text-red-700">
               {error}
             </div>
           )}
 
           {successMsg && (
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-3 text-xs font-bold text-emerald-900 dark:text-emerald-200 space-y-2.5">
+            <div className="rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] px-3.5 py-3 text-xs font-bold text-[#059669] space-y-2.5">
               <div className="flex items-start gap-2.5">
-                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-[#10B981] mt-0.5" />
                 <span>{successMsg}</span>
               </div>
               {lastTransferReceiptTx && (
                 <button
                   type="button"
                   onClick={() => setSelectedReceiptTx(lastTransferReceiptTx)}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 py-1.5 text-[11px] font-extrabold text-white dark:text-[#0F2421] shadow-2xs active:scale-95 transition"
+                  className="aurora-accent-flow inline-flex min-h-[38px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white shadow-2xs active:scale-95 transition"
                 >
                   <Receipt className="h-3.5 w-3.5" />
-                  <span>Ver / Baixar Comprovante BorealPay</span>
+                  <span>{t.view_gopay_receipt}</span>
                 </button>
               )}
             </div>
@@ -984,22 +994,22 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 <button
                   type="button"
                   onClick={() => switchTab('withdraw')}
-                  className="flex w-full items-center justify-between rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-left transition active:scale-[0.99]"
+                  className="flex w-full items-center justify-between rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-left transition active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#10B981] text-white">
                       <Banknote className="h-5 w-5" />
                     </span>
                     <div>
-                      <p className="text-xs font-extrabold text-emerald-950 dark:text-emerald-200">
+                      <p className="text-xs font-extrabold text-[#0F172A]">
                         Sacar Ganhos via Pix
                       </p>
-                      <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                      <p className="text-[11px] text-[#059669]">
                         Solicite envio direto para sua chave Pix
                       </p>
                     </div>
                   </div>
-                  <span className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-extrabold text-white">
+                  <span className="rounded-xl bg-[#10B981] px-3 py-1.5 text-[11px] font-extrabold text-white">
                     Sacar
                   </span>
                 </button>
@@ -1007,14 +1017,14 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#475569]">
                     Movimentações Recentes
                   </h4>
                   {transactions.length > 0 && (
                     <button
                       type="button"
                       onClick={() => switchTab('ledger')}
-                      className="text-xs font-extrabold text-[#047857] dark:text-[#6EE7B7] underline"
+                      className="text-xs font-extrabold text-[#2563EB] underline"
                     >
                       Ver extrato completo
                     </button>
@@ -1022,20 +1032,20 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 </div>
 
                 {groupedTransactions.length === 0 ? (
-                  <div className="rounded-3xl border border-[#CCFBF1] dark:border-teal-900 bg-white dark:bg-[#0F2421] p-6 text-center space-y-2">
-                    <Receipt className="mx-auto h-8 w-8 text-[#0D9488]" />
-                    <p className="text-xs font-bold text-[#0F2421] dark:text-neutral-300">
-                      Nenhuma movimentação na sua BorealPay ainda.
+                  <div className="rounded-3xl border border-[#E2E8F0] bg-white p-6 text-center space-y-2">
+                    <Receipt className="mx-auto h-8 w-8 text-[#2563EB]" />
+                    <p className="text-xs font-bold text-[#0F172A]">
+                      Nenhuma movimentação na sua GoPay ainda.
                     </p>
-                    <p className="text-[11px] text-[#334E4A] dark:text-neutral-400">
-                      Faça um depósito via Pix ou receba transferências BorealPay.
+                    <p className="text-[11px] text-[#475569]">
+                      Faça um depósito via Pix ou receba transferências GoPay.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {groupedTransactions.slice(0, 2).map((grp) => (
                       <div key={grp.label} className="space-y-2">
-                        <p className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 px-1">
+                        <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#475569] px-1">
                           {grp.label}
                         </p>
                         <div className="space-y-2">
@@ -1051,19 +1061,19 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
           {/* TAB: DEPOSIT PIX (Blocked outside operating hours; existing balance stays 100% usable 24h) */}
           {tab === 'deposit' && !depositWindow.isOpen && (
-            <div className="space-y-4 rounded-3xl bg-white dark:bg-[#0F2421] p-5 border border-[#2DD4BF]/50 dark:border-teal-800/70">
+            <div className="space-y-4 rounded-3xl bg-white p-5 border border-[#E2E8F0]">
               <div className="flex items-start gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ECFEFF] dark:bg-cyan-950/70 text-[#0891B2] dark:text-[#2DD4BF]">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#2563EB]">
                   <Clock className="h-6 w-6" />
                 </span>
                 <div>
-                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#0891B2] dark:text-[#2DD4BF]">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#2563EB]">
                     Horário de Depósitos Pix
                   </p>
-                  <h4 className="font-display text-base font-extrabold text-[#0F2421] dark:text-white">
+                  <h4 className="font-display text-base font-extrabold text-[#0F172A]">
                     Depósitos disponíveis das {depositWindow.startTime} às {depositWindow.endTime}
                   </h4>
-                  <p className="mt-1.5 text-xs text-[#334E4A] dark:text-neutral-300 leading-relaxed">
+                  <p className="mt-1.5 text-xs text-[#475569] leading-relaxed">
                     No momento novos depósitos via Pix estão pausados porque a confirmação administrativa funciona das{' '}
                     <strong className="font-mono-num">{depositWindow.startTime}</strong> às{' '}
                     <strong className="font-mono-num">{depositWindow.endTime}</strong>.
@@ -1071,8 +1081,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-3.5 text-xs text-emerald-900 dark:text-emerald-200 leading-relaxed">
-                <strong>Seu saldo atual BorealPay ({formatBRL(currentUser.wallet_balance || 0)}) continua ativo 24h:</strong>{' '}
+              <div className="rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-3.5 text-xs text-[#0F172A] leading-relaxed">
+                <strong>Seu saldo atual GoPay ({formatBRL(currentUser.wallet_balance || 0)}) continua ativo 24h:</strong>{' '}
                 quem já depositou pode pagar corridas e fazer transferências normalmente. Se estiver sem saldo agora, peça sua corrida escolhendo pagamento em <strong>Dinheiro</strong>.
               </div>
 
@@ -1087,7 +1097,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 <button
                   type="button"
                   onClick={() => switchTab('home')}
-                  className="min-h-[46px] rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-xs font-extrabold text-neutral-900 dark:text-white active:scale-95 transition"
+                  className="min-h-[46px] rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] text-xs font-extrabold text-[#0F172A] active:scale-95 transition"
                 >
                   Voltar ao Início
                 </button>
@@ -1096,9 +1106,9 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
           )}
 
           {tab === 'deposit' && depositWindow.isOpen && depositSecurityAccepted && (
-            <form onSubmit={handleSubmitDeposit} className="space-y-4 rounded-3xl bg-white dark:bg-[#1A1D24] p-4 border border-neutral-200 dark:border-neutral-800">
+            <form onSubmit={handleSubmitDeposit} className="space-y-4 rounded-3xl bg-white p-4 border border-[#E2E8F0]">
               <div>
-                <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100 mb-2">
+                <label className="block text-xs font-extrabold text-[#0F172A] mb-2">
                   1. Quanto deseja depositar? ({t.amount_label})
                 </label>
                 <div className="grid grid-cols-4 gap-2 mb-2.5">
@@ -1111,8 +1121,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         onClick={() => setAmountInput(val.toFixed(2))}
                         className={`min-h-[40px] rounded-xl border font-mono-num text-xs font-extrabold transition ${
                           active
-                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421]'
-                            : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 hover:bg-[#ECFDF5] dark:hover:bg-neutral-700'
+                            ? 'border-[#2563EB] bg-[#2563EB] text-white'
+                            : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#0F172A] hover:bg-[#EFF6FF]'
                         }`}
                       >
                         R$ {val}
@@ -1128,16 +1138,16 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   value={amountInput}
                   onChange={(e) => setAmountInput(e.target.value)}
                   placeholder="Ex: 25.00"
-                  className="min-h-[48px] w-full rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-4 font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[48px] w-full rounded-2xl border-2 border-[#E2E8F0] bg-[#F4F6F9] px-4 font-mono-num text-lg font-extrabold text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-4 space-y-3">
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-neutral-950 dark:text-white">
+                  <span className="text-xs font-extrabold text-[#0F172A]">
                     2. Pague com o Pix da Plataforma
                   </span>
-                  <span className="font-mono-num text-xs font-extrabold text-emerald-700 dark:text-emerald-400">
+                  <span className="font-mono-num text-xs font-extrabold text-[#10B981]">
                     {formatBRL(numericAmount || 10)}
                   </span>
                 </div>
@@ -1145,7 +1155,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 <div className="flex flex-col items-center gap-2">
                   <div
                     key={cycle}
-                    className="rounded-2xl border-2 border-[#047857] bg-white p-3 shadow-xs transition-opacity"
+                    className="rounded-2xl border-2 border-[#2563EB] bg-white p-3 shadow-xs transition-opacity"
                   >
                     {platformConfig.platform_pix_qr_url ? (
                       <img
@@ -1157,7 +1167,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       <PixQrSvg payload={pixPayload} size={148} />
                     )}
                   </div>
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-0.5 text-[10px] font-bold text-[#2563EB]">
                     <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: '6s' }} />
                     <span>
                       Atualização em <strong className="font-mono-num">{formattedTimer}</strong> · Mesma chave
@@ -1167,13 +1177,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-[11px] font-bold text-neutral-600 dark:text-neutral-300">
+                    <span className="text-[11px] font-bold text-[#475569]">
                       Pix Copia e Cola
                     </span>
                     <button
                       type="button"
                       onClick={() => copyValue(pixPayload, 'code')}
-                      className="flex min-h-[34px] items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
+                      className="flex min-h-[34px] items-center gap-1 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8]"
                     >
                       {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                       {copiedCode ? 'Copiado!' : 'Copiar Código'}
@@ -1184,32 +1194,32 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     rows={2}
                     value={pixPayload}
                     onClick={(e) => e.currentTarget.select()}
-                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 p-2 font-mono text-[10px] text-neutral-800 dark:text-neutral-200 outline-none resize-none"
+                    className="w-full rounded-xl border border-[#E2E8F0] bg-white p-2 font-mono text-[10px] text-[#0F172A] outline-none resize-none"
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-2 border-t border-neutral-200 dark:border-neutral-700 pt-2.5">
+                <div className="flex items-center justify-between gap-2 border-t border-[#E2E8F0] pt-2.5">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
+                    <p className="text-[10px] font-bold text-[#475569]">
                       Favorecido: {platformConfig.platform_pix_receiver}
                     </p>
-                    <p className="font-mono-num text-xs font-extrabold text-neutral-950 dark:text-white truncate">
+                    <p className="font-mono-num text-xs font-extrabold text-[#0F172A] truncate">
                       {platformConfig.platform_pix_key}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => copyValue(platformConfig.platform_pix_key, 'key')}
-                    className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 text-[11px] font-bold text-neutral-900 dark:text-neutral-100"
+                    className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white px-3 text-[11px] font-bold text-[#0F172A]"
                   >
-                    {copiedKey ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedKey ? <Check className="h-3.5 w-3.5 text-[#10B981]" /> : <Copy className="h-3.5 w-3.5" />}
                     {copiedKey ? 'Copiada' : 'Copiar chave'}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-xs font-bold text-[#475569] mb-1">
                   Observação opcional (ex: nome do titular da conta)
                 </label>
                 <input
@@ -1218,16 +1228,16 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   value={noteInput}
                   onChange={(e) => setNoteInput(e.target.value)}
                   placeholder="Ex: Transferido por Maria Silva"
-                  className="min-h-[44px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3.5 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[44px] w-full rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
-              <div className="flex items-start gap-2 rounded-2xl bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#6EE7B7]/60 dark:border-emerald-800/60 px-3.5 py-2.5 text-[11px] text-[#0F2421] dark:text-emerald-200 leading-relaxed">
-                <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#047857] dark:text-[#6EE7B7]" />
+              <div className="flex items-start gap-2 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-3.5 py-2.5 text-[11px] text-[#0F172A] leading-relaxed">
+                <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#2563EB]" />
                 <span>
                   Você tem <strong>até 1 dia útil</strong> para receber o seu valor na conta, mas{' '}
                   <strong>assim que o Administrador confirmar no banco, cai na hora</strong> na sua
-                  carteira BorealPay.
+                  carteira GoPay.
                 </span>
               </div>
 
@@ -1243,13 +1253,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </form>
           )}
 
-          {/* TAB: TRANSFER P2P TO OTHER APP USERS (BOREALPAY) */}
+          {/* TAB: TRANSFER P2P TO OTHER APP USERS (GOPAY) */}
           {tab === 'transfer' && (
-            <form onSubmit={handleSubmitTransfer} className="space-y-4 rounded-3xl bg-white dark:bg-[#0F2421] p-4 border border-[#CCFBF1] dark:border-teal-900">
-              <div className="rounded-2xl border border-[#2DD4BF]/50 bg-[#ECFDF5] dark:bg-teal-950/40 p-3.5 text-xs text-[#334E4A] dark:text-neutral-200">
-                <p className="font-extrabold text-[#0F2421] dark:text-white flex items-center gap-1.5">
-                  <Send className="h-4 w-4 text-[#047857] dark:text-[#2DD4BF]" />
-                  Transferência Instantânea BorealPay
+            <form onSubmit={handleSubmitTransfer} className="space-y-4 rounded-3xl bg-white p-4 border border-[#E2E8F0]">
+              <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 text-xs text-[#475569]">
+                <p className="font-extrabold text-[#0F172A] flex items-center gap-1.5">
+                  <Send className="h-4 w-4 text-[#2563EB]" />
+                  Transferência Instantânea GoPay
                 </p>
                 <p className="mt-1 text-[11px]">
                   Envie saldo sem taxa para qualquer cliente ou motorista cadastrado usando e-mail,
@@ -1259,20 +1269,20 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100">
-                    1. Destinatário (Chave BorealPay, QR Code, e-mail ou telefone)
+                  <label className="block text-xs font-extrabold text-[#0F172A]">
+                    1. Destinatário (Chave GoPay, QR Code, e-mail ou telefone)
                   </label>
                   <button
                     type="button"
                     onClick={() => setShowTransferQrScanner(true)}
-                    className="inline-flex items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-2.5 py-1 text-[11px] font-extrabold text-white dark:text-[#0F2421] active:scale-95 transition"
+                    className="inline-flex items-center gap-1 rounded-xl bg-[#2563EB] px-2.5 py-1 text-[11px] font-extrabold text-white active:scale-95 transition"
                   >
                     <Camera className="h-3.5 w-3.5" />
-                    Ler QR BorealPay
+                    Ler QR GoPay
                   </button>
                 </div>
-                <div className="flex items-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3.5 focus-within:border-[#047857] dark:focus-within:border-[#2DD4BF]">
-                  <Search className="h-4 w-4 text-neutral-400 shrink-0" />
+                <div className="flex items-center gap-2 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 focus-within:border-[#2563EB]">
+                  <Search className="h-4 w-4 text-[#475569] shrink-0" />
                   <input
                     type="text"
                     value={recipientQuery}
@@ -1280,8 +1290,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       setRecipientQuery(e.target.value);
                       setSelectedRecipient(null);
                     }}
-                    placeholder="Chave BorealPay, e-mail, telefone ou nome"
-                    className="min-h-[46px] flex-1 bg-transparent text-xs font-semibold text-neutral-950 dark:text-white outline-none"
+                    placeholder="Chave GoPay, e-mail, telefone ou nome"
+                    className="min-h-[46px] flex-1 bg-transparent text-xs font-semibold text-[#0F172A] outline-none"
                   />
                   {recipientQuery && (
                     <button
@@ -1291,7 +1301,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         setSelectedRecipient(null);
                         setRecipientMatches([]);
                       }}
-                      className="text-neutral-400 hover:text-neutral-700"
+                      className="text-[#475569] hover:text-[#0F172A]"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -1299,13 +1309,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 </div>
 
                 {searchingRecipient && (
-                  <p className="mt-1.5 text-[11px] font-semibold text-neutral-500">
-                    Buscando contas BorealPay cadastradas...
+                  <p className="mt-1.5 text-[11px] font-semibold text-[#475569]">
+                    Buscando contas GoPay cadastradas...
                   </p>
                 )}
 
                 {!selectedRecipient && recipientMatches.length > 0 && (
-                  <div className="mt-2 divide-y divide-neutral-100 dark:divide-neutral-800 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
+                  <div className="mt-2 divide-y divide-[#E2E8F0] rounded-2xl border border-[#E2E8F0] bg-white overflow-hidden shadow-sm">
                     {recipientMatches.map((match) => (
                       <button
                         key={match.id}
@@ -1314,24 +1324,24 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                           setSelectedRecipient(match);
                           setRecipientMatches([]);
                         }}
-                        className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[#ECFDF5] dark:hover:bg-neutral-800 transition"
+                        className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[#EFF6FF] transition"
                       >
                         <AvatarImage
                           src={match.avatar_url}
                           name={match.full_name}
-                          className="h-9 w-9 rounded-full object-cover border border-[#2DD4BF] shrink-0"
-                          fallbackClassName="flex h-9 w-9 items-center justify-center rounded-full bg-[#047857] text-white text-xs font-extrabold shrink-0"
+                          className="h-9 w-9 rounded-full object-cover border border-[#2563EB] shrink-0"
+                          fallbackClassName="flex h-9 w-9 items-center justify-center rounded-full bg-[#2563EB] text-white text-xs font-extrabold shrink-0"
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-extrabold text-neutral-950 dark:text-white truncate">
+                          <p className="text-xs font-extrabold text-[#0F172A] truncate">
                             {match.full_name}
                           </p>
-                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                          <p className="text-[11px] text-[#475569] truncate">
                             {match.role === 'driver' ? t.driver_role_badge : t.passenger_role_badge} ·{' '}
                             {match.email || match.phone}
                           </p>
                         </div>
-                        <span className="rounded-lg bg-[#047857] px-2 py-1 text-[10px] font-extrabold text-white">
+                        <span className="rounded-lg bg-[#2563EB] px-2 py-1 text-[10px] font-extrabold text-white">
                           Selecionar
                         </span>
                       </button>
@@ -1340,20 +1350,20 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 )}
 
                 {selectedRecipient && (
-                  <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-3">
+                  <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <AvatarImage
                         src={selectedRecipient.avatar_url}
                         name={selectedRecipient.full_name}
-                        className="h-10 w-10 rounded-full object-cover border-2 border-emerald-500 shrink-0"
-                        fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-extrabold shrink-0"
+                        className="h-10 w-10 rounded-full object-cover border-2 border-[#10B981] shrink-0"
+                        fallbackClassName="flex h-10 w-10 items-center justify-center rounded-full bg-[#10B981] text-white text-xs font-extrabold shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-extrabold text-emerald-950 dark:text-emerald-200 truncate flex items-center gap-1">
-                          <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                        <p className="text-xs font-extrabold text-[#0F172A] truncate flex items-center gap-1">
+                          <UserCheck className="h-3.5 w-3.5 shrink-0 text-[#10B981]" />
                           {selectedRecipient.full_name}
                         </p>
-                        <p className="text-[11px] text-emerald-800 dark:text-emerald-300 truncate">
+                        <p className="text-[11px] text-[#059669] truncate">
                           {selectedRecipient.email || selectedRecipient.phone}
                         </p>
                       </div>
@@ -1361,7 +1371,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setSelectedRecipient(null)}
-                      className="text-xs font-bold text-emerald-800 dark:text-emerald-300 underline shrink-0"
+                      className="text-xs font-bold text-[#059669] underline shrink-0"
                     >
                       Trocar
                     </button>
@@ -1370,7 +1380,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100 mb-1.5">
+                <label className="block text-xs font-extrabold text-[#0F172A] mb-1.5">
                   2. {t.amount_label} (mín. R$ 1,00)
                 </label>
                 <div className="grid grid-cols-4 gap-2 mb-2">
@@ -1382,8 +1392,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       onClick={() => setTransferAmountInput(val.toFixed(2))}
                       className={`min-h-[38px] rounded-xl border font-mono-num text-xs font-extrabold transition disabled:opacity-35 ${
                         numericTransferAmount === val
-                          ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421]'
-                          : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200'
+                          ? 'border-[#2563EB] bg-[#2563EB] text-white'
+                          : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#0F172A]'
                       }`}
                     >
                       R$ {val}
@@ -1398,12 +1408,12 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   required
                   value={transferAmountInput}
                   onChange={(e) => setTransferAmountInput(e.target.value)}
-                  className="min-h-[48px] w-full rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-4 font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[48px] w-full rounded-2xl border-2 border-[#E2E8F0] bg-[#F4F6F9] px-4 font-mono-num text-lg font-extrabold text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-xs font-bold text-[#475569] mb-1">
                   Motivo / Observação opcional
                 </label>
                 <input
@@ -1412,7 +1422,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   value={transferNote}
                   onChange={(e) => setTransferNote(e.target.value)}
                   placeholder="Ex: Ajuda na corrida / Pagamento"
-                  className="min-h-[44px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3.5 text-xs text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[44px] w-full rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
@@ -1429,35 +1439,35 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 <Send className="h-4 w-4" />
                 {submitting
                   ? t.saving
-                  : `Enviar ${formatBRL(numericTransferAmount)} via BorealPay`}
+                  : `Enviar ${formatBRL(numericTransferAmount)} via GoPay`}
               </button>
             </form>
           )}
 
-          {/* TAB: QR CODE BOREALPAY + REGISTRO DE CHAVE */}
+          {/* TAB: QR CODE GOPAY + REGISTRO DE CHAVE */}
           {tab === 'qrcode' && (
-            <div className="space-y-4 rounded-3xl bg-white dark:bg-[#0F2421] p-5 border border-[#CCFBF1] dark:border-teal-900 text-center">
+            <div className="space-y-4 rounded-3xl bg-white p-5 border border-[#E2E8F0] text-center">
               <div>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#CCFBF1] dark:bg-teal-950/60 border border-[#2DD4BF]/50 px-3 py-1 text-[11px] font-extrabold text-[#065F46] dark:text-[#6EE7B7]">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-3 py-1 text-[11px] font-extrabold text-[#2563EB]">
                   <QrCode className="h-3.5 w-3.5" />
-                  QR Code Automático BorealPay
+                  QR Code Automático GoPay
                 </span>
-                <h4 className="mt-2 font-display text-lg font-extrabold text-[#0F2421] dark:text-white">
-                  Seu Código de Recebimento BorealPay
+                <h4 className="mt-2 font-display text-lg font-extrabold text-[#0F172A]">
+                  Seu Código de Recebimento GoPay
                 </h4>
-                <p className="mt-1 text-xs text-[#334E4A] dark:text-neutral-400">
-                  Gerado automaticamente com a sua Chave BorealPay para transferências instantâneas dentro do app (sem depender de banco externo).
+                <p className="mt-1 text-xs text-[#475569]">
+                  Gerado automaticamente com a sua Chave GoPay para transferências instantâneas dentro do app (sem depender de banco externo).
                 </p>
               </div>
 
-              <div className="mx-auto inline-block rounded-3xl border-2 border-[#047857] dark:border-[#2DD4BF] bg-white p-4 shadow-sm">
+              <div className="mx-auto inline-block rounded-3xl border-2 border-[#2563EB] bg-white p-4 shadow-sm">
                 <PixQrSvg payload={my66PayQrPayload} size={160} />
               </div>
 
-              <div className="rounded-2xl border border-[#2DD4BF]/50 bg-[#ECFDF5] dark:bg-teal-950/40 p-3.5 text-left space-y-2.5">
+              <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 text-left space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#334E4A] dark:text-neutral-300">
-                    Minha Chave BorealPay Ativa
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#475569]">
+                    Minha Chave GoPay Ativa
                   </p>
                   <button
                     type="button"
@@ -1465,7 +1475,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       setPay66KeyInput(myPay66Key);
                       setEditingPay66Key((prev) => !prev);
                     }}
-                    className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#047857] dark:text-[#6EE7B7] underline"
+                    className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#2563EB] underline"
                   >
                     <Pencil className="h-3 w-3" />
                     {editingPay66Key ? 'Cancelar' : 'Cadastrar / Alterar Chave'}
@@ -1475,19 +1485,19 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 {!editingPay66Key ? (
                   <>
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-mono-num text-sm font-black text-[#065F46] dark:text-[#6EE7B7] truncate">
+                      <p className="font-mono-num text-sm font-black text-[#1D4ED8] truncate">
                         {myPay66Key}
                       </p>
                       <button
                         type="button"
                         onClick={() => copyValue(myPay66Key, '66pay')}
-                        className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3 text-[11px] font-extrabold text-white dark:text-[#0F2421]"
+                        className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white"
                       >
                         {copiedMy66Pay ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                         {copiedMy66Pay ? 'Copiado!' : 'Copiar Chave'}
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#334E4A] dark:text-neutral-400 truncate">
+                    <p className="text-[10px] text-[#475569] truncate">
                       Conta vinculada: {my66PayIdentifier}
                     </p>
                   </>
@@ -1498,7 +1508,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setPay66KeyInput(currentUser.phone.replace(/\s+/g, ''))}
-                          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                          className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-extrabold text-[#0F172A]"
                         >
                           Usar Telefone
                         </button>
@@ -1507,7 +1517,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setPay66KeyInput(currentUser.email.trim().toLowerCase())}
-                          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                          className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-extrabold text-[#0F172A]"
                         >
                           Usar E-mail
                         </button>
@@ -1516,7 +1526,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setPay66KeyInput(currentUser.cpf.replace(/\D/g, ''))}
-                          className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                          className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-extrabold text-[#0F172A]"
                         >
                           Usar CPF
                         </button>
@@ -1525,10 +1535,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         type="button"
                         onClick={() =>
                           setPay66KeyInput(
-                            `BOREAL-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+                            `GO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
                           )
                         }
-                        className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-[10px] font-extrabold text-neutral-800 dark:text-neutral-200"
+                        className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-[10px] font-extrabold text-[#0F172A]"
                       >
                         Chave Aleatória
                       </button>
@@ -1541,12 +1551,12 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       value={pay66KeyInput}
                       onChange={(e) => setPay66KeyInput(e.target.value)}
                       placeholder="Ex: seu@email.com, telefone, CPF ou @apelido"
-                      className="min-h-[44px] w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 font-mono-num text-xs font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                      className="min-h-[44px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 font-mono-num text-xs font-extrabold text-[#0F172A] outline-none focus:border-[#2563EB]"
                     />
                     <button
                       type="submit"
                       disabled={savingPay66Key || pay66KeyInput.trim().length < 4}
-                      className="min-h-[42px] w-full rounded-xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421] disabled:opacity-50"
+                      className="min-h-[42px] w-full rounded-xl bg-[#2563EB] text-xs font-extrabold text-white disabled:opacity-50"
                     >
                       {savingPay66Key ? 'Salvando Chave...' : 'Salvar Chave & Atualizar QR Code'}
                     </button>
@@ -1565,9 +1575,9 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                 <button
                   type="button"
                   onClick={() => switchTab('transfer')}
-                  className="min-h-[46px] rounded-2xl border border-[#2DD4BF]/50 bg-[#ECFDF5] dark:bg-teal-950/50 text-xs font-extrabold text-[#065F46] dark:text-[#6EE7B7] active:scale-95 transition"
+                  className="min-h-[46px] rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] text-xs font-extrabold text-[#0F172A] active:scale-95 transition"
                 >
-                  Enviar BorealPay
+                  Enviar GoPay
                 </button>
               </div>
             </div>
@@ -1575,10 +1585,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
           {/* TAB: DRIVER WITHDRAWAL VIA PIX */}
           {tab === 'withdraw' && isDriver && (
-            <form onSubmit={handleSubmitWithdrawal} className="space-y-4 rounded-3xl bg-white dark:bg-[#0F2421] p-4 border border-[#CCFBF1] dark:border-teal-900">
-              <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 p-3.5 text-xs text-neutral-700 dark:text-neutral-300">
-                <p className="font-extrabold text-neutral-950 dark:text-white flex items-center gap-1.5">
-                  <Banknote className="h-4 w-4 text-emerald-600" />
+            <form onSubmit={handleSubmitWithdrawal} className="space-y-4 rounded-3xl bg-white p-4 border border-[#E2E8F0]">
+              <div className="rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-3.5 text-xs text-[#475569]">
+                <p className="font-extrabold text-[#0F172A] flex items-center gap-1.5">
+                  <Banknote className="h-4 w-4 text-[#10B981]" />
                   {t.withdraw_pix_title}
                 </p>
                 <p className="mt-1 text-[11px]">
@@ -1588,7 +1598,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100 mb-2">
+                <label className="block text-xs font-extrabold text-[#0F172A] mb-2">
                   1. Quanto deseja sacar? (mín. R$ 5,00)
                 </label>
                 <div className="grid grid-cols-4 gap-2 mb-2.5">
@@ -1603,8 +1613,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         onClick={() => setWithdrawAmountInput(val.toFixed(2))}
                         className={`min-h-[40px] rounded-xl border font-mono-num text-xs font-extrabold transition disabled:opacity-35 ${
                           active
-                            ? 'border-[#047857] dark:border-[#2DD4BF] bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421]'
-                            : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200'
+                            ? 'border-[#10B981] bg-[#10B981] text-white'
+                            : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#0F172A]'
                         }`}
                       >
                         R$ {val}
@@ -1621,7 +1631,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     required
                     value={withdrawAmountInput}
                     onChange={(e) => setWithdrawAmountInput(e.target.value)}
-                    className="min-h-[48px] flex-1 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-4 font-mono-num text-lg font-extrabold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                    className="min-h-[48px] flex-1 rounded-2xl border-2 border-[#E2E8F0] bg-[#F4F6F9] px-4 font-mono-num text-lg font-extrabold text-[#0F172A] outline-none focus:border-[#10B981]"
                   />
                   {currentUser.wallet_balance >= 5 && (
                     <button
@@ -1629,7 +1639,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       onClick={() =>
                         setWithdrawAmountInput(Number(currentUser.wallet_balance).toFixed(2))
                       }
-                      className="rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 px-3 text-xs font-extrabold text-neutral-900 dark:text-white"
+                      className="rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] px-3 text-xs font-extrabold text-[#0F172A]"
                     >
                       Tudo
                     </button>
@@ -1638,7 +1648,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-extrabold text-neutral-900 dark:text-neutral-100 mb-1.5">
+                <label className="block text-xs font-extrabold text-[#0F172A] mb-1.5">
                   2. {t.pix_key_label}
                 </label>
                 <input
@@ -1647,7 +1657,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   value={withdrawPixKey}
                   onChange={(e) => setWithdrawPixKey(e.target.value)}
                   placeholder="CPF, Celular, E-mail ou Chave Aleatória"
-                  className="min-h-[46px] w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3.5 font-mono-num text-xs font-bold text-neutral-950 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+                  className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 font-mono-num text-xs font-bold text-[#0F172A] outline-none focus:border-[#10B981]"
                 />
               </div>
 
@@ -1659,7 +1669,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   numericWithdrawAmount > currentUser.wallet_balance ||
                   !withdrawPixKey.trim()
                 }
-                className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-45"
+                className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#10B981] hover:bg-[#059669] text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-45"
               >
                 <Banknote className="h-4 w-4" />
                 {submitting
@@ -1674,25 +1684,25 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             <div className="space-y-4">
               {isDriver && withdrawals.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#475569]">
                     Solicitações de Saque ({withdrawals.length})
                   </h4>
                   <div className="space-y-2">
                     {withdrawals.map((wd) => (
                       <div
                         key={wd.id}
-                        className="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1A1D24] px-3.5 py-3 text-xs"
+                        className="flex items-start justify-between gap-3 rounded-2xl border border-[#E2E8F0] bg-white px-3.5 py-3 text-xs"
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             {wd.status === 'paid' ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <CheckCircle2 className="h-4 w-4 text-[#10B981] shrink-0" />
                             ) : wd.status === 'rejected' ? (
-                              <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
+                              <XCircle className="h-4 w-4 text-red-600 shrink-0" />
                             ) : (
-                              <Clock className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                              <Clock className="h-4 w-4 text-[#2563EB] shrink-0" />
                             )}
-                            <span className="font-extrabold text-neutral-950 dark:text-white">
+                            <span className="font-extrabold text-[#0F172A] truncate">
                               {wd.status === 'paid'
                                 ? 'Saque Pix Pago'
                                 : wd.status === 'rejected'
@@ -1700,20 +1710,20 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                                 : 'Aguardando pagamento do Admin'}
                             </span>
                           </div>
-                          <p className="mt-0.5 font-mono-num text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                          <p className="mt-0.5 font-mono-num text-[11px] text-[#475569] truncate">
                             Chave: {wd.pix_key}
                           </p>
-                          <p className="text-[10px] text-neutral-400 font-mono-num">
+                          <p className="text-[10px] text-[#64748B] font-mono-num">
                             {new Date(wd.created_at).toLocaleString('pt-BR')}
                           </p>
                         </div>
                         <span
-                          className={`font-mono-num text-sm font-extrabold shrink-0 ${
+                          className={`font-mono-num text-sm font-extrabold shrink-0 whitespace-nowrap ${
                             wd.status === 'paid'
-                              ? 'text-emerald-700 dark:text-emerald-400'
+                              ? 'text-[#10B981]'
                               : wd.status === 'rejected'
-                              ? 'text-red-600 dark:text-red-400 line-through'
-                              : 'text-sky-700 dark:text-sky-400'
+                              ? 'text-red-600 line-through'
+                              : 'text-[#2563EB]'
                           }`}
                         >
                           {formatBRL(wd.amount)}
@@ -1727,25 +1737,25 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               {/* Deposits List */}
               {deposits.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#475569]">
                     Solicitações de Depósito ({deposits.length})
                   </h4>
                   <div className="space-y-2">
                     {deposits.map((dep) => (
                       <div
                         key={dep.id}
-                        className="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1A1D24] px-3.5 py-3 text-xs"
+                        className="flex items-start justify-between gap-3 rounded-2xl border border-[#E2E8F0] bg-white px-3.5 py-3 text-xs"
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             {dep.status === 'approved' ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <CheckCircle2 className="h-4 w-4 text-[#10B981] shrink-0" />
                             ) : dep.status === 'rejected' ? (
-                              <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
+                              <XCircle className="h-4 w-4 text-red-600 shrink-0" />
                             ) : (
-                              <Clock className="h-4 w-4 text-[#0891B2] dark:text-[#2DD4BF] shrink-0" />
+                              <Clock className="h-4 w-4 text-[#2563EB] shrink-0" />
                             )}
-                            <span className="font-extrabold text-neutral-950 dark:text-white">
+                            <span className="font-extrabold text-[#0F172A] truncate">
                               {dep.status === 'approved'
                                 ? 'Depósito Confirmado'
                                 : dep.status === 'rejected'
@@ -1754,21 +1764,21 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                             </span>
                           </div>
                           {dep.note && (
-                            <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                            <p className="mt-0.5 text-[11px] text-[#475569] truncate">
                               {dep.note}
                             </p>
                           )}
-                          <p className="text-[10px] text-neutral-400 font-mono-num">
+                          <p className="text-[10px] text-[#64748B] font-mono-num">
                             {new Date(dep.created_at).toLocaleString('pt-BR')}
                           </p>
                         </div>
                         <span
-                          className={`font-mono-num text-sm font-extrabold shrink-0 ${
+                          className={`font-mono-num text-sm font-extrabold shrink-0 whitespace-nowrap ${
                             dep.status === 'approved'
-                              ? 'text-emerald-700 dark:text-emerald-400'
+                              ? 'text-[#10B981]'
                               : dep.status === 'rejected'
-                              ? 'text-red-600 dark:text-red-400 line-through'
-                              : 'text-[#0891B2] dark:text-[#2DD4BF]'
+                              ? 'text-red-600 line-through'
+                              : 'text-[#2563EB]'
                           }`}
                         >
                           {formatBRL(dep.amount)}
@@ -1781,11 +1791,11 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
               {/* Grouped Smart Ledger */}
               <div className="space-y-3">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#475569]">
                   Extrato Inteligente ({transactions.length})
                 </h4>
                 {groupedTransactions.length === 0 ? (
-                  <p className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1A1D24] p-5 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="rounded-2xl border border-[#E2E8F0] bg-white p-5 text-center text-xs text-[#475569]">
                     Nenhuma movimentação registrada ainda.
                   </p>
                 ) : (
@@ -1793,10 +1803,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     {groupedTransactions.map((grp) => (
                       <div key={grp.label} className="space-y-2">
                         <div className="flex items-center gap-2 px-1">
-                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#475569]">
                             {grp.label}
                           </span>
-                          <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
+                          <span className="h-px flex-1 bg-[#E2E8F0]" />
                         </div>
                         <div className="space-y-2">
                           {grp.items.map(renderTransactionItem)}
@@ -1813,8 +1823,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
         {/* NAVEGAÇÃO INFERIOR FLUTUANTE ("PÍLULA ARREDONDADA") */}
         <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 flex justify-center">
           <nav
-            aria-label="Navegação BorealPay"
-            className="pointer-events-auto flex w-full max-w-sm items-center justify-between gap-1 rounded-full bg-white/95 dark:bg-[#0F2421]/95 p-1.5 shadow-xl border border-[#2DD4BF]/40 backdrop-blur-md"
+            aria-label="Navegação GoPay"
+            className="pointer-events-auto flex w-full max-w-sm items-center justify-between gap-1 rounded-full bg-white/95 p-1.5 shadow-xl border border-[#E2E8F0] backdrop-blur-md"
           >
             {bottomNavItems.map((nav) => {
               const Icon = nav.icon;
@@ -1826,8 +1836,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   onClick={() => switchTab(nav.id)}
                   className={`flex flex-1 min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-full px-1.5 py-1 text-[10px] font-extrabold transition ${
                     active
-                      ? 'bg-[#047857] text-white shadow-sm'
-                      : 'text-[#334E4A] dark:text-teal-200 hover:text-[#0F2421] dark:hover:text-white'
+                      ? 'bg-[#2563EB] text-white shadow-sm'
+                      : 'text-[#475569] hover:text-[#0F172A]'
                   }`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -1839,20 +1849,20 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
         </div>
       </div>
 
-      {/* POP-UP DE SEGURANÇA BOREALPAY ANTES DE EXIBIR PIX PARA DEPÓSITO */}
+      {/* POP-UP DE SEGURANÇA GOPAY ANTES DE EXIBIR PIX PARA DEPÓSITO */}
       {showDepositSecurityGate && (
-        <div className="fixed inset-0 z-[1300] flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-xs p-0 sm:p-4">
-          <div className="w-full max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-white dark:bg-[#0F2421] text-[#0F2421] dark:text-white border border-[#2DD4BF]/50 p-6 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed inset-0 z-[1300] flex items-end sm:items-center justify-center bg-[#0F172A]/65 backdrop-blur-xs p-0 sm:p-4">
+          <div className="w-full max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-white text-[#0F172A] border border-[#E2E8F0] p-6 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ECFDF5] dark:bg-teal-950/60 border border-[#6EE7B7] text-[#047857] dark:text-[#6EE7B7] shadow-sm">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] shadow-sm">
                   <ShieldCheck className="h-6 w-6" />
                 </span>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#047857] dark:text-[#6EE7B7]">
-                    Escudo Antifraude BorealPay
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#2563EB]">
+                    Escudo Antifraude GoPay
                   </p>
-                  <h4 className="font-display text-base font-black text-[#0F2421] dark:text-white">
+                  <h4 className="font-display text-base font-black text-[#0F172A]">
                     Ambiente Seguro de Depósito
                   </h4>
                 </div>
@@ -1860,26 +1870,26 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowDepositSecurityGate(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F7FBFA] dark:bg-white/10 text-[#334E4A] dark:text-neutral-300 hover:bg-[#CCFBF1]"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F4F6F9] text-[#475569] hover:bg-[#E2E8F0]"
                 aria-label="Fechar aviso"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="space-y-2.5 rounded-2xl border border-[#CCFBF1] dark:border-teal-900 bg-[#F7FBFA] dark:bg-teal-950/40 p-3.5 text-xs text-[#334E4A] dark:text-neutral-200 leading-relaxed">
+            <div className="space-y-2.5 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 text-xs text-[#475569] leading-relaxed">
               <div className="flex items-start gap-2">
-                <Lock className="h-4 w-4 text-[#047857] dark:text-[#6EE7B7] shrink-0 mt-0.5" />
+                <Lock className="h-4 w-4 text-[#2563EB] shrink-0 mt-0.5" />
                 <p>
-                  Conexão criptografada diretamente com o cofre <strong className="text-[#0F2421] dark:text-white">BorealPay</strong>.
+                  Conexão criptografada diretamente com o cofre <strong className="text-[#0F172A]">GoPay</strong>.
                 </p>
               </div>
               <p>
                 • Confira sempre o favorecido oficial:{' '}
-                <strong className="text-[#047857] dark:text-[#6EE7B7]">{platformConfig.platform_pix_receiver}</strong>.
+                <strong className="text-[#2563EB]">{platformConfig.platform_pix_receiver}</strong>.
               </p>
               <p>
-                • Nunca transfira para chaves enviadas por terceiros fora desta tela. Assim que o Administrador validar o Pix, seu saldo BorealPay é liberado automaticamente.
+                • Nunca transfira para chaves enviadas por terceiros fora desta tela. Assim que o Administrador validar o Pix, seu saldo GoPay é liberado automaticamente.
               </p>
             </div>
 
@@ -1899,7 +1909,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowDepositSecurityGate(false)}
-                className="min-h-[42px] w-full rounded-2xl border border-neutral-200 dark:border-white/15 bg-neutral-100 dark:bg-white/5 text-xs font-bold text-[#334E4A] dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-white/10"
+                className="min-h-[42px] w-full rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] text-xs font-bold text-[#0F172A] hover:bg-[#E2E8F0]"
               >
                 Voltar
               </button>
@@ -1909,31 +1919,31 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       )}
 
       {showTransferQrScanner && (
-        <div className="fixed inset-0 z-[1310] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-white dark:bg-[#0F2421] text-[#0F2421] dark:text-white border border-[#2DD4BF]/50 p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-[1310] flex items-end sm:items-center justify-center bg-[#0F172A]/75 p-0 sm:p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-white text-[#0F172A] border border-[#E2E8F0] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <QrCode className="h-5 w-5 text-[#047857] dark:text-[#2DD4BF]" />
-                <h4 className="font-display text-base font-extrabold">Ler QR Code BorealPay</h4>
+                <QrCode className="h-5 w-5 text-[#2563EB]" />
+                <h4 className="font-display text-base font-extrabold">Ler QR Code GoPay</h4>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTransferQrScanner(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F7FBFA] dark:bg-white/10 text-[#334E4A] dark:text-neutral-300"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F4F6F9] text-[#475569]"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-black border-2 border-[#2DD4BF]/70 flex items-center justify-center">
+            <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-black border-2 border-[#2563EB] flex items-center justify-center">
               <video ref={transferVideoRef} playsInline muted className="h-full w-full object-cover" />
               <canvas ref={transferCanvasRef} className="hidden" />
               {!qrScanError && (
-                <div className="pointer-events-none absolute inset-6 rounded-2xl border-2 border-[#6EE7B7] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+                <div className="pointer-events-none absolute inset-6 rounded-2xl border-2 border-[#38BDF8] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
               )}
               {!qrScanReady && !qrScanError && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/85 text-xs text-neutral-300 p-4 text-center">
-                  <Camera className="h-7 w-7 text-[#6EE7B7] animate-pulse" />
+                  <Camera className="h-7 w-7 text-[#38BDF8] animate-pulse" />
                   <span>Abrindo câmera...</span>
                 </div>
               )}
@@ -1944,8 +1954,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
               )}
             </div>
 
-            <p className="text-center text-[11px] text-[#334E4A] dark:text-neutral-400">
-              Aponte para o QR Code BorealPay do usuário que vai receber a transferência.
+            <p className="text-center text-[11px] text-[#475569]">
+              Aponte para o QR Code GoPay do usuário que vai receber a transferência.
             </p>
           </div>
         </div>

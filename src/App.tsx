@@ -27,7 +27,7 @@ import {
   checkForOtaUpdate,
   type OtaUpdateInfo,
 } from './lib/otaUpdate';
-import { unlockAudioContext } from './lib/sound';
+import { greetLoggedInUser, resetSessionGreeting, unlockAudioContext } from './lib/sound';
 import { supabase } from './lib/supabase';
 import {
   applyThemeToDocument,
@@ -124,7 +124,7 @@ export default function App() {
       if (!detail?.message) return;
       setWalletToast({
         id: Date.now(),
-        title: detail.title || 'BorealPay · Transferência',
+        title: detail.title || 'GoPay · Transferência',
         message: detail.message,
         receiptTx: detail.receiptTx,
       });
@@ -186,12 +186,14 @@ export default function App() {
     (user: UserProfile) => {
       handleUserUpdated(user);
       recordSessionAudit(user, 'login');
+      greetLoggedInUser(user, true);
     },
     [handleUserUpdated, recordSessionAudit]
   );
 
   const handleLogout = useCallback(async () => {
     const prevUser = currentUser;
+    resetSessionGreeting();
     syncedLangUserIdRef.current = null;
     loggedSessionUserIdRef.current = null;
     setCurrentUser(null);
@@ -218,6 +220,7 @@ export default function App() {
         if (user) {
           handleUserUpdated(user);
           recordSessionAudit(user, 'session_restore');
+          greetLoggedInUser(user, false);
         } else {
           setCurrentUser(null);
           try {
@@ -269,11 +272,11 @@ export default function App() {
   const effectivePlatformConfig = useMemo(
     () => ({
       ...platformConfig,
-      site_name: appConfig.app_name || platformConfig.site_name || 'Boreal Mobilidade',
+      site_name: appConfig.app_name || platformConfig.site_name || 'Go Driver Mobilidade',
       app_logo_url:
         appConfig.logo_url !== undefined ? appConfig.logo_url : platformConfig.app_logo_url,
-      primary_color: appConfig.primary_color || platformConfig.primary_color || '#047857',
-      secondary_color: appConfig.secondary_color || platformConfig.secondary_color || '#0F2421',
+      primary_color: appConfig.primary_color || platformConfig.primary_color || '#2563EB',
+      secondary_color: appConfig.secondary_color || platformConfig.secondary_color || '#0F172A',
     }),
     [platformConfig, appConfig]
   );
@@ -359,15 +362,15 @@ export default function App() {
         />
       ) : (currentUser.is_admin || currentUser.role === 'admin') && verifyingAdmin ? (
         <div
-          className="flex h-screen w-screen items-center justify-center aurora-surface-flow dark:bg-[#081312]"
+          className="flex h-screen w-screen items-center justify-center aurora-surface-flow"
         >
           <div className="text-center px-6">
             <img
               src={resolveBrandLogo(effectivePlatformConfig)}
-              alt={effectivePlatformConfig.site_name || 'Boreal Mobilidade'}
-              className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-[#047857]/30 shadow-lg"
+              alt={effectivePlatformConfig.site_name || 'Go Driver Mobilidade'}
+              className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-[#2563EB]/25 bg-white shadow-lg"
             />
-            <p className="mt-3 text-sm font-extrabold text-[#0F2421] dark:text-[#ECFDF5]">
+            <p className="mt-3 text-sm font-extrabold text-[#0F172A]">
               {t.validating_admin}
             </p>
           </div>
@@ -420,16 +423,16 @@ export default function App() {
       {walletToast && (
         <div
           key={walletToast.id}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[calc(100%-24px)] max-w-md rounded-2xl border border-[#2DD4BF]/70 bg-white/95 dark:bg-[#0D1A18] text-[#0F2421] dark:text-white px-4 py-3 shadow-2xl backdrop-blur-md flex items-start gap-3 animate-in fade-in slide-in-from-top-3 duration-200"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[calc(100%-24px)] max-w-md rounded-2xl border border-[#BFDBFE] bg-white/95 text-[#0F172A] px-4 py-3 shadow-2xl backdrop-blur-md flex items-start gap-3 animate-in fade-in slide-in-from-top-3 duration-200"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#047857] to-[#0D9488] text-white shadow-xs">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#2563EB] to-[#0EA5E9] text-white shadow-xs">
             <BellRing className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-extrabold uppercase tracking-wider text-[#047857] dark:text-[#6EE7B7]">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[#2563EB]">
               {walletToast.title}
             </p>
-            <p className="mt-0.5 text-sm font-bold text-[#0F2421] dark:text-white leading-snug">
+            <p className="mt-0.5 text-sm font-bold text-[#0F172A] leading-snug">
               {walletToast.message}
             </p>
             {walletToast.receiptTx && (
@@ -440,16 +443,16 @@ export default function App() {
                   setWalletToast(null);
                   if (tx) setActiveReceiptTx(tx);
                 }}
-                className="mt-2 inline-flex min-h-[34px] items-center rounded-xl bg-[#047857] px-3 text-[11px] font-extrabold text-white shadow-2xs active:scale-95 transition"
+                className="aurora-accent-flow mt-2 inline-flex min-h-[34px] items-center rounded-xl px-3 text-[11px] font-extrabold text-white shadow-2xs active:scale-95 transition"
               >
-                Ver Comprovante BorealPay
+                {t.view_gopay_receipt}
               </button>
             )}
           </div>
           <button
             type="button"
             onClick={() => setWalletToast(null)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F1F8F6] dark:bg-neutral-800 text-[#334E4A] dark:text-neutral-300"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F4F6F9] text-[#475569] hover:bg-[#E2E8F0]"
             aria-label={t.close}
           >
             <X className="h-3.5 w-3.5" />

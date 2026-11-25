@@ -32,18 +32,18 @@ import type {
 export const PLATFORM_BRAND_CACHE_KEY = 'velo99_platform_brand_cache_v1';
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
-  platform_pix_key: 'pix@borealmobilidade.app',
-  platform_pix_receiver: 'Boreal Mobilidade Ltda',
+  platform_pix_key: 'pix@godriver.app',
+  platform_pix_receiver: 'Go Driver Mobilidade',
   platform_city: 'São Paulo, SP',
   company_address: '',
   platform_pix_qr_url: null,
-  site_name: 'Boreal Mobilidade',
+  site_name: 'Go Driver Mobilidade',
   support_whatsapp: '',
   commission_percent: 0,
   maintenance_mode: false,
   app_logo_url: null,
-  primary_color: '#047857',
-  secondary_color: '#0F2421',
+  primary_color: '#2563EB',
+  secondary_color: '#0F172A',
   vehicle_img_moto: null,
   vehicle_img_pop: null,
   vehicle_img_delivery_moto: null,
@@ -878,7 +878,16 @@ function readCachedPlatformBrand(): Partial<PlatformConfig> {
 
 function resolveNormalizedBrandName(raw?: unknown): string {
   const clean = String(raw || '').trim();
-  if (!clean || clean === '66 Mobilidade' || clean === 'Velo99' || clean === 'Velo99 Mobilidade') {
+  if (
+    !clean ||
+    clean === 'Boreal Mobilidade' ||
+    clean === '66 Mobilidade' ||
+    clean === 'Meia Meia' ||
+    clean === 'Meia Meia Mobilidade' ||
+    clean === 'Go Driver' ||
+    clean === 'Velo99' ||
+    clean === 'Velo99 Mobilidade'
+  ) {
     return DEFAULT_PLATFORM_CONFIG.site_name;
   }
   return clean;
@@ -886,16 +895,18 @@ function resolveNormalizedBrandName(raw?: unknown): string {
 
 function resolveNormalizedPrimaryColor(raw?: unknown): string {
   const clean = String(raw || '').trim();
-  if (!clean || clean.toUpperCase() === '#FFD100' || clean.toUpperCase() === '#FFDD00') {
-    return DEFAULT_PLATFORM_CONFIG.primary_color || '#047857';
+  const upper = clean.toUpperCase();
+  if (!clean || upper === '#047857' || upper === '#FFD100' || upper === '#FFDD00') {
+    return DEFAULT_PLATFORM_CONFIG.primary_color || '#2563EB';
   }
   return clean;
 }
 
 function resolveNormalizedSecondaryColor(raw?: unknown): string {
   const clean = String(raw || '').trim();
-  if (!clean || clean.toUpperCase() === '#111827') {
-    return DEFAULT_PLATFORM_CONFIG.secondary_color || '#0F2421';
+  const upper = clean.toUpperCase();
+  if (!clean || upper === '#0F2421' || upper === '#111827') {
+    return DEFAULT_PLATFORM_CONFIG.secondary_color || '#0F172A';
   }
   return clean;
 }
@@ -1374,7 +1385,7 @@ export async function createRideRequest(input: {
   const rideId = String(data.id);
 
   if (input.payment_method === 'wallet') {
-    const desc = `Reserva BorealPay corrida #${rideId.slice(-4)} · ${
+    const desc = `Reserva GoPay corrida #${rideId.slice(-4)} · ${
       input.destination.address.split(',')[0]
     }`;
     const { error: reserveErr } = await supabase.rpc('reserve_66pay_for_ride', {
@@ -1386,7 +1397,7 @@ export async function createRideRequest(input: {
     if (reserveErr) {
       if (reserveErr.message?.toLowerCase().includes('saldo')) {
         await supabase.from('rides').delete().eq('id', rideId);
-        throw new Error('Saldo BorealPay insuficiente na carteira.');
+        throw new Error('Saldo GoPay insuficiente na carteira.');
       }
       // Fallback for older SQL schemas without reserve_66pay_for_ride: use debit_own_wallet_for_ride & mark paid_wallet
       const { error: rpcErr } = await supabase.rpc('debit_own_wallet_for_ride', {
@@ -1860,8 +1871,8 @@ export async function completeRide(
     const labelPrefix =
       nextPaymentStatus === 'paid' || nextPaymentStatus === 'paid_wallet'
         ? isDelivery
-          ? 'Entrega BorealPay'
-          : 'Corrida BorealPay'
+          ? 'Entrega GoPay'
+          : 'Corrida GoPay'
         : isDelivery
         ? 'Entrega Pix'
         : 'Corrida Pix';
@@ -2472,9 +2483,9 @@ export async function adminSavePricing(pricingList: PricingSetting[]): Promise<v
 }
 
 export async function adminSavePlatformConfig(config: PlatformConfig): Promise<void> {
-  const cleanName = config.site_name.trim() || 'Boreal Mobilidade';
-  const cleanPrimary = config.primary_color || '#047857';
-  const cleanSecondary = config.secondary_color || '#0F2421';
+  const cleanName = config.site_name.trim() || 'Go Driver Mobilidade';
+  const cleanPrimary = config.primary_color || '#2563EB';
+  const cleanSecondary = config.secondary_color || '#0F172A';
 
   try {
     localStorage.setItem(
@@ -2946,7 +2957,7 @@ export async function createWalletDepositRequest(
   const windowStatus = getDepositWindowStatus(cfg);
   if (!windowStatus.isOpen) {
     throw new Error(
-      `Horário de depósitos Pix encerrado no momento. Novos depósitos funcionam das ${windowStatus.startTime} às ${windowStatus.endTime}. Quem já tem saldo BorealPay continua usando normalmente!`
+      `Horário de depósitos Pix encerrado no momento. Novos depósitos funcionam das ${windowStatus.startTime} às ${windowStatus.endTime}. Quem já tem saldo GoPay continua usando normalmente!`
     );
   }
 
@@ -3083,7 +3094,7 @@ export async function adminUpdateUserWalletBalance(
 export async function updateMyPay66Key(userId: string, newKey: string): Promise<UserProfile> {
   const clean = newKey.trim().replace(/\s+/g, '');
   if (clean.length < 4 || clean.length > 64) {
-    throw new Error('Informe uma Chave BorealPay válida entre 4 e 64 caracteres.');
+    throw new Error('Informe uma Chave GoPay válida entre 4 e 64 caracteres.');
   }
 
   const { error: rpcErr } = await supabase.rpc('update_my_pay66_key', {
@@ -3106,21 +3117,25 @@ export async function updateMyPay66Key(userId: string, newKey: string): Promise<
       .eq('id', userId);
     if (updErr) {
       if (updErr.code === '23505') {
-        throw new Error('Esta Chave BorealPay já está em uso por outro usuário.');
+        throw new Error('Esta Chave GoPay já está em uso por outro usuário.');
       }
       throw new Error(updErr.message);
     }
   }
 
   const refreshed = await fetchUserProfileById(userId);
-  if (!refreshed) throw new Error('Erro ao recarregar perfil após salvar Chave BorealPay.');
+  if (!refreshed) throw new Error('Erro ao recarregar perfil após salvar Chave GoPay.');
   return refreshed;
 }
 
 function extractPay66Token(rawInput: string): string {
   const clean = rawInput.trim();
   const upper = clean.toUpperCase();
-  if (upper.startsWith('66PAY|') || upper.startsWith('BOREALPAY|')) {
+  if (
+    upper.startsWith('66PAY|') ||
+    upper.startsWith('BOREALPAY|') ||
+    upper.startsWith('GOPAY|')
+  ) {
     const parts = clean.split('|');
     return (parts[1] || parts[2] || clean).trim();
   }
@@ -3131,7 +3146,9 @@ export async function lookupWalletRecipient(query: string): Promise<WalletRecipi
   const clean = query.trim();
   if (clean.length < 3) return [];
   const token = extractPay66Token(clean);
-  const rpcQuery = clean.toUpperCase().startsWith('BOREALPAY|') ? token : clean;
+  const upperClean = clean.toUpperCase();
+  const rpcQuery =
+    upperClean.startsWith('BOREALPAY|') || upperClean.startsWith('GOPAY|') ? token : clean;
 
   const { data, error } = await supabase.rpc('lookup_wallet_recipient', {
     p_query: rpcQuery,
@@ -3189,10 +3206,10 @@ export async function transferirSaldo66(
   const cleanTarget = extractPay66Token(destinatario);
   const cleanAmount = Number(Math.max(0, valor).toFixed(2));
   if (!cleanTarget) {
-    throw new Error('Informe o destinatário da transferência BorealPay.');
+    throw new Error('Informe o destinatário da transferência GoPay.');
   }
   if (cleanAmount < 1) {
-    throw new Error('O valor mínimo para transferência BorealPay é R$ 1,00.');
+    throw new Error('O valor mínimo para transferência GoPay é R$ 1,00.');
   }
 
   const { data: rpc66Data, error: rpc66Err } = await supabase.rpc('transferir_saldo_66', {
@@ -3212,7 +3229,7 @@ export async function transferirSaldo66(
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData.session?.user?.id || '';
     return {
-      id: payload.tx_id ? String(payload.tx_id) : `BOREAL-${Date.now()}`,
+      id: payload.tx_id ? String(payload.tx_id) : `GO-${Date.now()}`,
       user_id: uid,
       amount: -Number(payload.amount ?? cleanAmount),
       type: 'transfer_out',
@@ -3237,7 +3254,7 @@ export async function transferirSaldo66(
     throw new Error(legacyErr.message || rpc66Err.message || 'Erro ao transferir saldo.');
   }
 
-  throw new Error(rpc66Err.message || 'Erro ao transferir saldo na carteira BorealPay.');
+  throw new Error(rpc66Err.message || 'Erro ao transferir saldo na carteira GoPay.');
 }
 
 export async function transferWalletBalance(
@@ -3618,15 +3635,15 @@ export async function adminGrantCouponToUsers(
   return Number(data ?? 0);
 }
 
-// --- TRANSFERÊNCIA BOREALPAY NA CORRIDA (QR CODE / CHAVE BOREALPAY DO MOTORISTA) ---
+// --- TRANSFERÊNCIA GOPAY NA CORRIDA (QR CODE / CHAVE GOPAY DO MOTORISTA) ---
 
 export function buildDriver66PayQrPayload(driver: UserProfile): string {
   const key =
     driver.pay66_key ||
-    `BOREAL-${driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    `GO-${driver.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   const cleanName = (driver.full_name || 'Motorista').replace(/\|/g, ' ').trim();
   const cleanEmail = (driver.email || '').replace(/\|/g, '').trim();
-  return `BOREALPAY|${driver.id}|${key}|${cleanEmail}|${cleanName}`;
+  return `GOPAY|${driver.id}|${key}|${cleanEmail}|${cleanName}`;
 }
 
 export async function lookup66PayDriver(
@@ -3637,12 +3654,17 @@ export async function lookup66PayDriver(
 
   let token = clean;
   const upper = clean.toUpperCase();
-  if (upper.startsWith('66PAY|') || upper.startsWith('BOREALPAY|')) {
+  if (
+    upper.startsWith('66PAY|') ||
+    upper.startsWith('BOREALPAY|') ||
+    upper.startsWith('GOPAY|')
+  ) {
     const parts = clean.split('|');
     token = (parts[1] || parts[2] || '').trim();
   }
 
-  const rpcKeyArg = upper.startsWith('BOREALPAY|') ? token : clean;
+  const rpcKeyArg =
+    upper.startsWith('BOREALPAY|') || upper.startsWith('GOPAY|') ? token : clean;
   const { data: rpcData, error: rpcErr } = await supabase.rpc('lookup_66pay_driver', {
     p_key: rpcKeyArg,
   });
@@ -3653,7 +3675,7 @@ export async function lookup66PayDriver(
       id: String(row.id),
       full_name: String(row.full_name || 'Motorista'),
       pay66_key: String(
-        row.pay66_key || `BOREAL-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
+        row.pay66_key || `GO-${String(row.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
       ),
       avatar_url: row.avatar_url ? String(row.avatar_url) : null,
       phone: row.phone ? String(row.phone) : '',
@@ -3679,7 +3701,7 @@ export async function lookup66PayDriver(
       return {
         id: String(prof.id),
         full_name: String(prof.full_name || 'Motorista'),
-        pay66_key: `BOREAL-${String(prof.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+        pay66_key: `GO-${String(prof.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`,
         avatar_url: prof.avatar_url ? String(prof.avatar_url) : null,
         phone: prof.phone ? String(prof.phone) : '',
         vehicle_model: drv?.vehicle_model ? String(drv.vehicle_model) : null,
@@ -3707,7 +3729,7 @@ export async function process66PayRideTransfer(
       already_paid: Boolean(res.already_paid ?? false),
       ride_id: String(res.ride_id || rideId),
       amount: Number(res.amount ?? 0),
-      auth_code: String(res.auth_code || `BPAY-${rideId.slice(0, 8).toUpperCase()}`),
+      auth_code: String(res.auth_code || `GPAY-${rideId.slice(0, 8).toUpperCase()}`),
       tx_id: String(res.tx_id || rideId),
       created_at: String(res.created_at || new Date().toISOString()),
       sender_name: String(res.sender_name || 'Cliente'),
@@ -3724,7 +3746,7 @@ export async function process66PayRideTransfer(
     p_ride_id: rideId,
   });
   if (legacyErr) {
-    throw new Error(error?.message || legacyErr.message || 'Falha ao processar pagamento BorealPay.');
+    throw new Error(error?.message || legacyErr.message || 'Falha ao processar pagamento GoPay.');
   }
 
   const ride = await fetchRideByIdEnriched(rideId);
@@ -3733,17 +3755,17 @@ export async function process66PayRideTransfer(
     ok: true,
     ride_id: rideId,
     amount: Number((ride?.final_fare ?? ride?.estimated_fare ?? 0).toFixed(2)),
-    auth_code: `BPAY-${rideId.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+    auth_code: `GPAY-${rideId.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
     tx_id: rideId,
     created_at: new Date().toISOString(),
     sender_name: ride?.passenger?.full_name || 'Cliente',
     sender_key:
       ride?.passenger?.pay66_key ||
-      `BOREAL-${(ride?.passenger_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      `GO-${(ride?.passenger_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
     recipient_name: ride?.driver?.full_name || 'Motorista',
     recipient_key:
       ride?.driver?.pay66_key ||
-      `BOREAL-${driverId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+      `GO-${driverId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
   };
 }
 

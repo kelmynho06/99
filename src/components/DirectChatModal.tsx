@@ -124,16 +124,16 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1250] flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4">
-      <div className="flex h-[84vh] sm:h-[580px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
-        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#6EE7B7]/50 px-5 py-4 text-[#0F2421] dark:text-white">
+    <div className="fixed inset-0 z-[1250] flex items-end sm:items-center justify-center bg-[#0F172A]/60 p-0 sm:p-4">
+      <div className="flex h-[84vh] sm:h-[580px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden border border-[#E2E8F0]">
+        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4 text-[#0F172A]">
           <div className="flex items-center gap-3 min-w-0">
             {isAdmin ? (
               <AvatarImage
                 src={threadUser.avatar_url}
                 name={threadUser.full_name}
-                className="h-10 w-10 rounded-full object-cover border border-[#047857] dark:border-[#2DD4BF] shrink-0"
-                fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#047857] text-white font-extrabold"
+                className="h-10 w-10 rounded-full object-cover border-2 border-[#2563EB] shrink-0"
+                fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-white font-extrabold"
               />
             ) : (
               <div className="aurora-accent-flow flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white font-extrabold">
@@ -141,11 +141,11 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-[#047857] dark:text-[#6EE7B7] flex items-center gap-1">
+              <p className="text-[11px] font-bold text-[#2563EB] flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {isAdmin ? 'Chat Direto · Super Admin' : 'Atendimento Oficial · Administração'}
               </p>
-              <h3 className="text-base font-extrabold truncate">
+              <h3 className="text-base font-extrabold text-[#0F172A] truncate">
                 {isAdmin ? threadUser.full_name : `${appConfig.app_name} · ${t.support_admin}`}
               </h3>
             </div>
@@ -154,18 +154,18 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 dark:bg-white/10 text-[#0F2421] dark:text-white"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white border border-[#E2E8F0] text-[#0F172A]"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950 p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto bg-[#F4F6F9] p-4 space-y-3">
           {loading ? (
-            <p className="py-10 text-center text-xs text-neutral-500 dark:text-neutral-400">Carregando mensagens...</p>
+            <p className="py-10 text-center text-xs text-[#475569]">Carregando mensagens...</p>
           ) : messages.length === 0 ? (
-            <div className="py-10 text-center text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+            <div className="py-10 text-center text-xs text-[#475569] leading-relaxed">
               {isAdmin
                 ? `Inicie uma conversa direta com ${threadUser.full_name}.`
                 : 'Envie uma mensagem direta para a administração da plataforma.'}
@@ -175,19 +175,19 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
               const mine = m.sender_id === currentUser.id;
               return (
                 <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                  <span className="mb-0.5 text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
+                  <span className="mb-0.5 text-[10px] font-bold text-[#475569]">
                     {m.sender_role === 'admin' ? 'Administração' : m.sender_name}
                   </span>
                   <div
                     className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-xs ${
                       mine
-                        ? 'bg-[#047857] text-white font-semibold rounded-br-sm'
-                        : 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-bl-sm'
+                        ? 'bg-[#2563EB] text-white font-semibold rounded-br-sm'
+                        : 'bg-white text-[#0F172A] border border-[#E2E8F0] rounded-bl-sm'
                     }`}
                   >
                     {m.content}
                   </div>
-                  <span className="mt-1 text-[10px] text-neutral-400 font-mono-num">
+                  <span className="mt-1 text-[10px] text-[#64748B] font-mono-num">
                     {new Date(m.created_at).toLocaleTimeString('pt-BR', {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -201,19 +201,19 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
         </div>
 
         {errMsg && (
-          <div className="bg-red-50 dark:bg-red-950/50 border-t border-red-200 dark:border-red-900 px-4 py-2 text-xs font-semibold text-red-700 dark:text-red-300">
+          <div className="bg-red-50 border-t border-red-200 px-4 py-2 text-xs font-semibold text-red-700">
             {errMsg}
           </div>
         )}
 
-        <div className="border-t border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 pt-2.5 pb-safe">
+        <div className="border-t border-[#E2E8F0] bg-white px-3 pt-2.5 pb-safe">
           <div className="flex gap-2 overflow-x-auto pb-2.5 no-scrollbar">
             {quickReplies.map((qr) => (
               <button
                 key={qr}
                 type="button"
                 onClick={() => handleSend(qr)}
-                className="shrink-0 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 whitespace-nowrap"
+                className="shrink-0 rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 py-1.5 text-xs font-medium text-[#0F172A] hover:bg-[#EFF6FF] hover:border-[#BFDBFE] whitespace-nowrap"
               >
                 {qr}
               </button>
@@ -231,12 +231,12 @@ export const DirectChatModal: React.FC<DirectChatModalProps> = ({
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Escreva sua mensagem..."
-              className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+              className="min-h-[46px] flex-1 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-4 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
             />
             <button
               type="submit"
               disabled={!text.trim() || sending}
-              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] disabled:opacity-40"
+              className="aurora-accent-flow flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl text-white disabled:opacity-40"
               aria-label="Enviar mensagem"
             >
               <Send className="h-5 w-5" />

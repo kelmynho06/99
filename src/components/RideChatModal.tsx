@@ -65,36 +65,36 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
-      <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
-        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#6EE7B7]/50 px-5 py-4 text-[#0F2421] dark:text-white">
+    <div className="fixed inset-0 z-[1100] flex items-end sm:items-center justify-center bg-[#0F172A]/60 p-0 sm:p-4">
+      <div className="flex h-[82vh] sm:h-[560px] w-full max-w-md flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl overflow-hidden border border-[#E2E8F0]">
+        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4 text-[#0F172A]">
           <div className="flex items-center gap-3 min-w-0">
             <AvatarImage
               src={peerAvatarUrl}
               name={peerName}
-              className="h-10 w-10 rounded-full object-cover border border-[#047857] dark:border-[#2DD4BF] shrink-0"
-              fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#047857] text-white font-extrabold"
+              className="h-10 w-10 rounded-full object-cover border-2 border-[#2563EB] shrink-0"
+              fallbackClassName="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2563EB] text-white font-extrabold"
             />
             <div className="min-w-0">
-              <p className="text-xs font-bold text-[#047857] dark:text-[#6EE7B7]">
+              <p className="text-xs font-bold text-[#2563EB]">
                 {isDelivery ? 'Chat da entrega (Motoboy ↔ Cliente)' : 'Chat da corrida'}
               </p>
-              <h3 className="text-base font-bold truncate">{peerName}</h3>
+              <h3 className="text-base font-extrabold text-[#0F172A] truncate">{peerName}</h3>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/80 dark:bg-white/10 text-[#0F2421] dark:text-white hover:bg-white dark:hover:bg-white/20 transition"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white border border-[#E2E8F0] text-[#0F172A] hover:bg-[#F1F5F9] transition"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950 p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto bg-[#F4F6F9] p-4 space-y-3">
           {messages.length === 0 ? (
-            <div className="py-10 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="py-10 text-center text-sm text-[#475569]">
               {isDelivery
                 ? `Combine os detalhes da coleta ou entrega com ${peerName}.`
                 : `Envie uma mensagem para combinar o embarque com ${peerName}.`}
@@ -107,13 +107,13 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
                   <div
                     className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
                       mine
-                        ? 'bg-[#047857] text-white font-medium rounded-br-sm'
-                        : 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-bl-sm'
+                        ? 'bg-[#2563EB] text-white font-medium rounded-br-sm'
+                        : 'bg-white text-[#0F172A] border border-[#E2E8F0] rounded-bl-sm'
                     }`}
                   >
                     {m.content}
                   </div>
-                  <span className="mt-1 text-[11px] text-neutral-400 font-mono-num">
+                  <span className="mt-1 text-[11px] text-[#64748B] font-mono-num">
                     {new Date(m.created_at).toLocaleTimeString('pt-BR', {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -126,14 +126,14 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 pt-2.5 pb-safe">
+        <div className="border-t border-[#E2E8F0] bg-white px-3 pt-2.5 pb-safe">
           <div className="flex gap-2 overflow-x-auto pb-2.5 no-scrollbar">
             {quickReplies.map((qr) => (
               <button
                 key={qr}
                 type="button"
                 onClick={() => sendMessage(qr)}
-                className="shrink-0 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700 active:scale-95 transition whitespace-nowrap"
+                className="shrink-0 rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 py-1.5 text-xs font-medium text-[#0F172A] hover:bg-[#EFF6FF] hover:border-[#BFDBFE] active:scale-95 transition whitespace-nowrap"
               >
                 {qr}
               </button>
@@ -151,12 +151,12 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={t.any_note_chat}
-              className="min-h-[46px] flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 text-sm text-neutral-900 dark:text-white outline-none focus:border-[#047857] dark:focus:border-[#2DD4BF]"
+              className="min-h-[46px] flex-1 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-4 text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
             />
             <button
               type="submit"
               disabled={!text.trim() || sending}
-              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] disabled:opacity-40 transition active:scale-95"
+              className="aurora-accent-flow flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl text-white disabled:opacity-40 transition active:scale-95"
               aria-label="Enviar mensagem"
             >
               <Send className="h-5 w-5" />

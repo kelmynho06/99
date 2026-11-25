@@ -42,7 +42,7 @@ function StatusBadge({
 }) {
   if (state === 'granted') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-0.5 text-[11px] font-extrabold text-[#059669] border border-[#A7F3D0]">
         <CheckCircle2 className="h-3 w-3" />
         {labels.granted}
       </span>
@@ -50,20 +50,20 @@ function StatusBadge({
   }
   if (state === 'denied') {
     return (
-      <span className="rounded-full bg-red-50 dark:bg-red-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+      <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-extrabold text-red-700 border border-red-200">
         {labels.denied}
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+    <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 border border-amber-200">
       {labels.pending}
     </span>
   );
 }
 
 export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
-  siteName = 'Boreal Mobilidade',
+  siteName = 'Go Driver Mobilidade',
   onClose,
 }) => {
   const { t } = useTranslation();
@@ -139,26 +139,26 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
   };
 
   const stepsMeta = [
-    { title: 'Notificações Push', icon: Bell, badge: status.notifications },
-    { title: 'GPS Contínuo', icon: MapPin, badge: status.location },
-    { title: 'Câmera & Documentos', icon: Camera, badge: status.camera },
-    { title: 'Bateria & Segundo Plano', icon: BatteryCharging, badge: batteryDone ? ('granted' as const) : ('prompt' as const) },
+    { title: t.perm_step_push, icon: Bell, badge: status.notifications },
+    { title: t.perm_step_gps, icon: MapPin, badge: status.location },
+    { title: t.perm_step_cam, icon: Camera, badge: status.camera },
+    { title: t.perm_step_battery, icon: BatteryCharging, badge: batteryDone ? ('granted' as const) : ('prompt' as const) },
   ];
 
   return (
-    <div className="fixed inset-0 z-[1320] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
-      <div className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border border-neutral-200 dark:border-neutral-800">
+    <div className="fixed inset-0 z-[1320] flex items-end sm:items-center justify-center bg-[#0F172A]/65 p-0 sm:p-4">
+      <div className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border border-[#E2E8F0]">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-3">
+        <div className="flex items-start justify-between gap-3 border-b border-[#E2E8F0] pb-3">
           <div className="flex items-center gap-2.5">
             <div className="aurora-accent-flow flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#475569]">
                 {step + 1}/4 · {t.permissions_btn} ({siteName})
               </p>
-              <h3 className="font-display text-lg font-extrabold text-neutral-950 dark:text-white">
+              <h3 className="font-display text-lg font-extrabold text-[#0F172A]">
                 {stepsMeta[step].title}
               </h3>
             </div>
@@ -166,7 +166,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
           <button
             type="button"
             onClick={closeModal}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A]"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
@@ -182,8 +182,8 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               onClick={() => setStep(idx as 0 | 1 | 2 | 3)}
               className={`rounded-xl py-2 px-1 text-center transition border ${
                 step === idx
-                  ? 'bg-[#047857] dark:bg-[#2DD4BF] text-white dark:text-[#0F2421] border-[#047857] dark:border-[#2DD4BF]'
-                  : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
+                  ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                  : 'bg-[#F4F6F9] text-[#475569] border-[#E2E8F0]'
               }`}
             >
               <p className="text-[10px] font-extrabold truncate">{idx + 1}. {s.title.split(' ')[0]}</p>
@@ -193,19 +193,18 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
 
         {/* Step 1: Notifications */}
         {step === 0 && (
-          <div className="space-y-3 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4">
+          <div className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
                   <Bell className="h-6 w-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                    Alertas Pop-up e Toque Contínuo de Corridas
+                  <h4 className="text-sm font-extrabold text-[#0F172A]">
+                    {t.perm_push_title}
                   </h4>
-                  <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                    Essencial para motoristas e entregadores ouvirem novas chamadas e passageiros
-                    receberem aviso imediato de embarque ou mensagens do chat mesmo com a tela bloqueada.
+                  <p className="mt-1 text-xs text-[#475569] leading-relaxed">
+                    {t.perm_push_desc}
                   </p>
                 </div>
               </div>
@@ -222,29 +221,28 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 setStep(1);
               }}
               disabled={requesting}
-              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421]"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#2563EB] text-xs font-extrabold text-white"
             >
               <Bell className="h-4 w-4" />
-              Permitir Notificações e Avançar
+              {t.perm_push_btn}
             </button>
           </div>
         )}
 
         {/* Step 2: Always Location */}
         {step === 1 && (
-          <div className="space-y-3 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4">
+          <div className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE]">
                   <MapPin className="h-6 w-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                    Localização GPS &ldquo;Permitir o tempo todo&rdquo;
+                  <h4 className="text-sm font-extrabold text-[#0F172A]">
+                    {t.perm_gps_title}
                   </h4>
-                  <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                    Mantém o rastreamento em tempo real, o cálculo exato de rota e o envio da sua
-                    posição no mapa mesmo ao alternar para outros aplicativos ou bloquear a tela.
+                  <p className="mt-1 text-xs text-[#475569] leading-relaxed">
+                    {t.perm_gps_desc}
                   </p>
                 </div>
               </div>
@@ -261,33 +259,28 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 setStep(2);
               }}
               disabled={requesting}
-              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421]"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#2563EB] text-xs font-extrabold text-white"
             >
               <MapPin className="h-4 w-4" />
-              Ativar GPS Contínuo e Avançar
+              {t.perm_gps_btn}
             </button>
           </div>
         )}
 
         {/* Step 3: Camera & Gallery with automatic compression */}
         {step === 2 && (
-          <div className="space-y-3 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-4">
+          <div className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
                   <Camera className="h-6 w-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                    Câmera &amp; Galeria (Foto de Perfil, CNH e CRLV)
+                  <h4 className="text-sm font-extrabold text-[#0F172A]">
+                    {t.perm_cam_title}
                   </h4>
-                  <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                    Utilizada apenas para atualizar sua foto de perfil e enviar documentos (CNH/CRLV).
-                    As imagens passam por <strong>compressão automática em Canvas</strong> para evitar
-                    travamentos ou falta de memória em celulares Android de entrada.
-                  </p>
-                  <p className="mt-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                    Obs.: A confirmação de corridas e entregas é feita 100% por PIN de 4 dígitos.
+                  <p className="mt-1 text-xs text-[#475569] leading-relaxed">
+                    {t.perm_cam_desc}
                   </p>
                 </div>
               </div>
@@ -304,29 +297,28 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                 setStep(3);
               }}
               disabled={requesting}
-              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#047857] dark:bg-[#2DD4BF] text-xs font-extrabold text-white dark:text-[#0F2421]"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#2563EB] text-xs font-extrabold text-white"
             >
               <Camera className="h-4 w-4" />
-              Autorizar Câmera / Galeria e Avançar
+              {t.perm_cam_btn}
             </button>
           </div>
         )}
 
         {/* Step 4: Native Android Battery Optimization & Background Floating Bubble */}
         {step === 3 && (
-          <div className="space-y-3 rounded-2xl border border-[#6EE7B7] dark:border-emerald-800 bg-[#ECFDF5]/70 dark:bg-emerald-950/30 p-4">
+          <div className="space-y-3 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
                 <div className="aurora-accent-flow flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white">
                   <BatteryCharging className="h-6 w-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-extrabold text-neutral-950 dark:text-white">
-                    Segundo Plano, Bateria &amp; Balão Flutuante
+                  <h4 className="text-sm font-extrabold text-[#0F172A]">
+                    {t.perm_bat_title}
                   </h4>
-                  <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                    O balão redondo da <strong>Boreal</strong> aparece <strong>somente fora do app</strong>{' '}
-                    (quando você minimizar) para voltar com 1 toque sem gastar bateria.
+                  <p className="mt-1 text-xs text-[#475569] leading-relaxed">
+                    {t.perm_bat_desc} ({siteName})
                   </p>
                 </div>
               </div>
@@ -341,7 +333,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                     const ok = await requestNativeOverlayPermission();
                     setOverlayDone(ok);
                   }}
-                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-3.5 text-xs font-extrabold text-neutral-950 dark:text-white"
+                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white border border-[#E2E8F0] px-3.5 text-xs font-extrabold text-[#0F172A]"
                 >
                   <span>1. Permitir Balão Sobrepor Outros Apps</span>
                   <StatusBadge state={overlayDone ? 'granted' : 'prompt'} labels={badgeLabels} />
@@ -352,35 +344,35 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
                     const ok = await requestNativeBatteryOptimization();
                     setBatteryDone(ok);
                   }}
-                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-3.5 text-xs font-extrabold text-neutral-950 dark:text-white"
+                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-white border border-[#E2E8F0] px-3.5 text-xs font-extrabold text-[#0F172A]"
                 >
                   <span>2. Bateria Irrestrita (Economia Inteligente)</span>
                   <StatusBadge state={batteryDone ? 'granted' : 'prompt'} labels={badgeLabels} />
                 </button>
               </div>
             ) : (
-              <div className="rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-3 space-y-2 text-xs">
-                <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#047857] text-white text-[10px]">1</span>
+              <div className="rounded-xl bg-white border border-[#E2E8F0] p-3 space-y-2 text-xs">
+                <div className="flex items-center gap-2 font-bold text-[#0F172A]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2563EB] text-white text-[10px]">1</span>
                   <span>No APK Android: Configurações &gt; Aplicativos &gt; {siteName}</span>
                 </div>
-                <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-neutral-100">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#047857] text-white text-[10px]">2</span>
+                <div className="flex items-center gap-2 font-bold text-[#0F172A]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2563EB] text-white text-[10px]">2</span>
                   <span>Em Bateria, marque &ldquo;Irrestrito&rdquo; (Sem restrições)</span>
                 </div>
-                <div className="flex items-center gap-2 font-extrabold text-emerald-700 dark:text-emerald-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]">3</span>
+                <div className="flex items-center gap-2 font-extrabold text-[#2563EB]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2563EB] text-white text-[10px]">3</span>
                   <span>Ative &ldquo;Sobrepor a outros apps&rdquo; para o balão em segundo plano</span>
                 </div>
               </div>
             )}
 
-            <div className="flex items-center justify-between text-[11px] text-neutral-600 dark:text-neutral-300 px-1">
+            <div className="flex items-center justify-between text-[11px] text-[#475569] px-1">
               <span className="inline-flex items-center gap-1">
-                <Mic className="h-3.5 w-3.5 text-indigo-500" /> Áudio &amp; Voz PT-BR prontos
+                <Mic className="h-3.5 w-3.5 text-[#2563EB]" /> {t.perm_voice_ready}
               </span>
               <span className="inline-flex items-center gap-1">
-                <Phone className="h-3.5 w-3.5 text-emerald-600" /> Chamada direta ativa
+                <Phone className="h-3.5 w-3.5 text-[#10B981]" /> {t.perm_call_ready}
               </span>
             </div>
           </div>
@@ -401,7 +393,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
               <button
                 type="button"
                 onClick={() => setStep((prev) => Math.min(3, prev + 1) as 0 | 1 | 2 | 3)}
-                className="flex min-h-[48px] items-center justify-center gap-1 rounded-2xl border border-neutral-200 dark:border-neutral-700 px-4 text-xs font-extrabold text-neutral-800 dark:text-neutral-200"
+                className="flex min-h-[48px] items-center justify-center gap-1 rounded-2xl border border-[#E2E8F0] bg-[#F1F5F9] px-4 text-xs font-extrabold text-[#0F172A]"
               >
                 <span>{t.perm_next}</span>
                 <ChevronRight className="h-4 w-4" />
@@ -420,7 +412,7 @@ export const PermissionsPromptModal: React.FC<PermissionsPromptModalProps> = ({
           <button
             type="button"
             onClick={closeModal}
-            className="min-h-[40px] w-full text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+            className="min-h-[40px] w-full text-xs font-bold text-[#475569] hover:text-[#0F172A]"
           >
             {t.continue_btn}
           </button>

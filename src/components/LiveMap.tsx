@@ -315,15 +315,15 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     return items;
   }, [remainingCoords]);
 
-  // Passenger Live Location Badge ("Eu") in Aurora Cyan
+  // Passenger Live Location Badge ("Eu") in Electric Blue
   const userLocationIcon = useMemo(
     () =>
       L.divIcon({
         className: '',
         html: `<div style="position:relative;width:54px;height:54px;display:flex;align-items:center;justify-content:center;">
-          <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(6,182,212,0.18);border:1.5px solid rgba(45,212,191,0.4);"></div>
-          <div style="position:relative;width:28px;height:28px;border-radius:9999px;background:#ECFEFF;border:3px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(8,145,178,0.38);">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="#0891B2">
+          <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(37,99,235,0.18);border:1.5px solid rgba(56,189,248,0.45);"></div>
+          <div style="position:relative;width:28px;height:28px;border-radius:9999px;background:#EFF6FF;border:3px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(37,99,235,0.38);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="#2563EB">
               <circle cx="12" cy="8.5" r="4"/>
               <path d="M4.5 20.5c0-4 3.4-6.5 7.5-6.5s7.5 2.5 7.5 6.5z"/>
             </svg>
@@ -335,20 +335,20 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     []
   );
 
-  // Origin / Pickup Marker: Aurora Emerald circle (rides) OR Turquoise ring (deliveries)
+  // Origin / Pickup Marker: Vivid Emerald circle (rides) OR Electric Blue ring (deliveries)
   const originIcon = useMemo(
     () =>
       L.divIcon({
         className: '',
         html: isDelivery
           ? `<div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">
-              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(45,212,191,0.25);"></div>
-              <div style="position:relative;width:22px;height:22px;border-radius:9999px;background:#ffffff;border:5px solid #0D9488;box-shadow:0 4px 12px rgba(4,120,87,0.28);"></div>
+              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(37,99,235,0.22);"></div>
+              <div style="position:relative;width:22px;height:22px;border-radius:9999px;background:#ffffff;border:5px solid #2563EB;box-shadow:0 4px 12px rgba(37,99,235,0.28);"></div>
             </div>`
           : `<div style="position:relative;width:38px;height:38px;display:flex;align-items:center;justify-content:center;">
-              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(52,211,153,0.32);"></div>
-              <div style="position:relative;width:24px;height:24px;border-radius:9999px;background:#047857;border:2.5px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(4,120,87,0.36);">
-                <div style="width:9px;height:9px;border-radius:9999px;background:#6EE7B7;"></div>
+              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(16,185,129,0.28);"></div>
+              <div style="position:relative;width:24px;height:24px;border-radius:9999px;background:#10B981;border:2.5px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(16,185,129,0.36);">
+                <div style="width:9px;height:9px;border-radius:9999px;background:#ECFDF5;"></div>
               </div>
             </div>`,
         iconSize: [38, 38],
@@ -357,19 +357,19 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     [isDelivery]
   );
 
-  // Destination Marker: Deep Forest Flag Pin (rides) OR Aurora Cyan ring (deliveries)
+  // Destination Marker: Slate Flag Pin (rides) OR Sky Blue ring (deliveries)
   const destinationIcon = useMemo(
     () =>
       L.divIcon({
         className: '',
         html: isDelivery
           ? `<div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">
-              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(6,182,212,0.22);"></div>
-              <div style="position:relative;width:22px;height:22px;border-radius:9999px;background:#ffffff;border:5px solid #0891B2;box-shadow:0 4px 12px rgba(8,145,178,0.28);"></div>
+              <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(14,165,233,0.22);"></div>
+              <div style="position:relative;width:22px;height:22px;border-radius:9999px;background:#ffffff;border:5px solid #0EA5E9;box-shadow:0 4px 12px rgba(14,165,233,0.28);"></div>
             </div>`
           : `<div style="position:relative;width:34px;height:34px;display:flex;align-items:center;justify-content:center;">
-              <div style="width:30px;height:30px;border-radius:9999px;background:#0F2421;border:3px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(15,36,33,0.38);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="#6EE7B7" stroke="#6EE7B7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <div style="width:30px;height:30px;border-radius:9999px;background:#0F172A;border:3px solid #ffffff;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(15,23,42,0.36);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#38BDF8" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
                   <line x1="4" y1="22" x2="4" y2="15"/>
                 </svg>
@@ -393,7 +393,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       iconAnchor: [8, 8],
     });
 
-  // Top-down sleek Aurora Boreal vehicle SVG icon
+  // Top-down sleek Go Driver vehicle SVG icon
   const makeVehicleIcon = (
     vehicleType: 'car' | 'moto' | 'delivery' = 'car',
     heading = 0,
@@ -405,27 +405,27 @@ export const LiveMap: React.FC<LiveMapProps> = ({
         ${
           vehicleType === 'moto' || vehicleType === 'delivery'
             ? `<div style="width:36px;height:36px;border-radius:9999px;background:${
-                active ? '#0F2421' : '#FFFFFF'
-              };border:2.5px solid ${active ? '#2DD4BF' : '#047857'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(4,120,87,0.28);">
+                active ? '#0F172A' : '#FFFFFF'
+              };border:2.5px solid ${active ? '#38BDF8' : '#2563EB'};display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(37,99,235,0.28);">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${
-                  active ? '#6EE7B7' : '#0F2421'
+                  active ? '#60A5FA' : '#0F172A'
                 }" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="2" width="6" height="5" rx="2" fill="${active ? '#6EE7B7' : '#047857'}"/>
+                  <rect x="9" y="2" width="6" height="5" rx="2" fill="${active ? '#38BDF8' : '#2563EB'}"/>
                   <path d="M7 9h10"/>
-                  <rect x="8" y="9" width="8" height="10" rx="3" fill="${active ? '#FFFFFF' : '#CCFBF1'}" stroke="${active ? '#2DD4BF' : '#047857'}"/>
-                  <rect x="10" y="19" width="4" height="3" rx="1" fill="${active ? '#2DD4BF' : '#047857'}"/>
+                  <rect x="8" y="9" width="8" height="10" rx="3" fill="${active ? '#FFFFFF' : '#DBEAFE'}" stroke="${active ? '#38BDF8' : '#2563EB'}"/>
+                  <rect x="10" y="19" width="4" height="3" rx="1" fill="${active ? '#38BDF8' : '#2563EB'}"/>
                 </svg>
               </div>`
-            : `<div style="position:relative;width:28px;height:44px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 5px 8px rgba(15,36,33,0.34));">
+            : `<div style="position:relative;width:28px;height:44px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 5px 8px rgba(15,23,42,0.32));">
                 <svg width="26" height="42" viewBox="0 0 36 58" fill="none">
-                  <rect x="4" y="4" width="28" height="50" rx="11" fill="${active ? '#FFFFFF' : '#F7FBFA'}" stroke="${active ? '#047857' : '#0F2421'}" stroke-width="2.2"/>
-                  <path d="M8 15C8 11 11 9 18 9C25 9 28 11 28 15L26 23H10L8 15Z" fill="#0F2421"/>
-                  <rect x="9" y="24" width="18" height="14" rx="4" fill="#CCFBF1"/>
-                  <path d="M10 40H26L27 45C27 47 24 49 18 49C12 49 9 47 9 45L10 40Z" fill="#134E4A"/>
-                  <rect x="7" y="5" width="6" height="2.5" rx="1.2" fill="#2DD4BF"/>
-                  <rect x="23" y="5" width="6" height="2.5" rx="1.2" fill="#2DD4BF"/>
-                  <rect x="2" y="17" width="3" height="6" rx="1.5" fill="#0F2421"/>
-                  <rect x="31" y="17" width="3" height="6" rx="1.5" fill="#0F2421"/>
+                  <rect x="4" y="4" width="28" height="50" rx="11" fill="${active ? '#FFFFFF' : '#F4F6F9'}" stroke="${active ? '#2563EB' : '#0F172A'}" stroke-width="2.2"/>
+                  <path d="M8 15C8 11 11 9 18 9C25 9 28 11 28 15L26 23H10L8 15Z" fill="#0F172A"/>
+                  <rect x="9" y="24" width="18" height="14" rx="4" fill="#DBEAFE"/>
+                  <path d="M10 40H26L27 45C27 47 24 49 18 49C12 49 9 47 9 45L10 40Z" fill="#1E293B"/>
+                  <rect x="7" y="5" width="6" height="2.5" rx="1.2" fill="#38BDF8"/>
+                  <rect x="23" y="5" width="6" height="2.5" rx="1.2" fill="#38BDF8"/>
+                  <rect x="2" y="17" width="3" height="6" rx="1.5" fill="#0F172A"/>
+                  <rect x="31" y="17" width="3" height="6" rx="1.5" fill="#0F172A"/>
                 </svg>
               </div>`
         }
@@ -435,7 +435,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     });
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-neutral-100 dark:bg-neutral-900">
+    <div className="relative h-full w-full overflow-hidden bg-[#F4F6F9]">
       {/* Rotatable / 3D-tilted inner map viewport for 1st-Person Driving HUD */}
       <div
         className={
@@ -491,16 +491,16 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             />
           )}
 
-          {/* Remaining Route Ahead (Aurora Teal / Cyan with Emerald Casing) */}
+          {/* Remaining Route Ahead (Electric Blue with Deep Blue Casing) */}
           {remainingCoords.length >= 2 && (
             <>
               <Polyline
                 positions={remainingCoords}
-                pathOptions={{ color: '#047857', weight: 8.5, opacity: 0.95 }}
+                pathOptions={{ color: '#1D4ED8', weight: 8.5, opacity: 0.95 }}
               />
               <Polyline
                 positions={remainingCoords}
-                pathOptions={{ color: '#06B6D4', weight: 5, opacity: 1 }}
+                pathOptions={{ color: '#38BDF8', weight: 4.5, opacity: 1 }}
               />
             </>
           )}
@@ -596,8 +596,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             onClick={handleToggleHudCompass}
             className={`flex h-11 px-3 items-center justify-center gap-1.5 rounded-2xl shadow-lg border text-[11px] font-extrabold active:scale-95 transition ${
               hudCompassEnabled
-                ? 'bg-[#047857] text-white border-[#34D399]'
-                : 'bg-white dark:bg-[#0D1A18] text-[#0F2421] dark:text-neutral-200 border-[#DCEEE8] dark:border-emerald-950'
+                ? 'bg-[#2563EB] text-white border-[#60A5FA]'
+                : 'bg-white text-[#0F172A] border-[#E2E8F0]'
             }`}
             aria-label="Alternar bússola HUD 1ª pessoa"
             title="Rotação automática por bússola GPS"
@@ -614,7 +614,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           <button
             type="button"
             onClick={() => zoomApiRef.current.zoomIn()}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-[#0D1A18] text-[#0F2421] dark:text-white shadow-lg border border-[#DCEEE8] dark:border-emerald-950 active:scale-95 transition"
+            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#0F172A] shadow-lg border border-[#E2E8F0] hover:bg-[#F4F6F9] active:scale-95 transition"
             aria-label="Aproximar mapa"
           >
             <Plus className="h-5 w-5" />
@@ -622,7 +622,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
           <button
             type="button"
             onClick={() => zoomApiRef.current.zoomOut()}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-[#0D1A18] text-[#0F2421] dark:text-white shadow-lg border border-[#DCEEE8] dark:border-emerald-950 active:scale-95 transition"
+            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#0F172A] shadow-lg border border-[#E2E8F0] hover:bg-[#F4F6F9] active:scale-95 transition"
             aria-label="Afastar mapa"
           >
             <Minus className="h-5 w-5" />
@@ -631,7 +631,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             <button
               type="button"
               onClick={handleRecenterClick}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#047857] text-white shadow-lg border border-[#6EE7B7]/40 active:scale-95 transition"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2563EB] text-white shadow-lg border border-[#60A5FA]/50 hover:bg-[#1D4ED8] active:scale-95 transition"
               aria-label="Centralizar GPS"
               title="Minha localização"
             >
@@ -644,13 +644,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       {/* Real-time Floating GPS Speedometer */}
       {showSpeedometer && (
         <div
-          className="pointer-events-none absolute left-3 top-28 z-[500] flex h-[68px] w-[68px] flex-col items-center justify-center rounded-2xl bg-[#0F2421] text-white shadow-xl border-2 border-[#2DD4BF]"
+          className="pointer-events-none absolute left-3 top-28 z-[500] flex h-[68px] w-[68px] flex-col items-center justify-center rounded-2xl bg-white text-[#0F172A] shadow-xl border-2 border-[#2563EB]"
           aria-label={`Velocidade atual ${Math.max(0, Math.round(speedKmh))} quilômetros por hora`}
         >
-          <span className="font-mono-num text-2xl font-extrabold leading-none text-[#6EE7B7]">
+          <span className="font-mono-num text-2xl font-extrabold leading-none text-[#2563EB]">
             {Math.max(0, Math.round(speedKmh))}
           </span>
-          <span className="mt-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#CCFBF1]">
+          <span className="mt-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#475569]">
             km/h
           </span>
         </div>
@@ -658,14 +658,14 @@ export const LiveMap: React.FC<LiveMapProps> = ({
 
       {/* Subtle Urban / Offline Mode Badge Top Left */}
       {!isOnline ? (
-        <div className="pointer-events-none absolute left-3 top-20 z-[450] flex items-center gap-1.5 rounded-full bg-[#0F2421]/95 px-3 py-1.5 text-[10px] font-extrabold text-[#6EE7B7] shadow-lg border border-[#2DD4BF]/50">
-          <WifiOff className="h-3 w-3 shrink-0" />
+        <div className="pointer-events-none absolute left-3 top-20 z-[450] flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-[10px] font-extrabold text-[#0F172A] shadow-lg border border-[#E2E8F0]">
+          <WifiOff className="h-3 w-3 shrink-0 text-[#2563EB]" />
           <span>Navegação Offline · Mapa em Cache</span>
         </div>
       ) : (
         !showSpeedometer && (
-          <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 dark:bg-[#0D1A18]/95 px-2.5 py-1 text-[10px] font-bold text-[#0F2421] dark:text-neutral-200 shadow border border-[#DCEEE8] dark:border-emerald-950">
-            <MapIcon className="h-3 w-3 text-[#047857]" />
+          <div className="pointer-events-none hidden sm:flex absolute left-3 top-20 z-[450] items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold text-[#0F172A] shadow border border-[#E2E8F0]">
+            <MapIcon className="h-3 w-3 text-[#2563EB]" />
             <span>{t.urban_mode}</span>
           </div>
         )

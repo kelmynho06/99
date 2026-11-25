@@ -60,13 +60,13 @@ export async function initLocalNotifications(): Promise<void> {
       if (Capacitor.getPlatform() === 'android') {
         await LocalNotifications.createChannel({
           id: VOICE_ALERT_CHANNEL_ID,
-          name: 'Boreal Mobilidade · Alertas por Voz',
-          description: 'Alertas visuais discretos enquanto a assistente de voz fala',
+          name: 'Go Driver · Assistente Evelyn',
+          description: 'Alertas discretos em segundo plano enquanto a assistente Evelyn fala',
           importance: 4,
           visibility: 1,
           vibration: true,
           lights: true,
-          lightColor: '#0D9488',
+          lightColor: '#2563EB',
         }).catch(() => {});
       }
     } catch {
@@ -90,6 +90,8 @@ export async function triggerLocalNotification(input: {
   const { title, body, dedupeKey, vibrate = true } = input;
 
   if (!prefs.notifications_enabled) return;
+  // Evita pop-ups chatos enquanto o usuário já está com o aplicativo aberto na frente: a assistente Evelyn fala diretamente.
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
   if (shouldSkipDuplicateNotification(dedupeKey)) return;
 
   if (vibrate && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -115,7 +117,7 @@ export async function triggerLocalNotification(input: {
             channelId: Capacitor.getPlatform() === 'android' ? VOICE_ALERT_CHANNEL_ID : undefined,
             schedule: { at: new Date(Date.now() + 80) },
             smallIcon: 'ic_launcher',
-            iconColor: '#0D9488',
+            iconColor: '#2563EB',
           },
         ],
       });

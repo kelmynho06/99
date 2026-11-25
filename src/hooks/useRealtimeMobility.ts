@@ -180,8 +180,8 @@ export function useRealtimeMobility(
                   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
                     speakPtBr(
                       isDelivery
-                        ? `Você está recebendo uma solicitação de uma entrega. Valor de ${fareVoice} reais. Coleta em ${enriched.origin_address}.`
-                        : `Você está recebendo uma solicitação de uma corrida. Valor de ${fareVoice} reais. Embarque em ${enriched.origin_address}.`
+                        ? `Oi! Chegou uma nova solicitação de entrega na Go Driver. Valor de ${fareVoice} reais, coleta em ${enriched.origin_address}.`
+                        : `Oi! Chegou uma nova solicitação de corrida na Go Driver. Valor de ${fareVoice} reais, embarque em ${enriched.origin_address}.`
                     );
                   }
                   triggerLocalNotification({
@@ -199,7 +199,7 @@ export function useRealtimeMobility(
                   prevPayStatus !== 'paid_pix' &&
                   enriched.payment_status === 'paid_pix'
                 ) {
-                  speakPtBr('Pagamento Pix confirmado pelo administrador. Corrida liberada.');
+                  speakPtBr('Boa notícia! O pagamento Pix foi confirmado pelo administrador e o valor já está liberado.');
                   triggerLocalNotification({
                     dedupeKey: `ride-${enriched.id}-paid-pix`,
                     title: 'Pix Confirmado pelo Admin!',
@@ -208,15 +208,15 @@ export function useRealtimeMobility(
                   });
                 }
 
-                // Passenger receives PT-BR voice + single deduped local notification on status changes
+                // Passenger receives PT-BR voice on status changes (conversational Evelyn)
                 if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
                   const driverDisplayName =
                     enriched.driver?.full_name?.trim() || 'seu parceiro';
                   if (enriched.status === 'accepted') {
                     speakPtBr(
                       isDelivery
-                        ? `O entregador ${driverDisplayName} aceitou a sua entrega.`
-                        : `O motorista ${driverDisplayName} aceitou a sua corrida.`
+                        ? `Boa notícia! O entregador ${driverDisplayName} aceitou a sua entrega e já está indo coletar.`
+                        : `Boa notícia! O motorista ${driverDisplayName} aceitou a sua corrida e já está a caminho.`
                     );
                     triggerLocalNotification({
                       dedupeKey: `ride-${enriched.id}-accepted`,
@@ -231,8 +231,8 @@ export function useRealtimeMobility(
                         : '';
                     speakPtBr(
                       isDelivery
-                        ? `O entregador ${driverDisplayName} chegou no local de coleta.${pinSpeech}`
-                        : `O motorista ${driverDisplayName} chegou no local de embarque.${pinSpeech}`
+                        ? `O entregador ${driverDisplayName} chegou no local de coleta!${pinSpeech}`
+                        : `O motorista ${driverDisplayName} chegou no ponto de embarque!${pinSpeech}`
                     );
                     triggerLocalNotification({
                       dedupeKey: `ride-${enriched.id}-arrived`,
@@ -246,8 +246,8 @@ export function useRealtimeMobility(
                   } else if (enriched.status === 'in_progress') {
                     speakPtBr(
                       isDelivery
-                        ? 'Pacote coletado e em rota de entrega.'
-                        : 'Corrida iniciada. Bom trajeto.'
+                        ? `Tudo certo! O pacote foi coletado por ${driverDisplayName} e já está em rota de entrega.`
+                        : `Corrida iniciada com ${driverDisplayName}. Tenha um excelente trajeto!`
                     );
                     triggerLocalNotification({
                       dedupeKey: `ride-${enriched.id}-in_progress`,
@@ -265,17 +265,17 @@ export function useRealtimeMobility(
                     speakPtBr(
                       needs66PayQr
                         ? isDelivery
-                          ? `Entrega finalizada. Escaneie o QR Code BorealPay na tela de ${driverDisplayName} para concluir o pagamento.`
-                          : `Você está chegando ao seu destino. ${exitVehicleSpeech} Escaneie o QR Code BorealPay na tela de ${driverDisplayName} para concluir o pagamento.`
+                          ? `Entrega finalizada! Agora é só escanear o QR Code GoPay na tela de ${driverDisplayName} para concluir o pagamento.`
+                          : `Você chegou ao seu destino! ${exitVehicleSpeech} Agora escaneie o QR Code GoPay na tela de ${driverDisplayName} para concluir o pagamento.`
                         : isDelivery
-                        ? 'Entrega concluída com sucesso.'
-                        : `Você está chegando ao seu destino. ${exitVehicleSpeech}`
+                        ? 'Entrega concluída com sucesso! Obrigado por usar a Go Driver.'
+                        : `Você chegou ao seu destino! ${exitVehicleSpeech} Obrigado por viajar com a Go Driver.`
                     );
                     triggerLocalNotification({
                       dedupeKey: `ride-${enriched.id}-completed`,
                       title: isDelivery ? 'Entrega concluída!' : 'Você chegou ao destino!',
                       body: needs66PayQr
-                        ? `Leia o QR Code BorealPay de ${driverDisplayName} para liberar o pagamento.`
+                        ? `Leia o QR Code GoPay de ${driverDisplayName} para liberar o pagamento.`
                         : isDelivery
                         ? 'Avalie o entregador no aplicativo.'
                         : 'Não esqueça seus objetos pessoais no veículo.',
@@ -283,7 +283,7 @@ export function useRealtimeMobility(
                     });
                   } else if (enriched.status === 'cancelled') {
                     speakPtBr(
-                      isDelivery ? 'Sua entrega foi cancelada.' : 'Sua corrida foi cancelada.'
+                      isDelivery ? 'Atenção: sua entrega foi cancelada.' : 'Atenção: sua corrida foi cancelada.'
                     );
                     triggerLocalNotification({
                       dedupeKey: `ride-${enriched.id}-cancelled`,
@@ -294,7 +294,7 @@ export function useRealtimeMobility(
                   }
                 }
 
-                // Driver receives immediate voice + single deduped alert if passenger cancels before boarding
+                // Driver receives immediate voice alert if passenger cancels before boarding
                 if (
                   u.role === 'driver' &&
                   enriched.driver_id === u.id &&
@@ -305,8 +305,8 @@ export function useRealtimeMobility(
                     enriched.passenger?.full_name?.split(' ')[0] || 'cliente';
                   speakPtBr(
                     isDelivery
-                      ? `O cliente ${passengerFirstName} cancelou a entrega.`
-                      : `O passageiro ${passengerFirstName} cancelou a corrida.`
+                      ? `Atenção: o cliente ${passengerFirstName} cancelou a entrega.`
+                      : `Atenção: o passageiro ${passengerFirstName} cancelou a corrida.`
                   );
                   triggerLocalNotification({
                     dedupeKey: `driver-ride-${enriched.id}-cancelled`,
@@ -515,43 +515,43 @@ export function useRealtimeMobility(
               : undefined;
 
             if (txType === 'transfer_in' && absAmt > 0) {
-              const senderMatch = desc.match(/(?:Recebido de|Transferência (?:66 Pay|BorealPay) recebida de)\s+([^·]+)/i);
-              const senderName = senderMatch?.[1]?.trim() || 'Um usuário BorealPay';
+              const senderMatch = desc.match(/(?:Recebido de|Transferência (?:66 Pay|BorealPay|GoPay) recebida de)\s+([^·]+)/i);
+              const senderName = senderMatch?.[1]?.trim() || 'Um usuário GoPay';
               const msg = `${senderName} enviou uma transferência de ${formattedAmt} para você.`;
               speakPtBr(
                 `${senderName} enviou uma transferência de ${absAmt.toFixed(2).replace('.', ',')} reais para você.`
               );
               triggerLocalNotification({
                 dedupeKey: `tx-in-${row.id || absAmt}`,
-                title: 'Transferência BorealPay Recebida!',
+                title: 'Transferência GoPay Recebida!',
                 body: msg,
                 playSound: false,
               });
               window.dispatchEvent(
                 new CustomEvent('mobilidade66:wallet-toast', {
                   detail: {
-                    title: 'BorealPay · Transferência Recebida!',
+                    title: 'GoPay · Transferência Recebida!',
                     message: msg,
                     receiptTx,
                   },
                 })
               );
             } else if (txType === 'transfer_out' && absAmt > 0) {
-              const recipientMatch = desc.match(/(?:Enviado para|Transferência (?:66 Pay|BorealPay) enviada para)\s+([^·]+)/i);
+              const recipientMatch = desc.match(/(?:Enviado para|Transferência (?:66 Pay|BorealPay|GoPay) enviada para)\s+([^·]+)/i);
               const recipientName = recipientMatch?.[1]?.trim() || '';
               const msg = recipientName
                 ? `Você enviou uma transferência de ${formattedAmt} para ${recipientName}.`
                 : `Transferência de ${formattedAmt} enviada com sucesso.`;
               triggerLocalNotification({
                 dedupeKey: `tx-out-${row.id || absAmt}`,
-                title: 'Transferência BorealPay Enviada!',
+                title: 'Transferência GoPay Enviada!',
                 body: msg,
                 playSound: false,
               });
               window.dispatchEvent(
                 new CustomEvent('mobilidade66:wallet-toast', {
                   detail: {
-                    title: 'BorealPay · Transferência Enviada!',
+                    title: 'GoPay · Transferência Enviada!',
                     message: msg,
                     receiptTx,
                   },
@@ -591,7 +591,7 @@ export function useRealtimeMobility(
 
           if (n.metadata?.source !== 'p2p_transfer') {
             if (n.title || n.message) {
-              speakPtBr(`${n.title || 'Aviso'}. ${n.message || ''}`, false);
+              speakPtBr(`${n.title || 'Aviso da Go Driver Mobilidade'}. ${n.message || ''}`, false);
             }
             triggerLocalNotification({
               dedupeKey: `app-notif-${n.id}`,
@@ -599,15 +599,17 @@ export function useRealtimeMobility(
               body: n.message || '',
               playSound: false,
             });
-            window.dispatchEvent(
-              new CustomEvent('mobilidade66:wallet-toast', {
-                detail: {
-                  title: n.title || 'Notificação Boreal Mobilidade',
-                  message: n.message || '',
-                  receiptTx: n.metadata?.tx,
-                },
-              })
-            );
+            if (n.metadata?.tx) {
+              window.dispatchEvent(
+                new CustomEvent('mobilidade66:wallet-toast', {
+                  detail: {
+                    title: n.title || 'Notificação Go Driver Mobilidade',
+                    message: n.message || '',
+                    receiptTx: n.metadata?.tx,
+                  },
+                })
+              );
+            }
           }
         }
       )

@@ -102,7 +102,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `auditoria_${(platformConfig.site_name || 'borealmobilidade').toLowerCase().replace(/\s+/g, '')}_${new Date()
+    link.download = `auditoria_${(platformConfig.site_name || 'godrivermobilidade').toLowerCase().replace(/\s+/g, '')}_${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
     document.body.appendChild(link);
@@ -113,14 +113,13 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
 
   return (
     <section className={`mt-5 space-y-4 ${suppressPrintSheet ? 'no-print' : 'print-only-sheet'}`}>
-      {/* Header & Export Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-extrabold text-[#0F2421] dark:text-white flex items-center gap-2">
-            <Activity className="h-5 w-5 text-[#047857] dark:text-[#6EE7B7]" />
+          <h2 className="font-display text-xl font-extrabold text-[#0F172A] flex items-center gap-2">
+            <Activity className="h-5 w-5 text-[#2563EB]" />
             <span>Auditoria &amp; Telemetria de Dispositivos ({filteredLogs.length})</span>
           </h2>
-          <p className="text-xs text-neutral-600 dark:text-neutral-400">
+          <p className="text-xs text-[#475569]">
             Rastreamento de logins, ações críticas, Android APK / PWA / Web, sistema operacional,
             navegador, tela e fuso horário.
           </p>
@@ -131,7 +130,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
             type="button"
             disabled={loading}
             onClick={onRefresh}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 text-xs font-bold text-neutral-800 dark:text-neutral-200"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#0F172A]"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Atualizar
@@ -139,7 +138,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
           <button
             type="button"
             onClick={handleExportCsv}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 px-3 text-xs font-extrabold text-emerald-800 dark:text-emerald-300"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] px-3 text-xs font-extrabold text-[#059669]"
           >
             <Download className="h-3.5 w-3.5" />
             Exportar CSV
@@ -147,7 +146,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-[#047857] dark:bg-[#2DD4BF] px-3.5 text-xs font-extrabold text-white dark:text-[#0F2421] shadow-sm hover:bg-[#065F46] transition"
+            className="aurora-accent-flow inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3.5 text-xs font-extrabold text-white shadow-sm transition"
           >
             <Printer className="h-3.5 w-3.5" />
             Imprimir / Salvar PDF
@@ -155,16 +154,15 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="no-print grid grid-cols-1 sm:grid-cols-12 gap-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3.5">
+      <div className="no-print grid grid-cols-1 sm:grid-cols-12 gap-2.5 rounded-2xl border border-[#E2E8F0] bg-white p-3.5">
         <div className="sm:col-span-6 relative">
-          <Search className="h-4 w-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="h-4 w-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar usuário, e-mail, evento, OS, navegador..."
-            className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 pl-9 pr-3 text-xs outline-none focus:border-neutral-950"
+            className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] pl-9 pr-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
           />
         </div>
 
@@ -174,7 +172,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
             onChange={(e) =>
               setRoleFilter(e.target.value as 'all' | 'passenger' | 'driver' | 'admin')
             }
-            className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs font-bold outline-none"
+            className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 text-xs font-bold text-[#0F172A] outline-none"
           >
             <option value="all">Todos os Perfis</option>
             <option value="passenger">Passageiros / Clientes</option>
@@ -187,7 +185,7 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
           <select
             value={deviceFilter}
             onChange={(e) => setDeviceFilter(e.target.value)}
-            className="min-h-[40px] w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 text-xs font-bold outline-none"
+            className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 text-xs font-bold text-[#0F172A] outline-none"
           >
             <option value="all">Todas as Plataformas</option>
             {deviceTypes.map((dt) => (
@@ -199,15 +197,14 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
         </div>
       </div>
 
-      {/* Audit Logs Table */}
       {filteredLogs.length === 0 ? (
-        <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-10 text-center text-xs text-neutral-500">
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-10 text-center text-xs text-[#475569]">
           Nenhum registro de auditoria encontrado neste filtro.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <div className="overflow-x-auto rounded-2xl border border-[#E2E8F0] bg-white">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">
+            <thead className="border-b border-[#E2E8F0] bg-[#F4F6F9] text-[#475569]">
               <tr>
                 <th className="px-4 py-3 font-bold">Data/Hora</th>
                 <th className="px-4 py-3 font-bold">Usuário / Perfil</th>
@@ -218,25 +215,25 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
                 <th className="px-4 py-3 font-bold">Tela / Idioma / App</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            <tbody className="divide-y divide-[#E2E8F0]">
               {filteredLogs.map((l) => {
                 const isApk = l.device_type.includes('APK');
                 return (
-                  <tr key={l.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
-                    <td className="px-4 py-3 font-mono-num whitespace-nowrap text-neutral-700 dark:text-neutral-300">
+                  <tr key={l.id} className="hover:bg-[#F8FAFC]">
+                    <td className="px-4 py-3 font-mono-num whitespace-nowrap text-[#475569]">
                       {new Date(l.created_at).toLocaleString('pt-BR')}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-bold text-neutral-950 dark:text-white">{l.user_name}</p>
-                      <p className="text-[11px] text-neutral-500">
+                      <p className="font-bold text-[#0F172A]">{l.user_name}</p>
+                      <p className="text-[11px] text-[#475569]">
                         {ROLE_LABELS[l.user_role] || l.user_role} · {l.user_email}
                       </p>
                     </td>
                     <td className="px-4 py-3 max-w-[260px]">
-                      <span className="inline-block rounded-md bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 font-mono-num text-[10px] font-bold text-neutral-800 dark:text-neutral-200 mr-1.5">
+                      <span className="inline-block rounded-md bg-[#F1F5F9] px-1.5 py-0.5 font-mono-num text-[10px] font-bold text-[#0F172A] mr-1.5">
                         {l.event_type}
                       </span>
-                      <span className="text-neutral-800 dark:text-neutral-200">
+                      <span className="text-[#0F172A]">
                         {l.description}
                       </span>
                     </td>
@@ -244,8 +241,8 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold border ${
                           isApk
-                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                            : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                            ? 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]'
+                            : 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]'
                         }`}
                       >
                         {isApk ? (
@@ -256,13 +253,13 @@ export const AdminAuditTab: React.FC<AdminAuditTabProps> = ({
                         {l.device_type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono-num whitespace-nowrap">
+                    <td className="px-4 py-3 font-mono-num whitespace-nowrap text-[#0F172A]">
                       {l.os_name} {l.os_version}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap text-[#0F172A]">
                       {l.browser_name} {l.browser_version}
                     </td>
-                    <td className="px-4 py-3 font-mono-num text-[11px] text-neutral-600 dark:text-neutral-400">
+                    <td className="px-4 py-3 font-mono-num text-[11px] text-[#475569]">
                       <p>
                         {l.screen_size} · {l.language} · v{l.app_version}
                       </p>

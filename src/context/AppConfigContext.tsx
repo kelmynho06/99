@@ -18,32 +18,43 @@ interface AppConfigContextValue {
 }
 
 const DEFAULT_APP_CONFIG: AppConfig = {
-  app_name: 'Boreal Mobilidade',
+  app_name: 'Go Driver Mobilidade',
   logo_url: null,
-  primary_color: '#047857',
-  secondary_color: '#0F2421',
+  primary_color: '#2563EB',
+  secondary_color: '#0F172A',
 };
 
 function upgradeLegacyAppName(name?: unknown): string {
   const clean = String(name || '').trim();
-  if (!clean || clean === '66 Mobilidade' || clean === 'Velo99' || clean === 'Velo99 Mobilidade') {
-    return 'Boreal Mobilidade';
+  if (
+    !clean ||
+    clean === 'Boreal Mobilidade' ||
+    clean === '66 Mobilidade' ||
+    clean === 'Meia Meia' ||
+    clean === 'Meia Meia Mobilidade' ||
+    clean === 'Go Driver' ||
+    clean === 'Velo99' ||
+    clean === 'Velo99 Mobilidade'
+  ) {
+    return 'Go Driver Mobilidade';
   }
   return clean;
 }
 
 function upgradeLegacyPrimaryColor(color?: unknown): string {
   const clean = String(color || '').trim();
-  if (!clean || clean.toUpperCase() === '#FFD100' || clean.toUpperCase() === '#FFDD00') {
-    return '#047857';
+  const upper = clean.toUpperCase();
+  if (!clean || upper === '#047857' || upper === '#FFD100' || upper === '#FFDD00') {
+    return '#2563EB';
   }
   return clean;
 }
 
 function upgradeLegacySecondaryColor(color?: unknown): string {
   const clean = String(color || '').trim();
-  if (!clean || clean.toUpperCase() === '#111827') {
-    return '#0F2421';
+  const upper = clean.toUpperCase();
+  if (!clean || upper === '#0F2421' || upper === '#111827') {
+    return '#0F172A';
   }
   return clean;
 }
@@ -78,7 +89,7 @@ const AppConfigContext = createContext<AppConfigContextValue>({
 
 function syncHeadMetadata(cfg: AppConfig) {
   if (typeof document === 'undefined') return;
-  const brand = cfg.app_name.trim() || 'Boreal Mobilidade';
+  const brand = cfg.app_name.trim() || 'Go Driver Mobilidade';
   document.title = `${brand} — Corridas e Entregas`;
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
@@ -89,10 +100,10 @@ function syncHeadMetadata(cfg: AppConfig) {
     themeMeta.setAttribute('content', cfg.primary_color);
   }
 
-  document.documentElement.style.setProperty('--brand-primary', cfg.primary_color || '#047857');
+  document.documentElement.style.setProperty('--brand-primary', cfg.primary_color || '#2563EB');
   document.documentElement.style.setProperty(
     '--brand-secondary',
-    cfg.secondary_color || '#0F2421'
+    cfg.secondary_color || '#0F172A'
   );
 
   const resolvedIcon = cfg.logo_url || DEFAULT_BRAND_LOGO;

@@ -29,7 +29,7 @@ export const DEFAULT_USER_PREFS: UserPreferences = {
   sounds_enabled: true,
   notifications_enabled: true,
   language: 'pt-BR',
-  theme_mode: 'auto',
+  theme_mode: 'light',
   map_layer: 'urban',
   hud_compass_enabled: true,
   floating_bubble_enabled: true,
@@ -48,7 +48,7 @@ export function getUserPreferences(): UserPreferences {
       theme_mode:
         parsed.theme_mode === 'dark' || parsed.theme_mode === 'light' || parsed.theme_mode === 'auto'
           ? parsed.theme_mode
-          : 'auto',
+          : 'light',
       map_layer: 'urban' as MapLayerMode,
       hud_compass_enabled: parsed.hud_compass_enabled ?? true,
       floating_bubble_enabled: parsed.floating_bubble_enabled ?? true,

@@ -48,20 +48,20 @@ export class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen w-full flex items-center justify-center bg-[#F7FBFA] dark:bg-[#071513] p-6 text-[#0F2421] dark:text-white">
-          <div className="w-full max-w-sm rounded-3xl border border-[#6EE7B7]/60 dark:border-emerald-800 bg-white dark:bg-[#0B1D1A] p-6 text-center shadow-2xl space-y-5">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#ECFDF5] dark:bg-emerald-950/60 text-[#047857] dark:text-[#6EE7B7] border border-[#6EE7B7]/50 dark:border-emerald-800">
+        <div className="min-h-screen w-full flex items-center justify-center bg-[#F4F6F9] p-6 text-[#0F172A]">
+          <div className="w-full max-w-sm rounded-3xl border border-[#E2E8F0] bg-white p-6 text-center shadow-xl space-y-5">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE]">
               <AlertTriangle className="h-8 w-8" />
             </div>
             <div className="space-y-2">
-              <h1 className="font-display text-xl font-extrabold text-[#0F2421] dark:text-white">
+              <h1 className="font-display text-xl font-extrabold text-[#0F172A]">
                 Algo saiu do esperado
               </h1>
-              <p className="text-xs text-[#334E4A] dark:text-neutral-300 leading-relaxed">
+              <p className="text-xs text-[#475569] leading-relaxed">
                 O aplicativo encontrou uma falha temporária e protegeu sua sessão com segurança.
               </p>
               {this.state.errorMessage && (
-                <p className="rounded-xl bg-[#F7FBFA] dark:bg-black/40 border border-neutral-200 dark:border-white/10 px-3 py-2 font-mono text-[11px] text-[#334E4A] dark:text-neutral-400 break-words">
+                <p className="rounded-xl bg-[#F4F6F9] border border-[#E2E8F0] px-3 py-2 font-mono text-[11px] text-[#475569] break-words">
                   {this.state.errorMessage}
                 </p>
               )}
@@ -78,7 +78,7 @@ export class ErrorBoundary extends React.Component<
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-neutral-100 dark:bg-white/10 text-xs font-bold text-[#0F2421] dark:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-white/15"
+                className="flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-[#F1F5F9] border border-[#E2E8F0] text-xs font-bold text-[#0F172A] hover:bg-[#E2E8F0]"
               >
                 Recarregar aplicativo
               </button>

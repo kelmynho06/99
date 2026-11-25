@@ -106,12 +106,12 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/65 backdrop-blur-xs p-4">
-      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl text-center border border-neutral-200 dark:border-neutral-800">
+    <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-[#0F172A]/60 backdrop-blur-xs p-4">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl text-center border border-[#E2E8F0]">
         <button
           type="button"
           onClick={onSkip}
-          className="absolute top-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition"
+          className="absolute top-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A] hover:bg-[#E2E8F0] transition"
           aria-label={t.close}
         >
           <X className="h-4 w-4" />
@@ -121,33 +121,33 @@ export const RatingModal: React.FC<RatingModalProps> = ({
           <img
             src={brandLogo}
             alt={appConfig.app_name}
-            className="h-11 w-11 rounded-2xl object-cover border border-neutral-200 dark:border-neutral-700 shadow-xs"
+            className="h-12 w-12 rounded-2xl object-cover border-2 border-[#2563EB] shadow-xs"
           />
         </div>
 
-        <h3 className="mt-3 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+        <h3 className="mt-3 font-display text-xl font-extrabold text-[#0F172A]">
           {headingTitle}
         </h3>
-        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="mt-0.5 text-xs font-mono-num font-bold text-[#475569]">
           {formatBRL(ride.final_fare ?? ride.estimated_fare)}
         </p>
 
         {/* Evaluated Person Identification Card */}
-        <div className="mt-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/80 p-4 border border-neutral-200 dark:border-neutral-700 space-y-3">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+        <div className="mt-4 rounded-2xl bg-[#F4F6F9] p-4 border border-[#E2E8F0] space-y-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-[#475569]">
             {t.evaluating_person_label}
           </p>
 
-          <div className="flex items-center gap-3 text-left rounded-2xl bg-white dark:bg-neutral-900 p-3 border border-neutral-200/80 dark:border-neutral-700 shadow-xs">
+          <div className="flex items-center gap-3 text-left rounded-2xl bg-white p-3 border border-[#E2E8F0] shadow-xs">
             <AvatarImage
               src={targetAvatarSrc}
               name={targetFullName}
-              className="h-16 w-16 rounded-2xl object-cover border-2 border-[#2DD4BF] shrink-0 shadow-xs"
-              fallbackClassName="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#047857] text-[#6EE7B7] font-extrabold text-xl shrink-0"
+              className="h-16 w-16 rounded-2xl object-cover border-2 border-[#2563EB] shrink-0 shadow-xs"
+              fallbackClassName="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#2563EB] text-white font-extrabold text-xl shrink-0"
             />
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="inline-flex items-center gap-1 rounded-lg bg-[#ECFDF5] dark:bg-emerald-950/60 px-2 py-0.5 text-[10px] font-extrabold text-[#047857] dark:text-[#6EE7B7] uppercase border border-[#6EE7B7]/50">
+                <span className="inline-flex items-center gap-1 rounded-lg bg-[#EFF6FF] px-2 py-0.5 text-[10px] font-extrabold text-[#2563EB] uppercase border border-[#BFDBFE]">
                   {isDelivery ? (
                     <Package className="h-3 w-3" />
                   ) : driverMeta?.vehicle_type === 'moto' ? (
@@ -160,24 +160,24 @@ export const RatingModal: React.FC<RatingModalProps> = ({
                   {roleBadgeLabel}
                 </span>
                 {typeof targetUser?.rating_avg === 'number' && (
-                  <span className="inline-flex items-center gap-0.5 text-[11px] font-mono-num font-bold text-neutral-700 dark:text-neutral-300">
-                    <Star className="h-3 w-3 fill-[#047857] text-[#047857] dark:fill-[#6EE7B7] dark:text-[#6EE7B7]" />
+                  <span className="inline-flex items-center gap-0.5 text-[11px] font-mono-num font-bold text-[#0F172A]">
+                    <Star className="h-3 w-3 fill-[#2563EB] text-[#2563EB]" />
                     {targetUser.rating_avg.toFixed(1)}
                   </span>
                 )}
               </div>
 
-              <p className="font-display text-base font-extrabold text-neutral-950 dark:text-white truncate leading-tight">
+              <p className="font-display text-base font-extrabold text-[#0F172A] truncate leading-tight">
                 {targetFullName}
               </p>
 
               {driverMeta && (
-                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-neutral-600 dark:text-neutral-300">
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-[#475569]">
                   <span className="font-semibold truncate">
                     {driverMeta.vehicle_color} {driverMeta.vehicle_model}
                   </span>
                   {driverMeta.vehicle_plate && (
-                    <span className="rounded-md bg-[#0F2421] dark:bg-neutral-800 px-1.5 py-0.5 font-mono-num text-[10px] font-extrabold text-[#6EE7B7] border border-[#047857]/40">
+                    <span className="rounded-md bg-[#0F172A] px-1.5 py-0.5 font-mono-num text-[10px] font-extrabold text-white">
                       {driverMeta.vehicle_plate}
                     </span>
                   )}
@@ -193,20 +193,20 @@ export const RatingModal: React.FC<RatingModalProps> = ({
                 key={n}
                 type="button"
                 onClick={() => setStars(n)}
-                className="flex h-11 w-11 items-center justify-center rounded-xl transition active:scale-90 hover:bg-white dark:hover:bg-neutral-900"
+                className="flex h-11 w-11 items-center justify-center rounded-xl transition active:scale-90 hover:bg-white"
                 aria-label={`${n} estrelas`}
               >
                 <Star
                   className={`h-8 w-8 transition ${
                     n <= stars
-                      ? 'fill-[#2DD4BF] text-[#047857] drop-shadow-xs'
-                      : 'text-neutral-300 dark:text-neutral-600'
+                      ? 'fill-[#2563EB] text-[#2563EB] drop-shadow-xs'
+                      : 'text-[#CBD5E1]'
                   }`}
                 />
               </button>
             ))}
           </div>
-          <p className="text-xs font-extrabold text-neutral-900 dark:text-white font-mono-num">
+          <p className="text-xs font-extrabold text-[#0F172A] font-mono-num">
             {stars} / 5 ★
           </p>
         </div>
@@ -223,7 +223,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
         <button
           type="button"
           onClick={onSkip}
-          className="mt-2 min-h-[40px] w-full text-xs font-semibold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+          className="mt-2 min-h-[40px] w-full text-xs font-semibold text-[#475569] hover:text-[#0F172A]"
         >
           {t.skip_rating}
         </button>

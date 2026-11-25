@@ -103,9 +103,9 @@ async function saveCachedTileBlob(key: string, blob: Blob): Promise<void> {
 
 function getOfflinePlaceholderDataUrl(): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-    <rect width="256" height="256" fill="#eceef2"/>
-    <path d="M0 64H256M0 128H256M0 192H256M64 0V256M128 0V256M192 0V256" stroke="#dfe3ea" stroke-width="1"/>
-    <text x="128" y="132" text-anchor="middle" fill="#9ca3af" font-family="sans-serif" font-size="11" font-weight="600">BOREAL MAPA OFFLINE</text>
+    <rect width="256" height="256" fill="#F4F6F9"/>
+    <path d="M0 64H256M0 128H256M0 192H256M64 0V256M128 0V256M192 0V256" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="128" y="132" text-anchor="middle" fill="#64748B" font-family="sans-serif" font-size="11" font-weight="600">GO DRIVER MAPA OFFLINE</text>
   </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

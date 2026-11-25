@@ -57,10 +57,13 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
 
   const trackBg =
     variant === 'emerald'
-      ? 'bg-gradient-to-r from-[#047857] to-[#0D9488] border-[#34D399]/70 shadow-lg shadow-emerald-700/20'
-      : 'bg-gradient-to-r from-[#065F46] via-[#047857] to-[#0891B2] border-[#2DD4BF]/65 shadow-lg shadow-teal-700/20';
+      ? 'bg-gradient-to-r from-[#10B981] to-[#059669] border-[#34D399]/60 shadow-lg shadow-emerald-600/20'
+      : 'bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0EA5E9] border-[#60A5FA]/60 shadow-lg shadow-blue-600/25';
   const fillBg = 'bg-white/22';
-  const thumbBg = 'bg-white text-[#047857] shadow-md';
+  const thumbBg =
+    variant === 'emerald'
+      ? 'bg-white text-[#059669] shadow-md'
+      : 'bg-white text-[#2563EB] shadow-md';
 
   return (
     <div
@@ -77,7 +80,7 @@ export const SlideToConfirm: React.FC<SlideToConfirmProps> = ({
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center pl-16 pr-5">
         <span className="truncate text-sm font-extrabold tracking-tight flex items-center gap-1.5 text-white">
           <span>{label}</span>
-          <ChevronsRight className="h-4 w-4 shrink-0 text-[#A7F3D0]" />
+          <ChevronsRight className="h-4 w-4 shrink-0 text-[#DBEAFE]" />
         </span>
       </div>
 

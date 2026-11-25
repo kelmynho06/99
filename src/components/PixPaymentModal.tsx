@@ -84,28 +84,28 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
   if (isPaid) {
     return (
-      <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/65 p-4">
-        <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 text-center shadow-2xl border border-emerald-200 dark:border-emerald-800 space-y-4">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+      <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-[#0F172A]/60 p-4 backdrop-blur-xs">
+        <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl border border-[#A7F3D0] space-y-4">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#ECFDF5] text-[#10B981]">
             <CheckCircle2 className="h-10 w-10" />
           </div>
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[#059669]">
               Pix Confirmado pelo Admin
             </p>
-            <h3 className="mt-1 font-display text-xl font-extrabold text-neutral-950 dark:text-white">
+            <h3 className="mt-1 font-display text-xl font-extrabold text-[#0F172A]">
               Pagamento confirmado com sucesso!
             </h3>
-            <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+            <p className="mt-1.5 text-xs text-[#475569]">
               O pagamento de{' '}
-              <strong className="font-mono-num text-neutral-950 dark:text-white">{formatBRL(amount)}</strong> foi
+              <strong className="font-mono-num text-[#0F172A]">{formatBRL(amount)}</strong> foi
               confirmado. Obrigado por viajar com a gente!
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[48px] w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-sm active:scale-[0.98]"
+            className="min-h-[48px] w-full rounded-2xl bg-[#10B981] text-sm font-extrabold text-white shadow-sm hover:bg-[#059669] active:scale-[0.98]"
           >
             {t.continue_btn}
           </button>
@@ -115,24 +115,24 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-[#0F2421]/65 p-0 sm:p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#0D1A18] p-6 shadow-2xl max-h-[92vh] overflow-y-auto border border-[#DCEEE8] dark:border-emerald-950">
-        <div className="flex items-center justify-between pb-3 border-b border-[#EDF6F3] dark:border-emerald-950">
+    <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-[#0F172A]/60 p-0 sm:p-4 backdrop-blur-xs">
+      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl max-h-[92vh] overflow-y-auto border border-[#E2E8F0]">
+        <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#047857] to-[#0D9488] text-white">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#2563EB] to-[#0EA5E9] text-white">
               <QrCode className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-lg font-extrabold text-[#0F2421] dark:text-white">
+              <h3 className="font-display text-lg font-extrabold text-[#0F172A]">
                 {ride.status === 'completed' ? t.pay_with_pix : 'Pix Copia e Cola'}
               </h3>
-              <p className="text-xs text-[#5F7D78] dark:text-neutral-400">{platformConfig.platform_pix_receiver}</p>
+              <p className="text-xs text-[#475569]">{platformConfig.platform_pix_receiver}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F1F8F6] dark:bg-neutral-800 text-[#334E4A] dark:text-neutral-200"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A]"
             aria-label={t.close}
           >
             <X className="h-5 w-5" />
@@ -141,7 +141,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
 
         {/* Payment Confirmation Status Badge */}
         <div className="mt-3 flex justify-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold bg-[#F0FDFA] dark:bg-teal-950/40 text-[#0F766E] dark:text-[#2DD4BF] border border-[#99F6E4] dark:border-teal-800/60">
+          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE]">
             <Clock className="h-3.5 w-3.5" />
             {isDeclared
               ? 'Aviso enviado · Aguardando confirmação do Admin'
@@ -150,12 +150,12 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         </div>
 
         <div className="mt-3 text-center">
-          <p className="text-xs font-semibold text-[#5F7D78] dark:text-neutral-400">Valor total a transferir</p>
-          <p className="mt-0.5 font-mono-num text-3xl font-extrabold text-[#0F2421] dark:text-white">
+          <p className="text-xs font-semibold text-[#475569]">Valor total a transferir</p>
+          <p className="mt-0.5 font-mono-num text-3xl font-extrabold text-[#0F172A]">
             {formatBRL(amount)}
           </p>
           {Boolean(ride.pending_debt_included && ride.pending_debt_included > 0) && (
-            <p className="mt-1 text-[11px] font-bold text-[#0F766E] dark:text-[#2DD4BF]">
+            <p className="mt-1 text-[11px] font-bold text-[#2563EB]">
               Inclui débito pendente anterior: {formatBRL(ride.pending_debt_included || 0)}
             </p>
           )}
@@ -165,7 +165,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         <div className="mt-4 flex flex-col items-center gap-2">
           <div
             key={cycle}
-            className="rounded-2xl border-2 border-neutral-950 bg-white p-3 shadow-sm transition-opacity"
+            className="rounded-2xl border-2 border-[#0F172A] bg-white p-3 shadow-sm transition-opacity"
           >
             {platformConfig.platform_pix_qr_url ? (
               <img
@@ -177,7 +177,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
               <PixQrSvg payload={pixPayload} size={160} />
             )}
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-3 py-1 text-[11px] font-bold text-[#1D4ED8]">
             <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: '6s' }} />
             <span>
               Atualização de segurança em <strong className="font-mono-num">{formattedTimer}</strong> · Mesma conta oficial
@@ -186,16 +186,16 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         </div>
 
         {/* EMV Pix Copia e Cola Field + Key */}
-        <div className="mt-4 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/70 p-3.5 space-y-3">
+        <div className="mt-4 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-3">
           <div>
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <p className="text-[11px] font-bold text-neutral-600 dark:text-neutral-300">
+              <p className="text-[11px] font-bold text-[#475569]">
                 Código EMV Pix Copia e Cola
               </p>
               <button
                 type="button"
                 onClick={() => copyText(pixPayload, 'code')}
-                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-[#047857] px-3 text-xs font-bold text-white"
+                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-[#2563EB] px-3 text-xs font-bold text-white"
               >
                 {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copiedCode ? 'Código copiado!' : 'Copiar Código'}
@@ -206,30 +206,30 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
               rows={2}
               value={pixPayload}
               onClick={(e) => e.currentTarget.select()}
-              className="w-full rounded-xl border border-[#DCEEE8] dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2 font-mono text-[11px] text-[#0F2421] dark:text-neutral-200 outline-none resize-none"
+              className="w-full rounded-xl border border-[#E2E8F0] bg-white p-2 font-mono text-[11px] text-[#0F172A] outline-none resize-none"
             />
           </div>
 
-          <div className="border-t border-[#DCEEE8] dark:border-neutral-700 pt-2.5 flex items-center justify-between gap-2">
+          <div className="border-t border-[#E2E8F0] pt-2.5 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-[#5F7D78] dark:text-neutral-400">Chave Pix da Plataforma</p>
-              <p className="font-mono-num text-xs font-extrabold text-[#0F2421] dark:text-white truncate">
+              <p className="text-[11px] font-bold text-[#475569]">Chave Pix da Plataforma</p>
+              <p className="font-mono-num text-xs font-extrabold text-[#0F172A] truncate">
                 {platformConfig.platform_pix_key}
               </p>
             </div>
             <button
               type="button"
               onClick={() => copyText(platformConfig.platform_pix_key, 'key')}
-              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border border-[#C9E8DF] dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 text-xs font-bold text-[#0F2421] dark:text-neutral-100"
+              className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#0F172A]"
             >
-              {copiedKey ? <Check className="h-3.5 w-3.5 text-[#047857]" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedKey ? <Check className="h-3.5 w-3.5 text-[#10B981]" /> : <Copy className="h-3.5 w-3.5" />}
               {copiedKey ? 'Copiada' : 'Copiar chave'}
             </button>
           </div>
         </div>
 
-        <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800/60 px-3.5 py-2.5 text-xs text-[#065F46] dark:text-emerald-200">
-          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#047857] dark:text-[#6EE7B7]" />
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] px-3.5 py-2.5 text-xs text-[#1E3A8A]">
+          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#2563EB]" />
           <span>
             Pagamento centralizado para {platformConfig.platform_pix_receiver}. Após pagar no app do
             seu banco, toque abaixo para avisar o Administrador e liberar o motorista.
@@ -237,7 +237,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
         </div>
 
         {error && (
-          <div className="mt-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-3.5 py-2.5 text-xs font-semibold text-red-700 dark:text-red-300">
+          <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs font-semibold text-red-700">
             {error}
           </div>
         )}
@@ -247,7 +247,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
             type="button"
             disabled={submitting}
             onClick={confirmPixPaid}
-            className="min-h-[52px] w-full rounded-2xl bg-[#047857] text-base font-extrabold text-white shadow-sm hover:bg-[#065F46] active:scale-[0.98] transition disabled:opacity-50"
+            className="aurora-accent-flow min-h-[52px] w-full rounded-2xl text-base font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-50"
           >
             {submitting
               ? 'Enviando aviso...'
@@ -258,7 +258,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[44px] w-full text-xs font-bold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+            className="min-h-[44px] w-full text-xs font-bold text-[#475569] hover:text-[#0F172A]"
           >
             {t.close}
           </button>
