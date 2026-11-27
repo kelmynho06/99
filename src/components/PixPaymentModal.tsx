@@ -19,6 +19,7 @@ import {
   createMercadoPagoPix,
   declarePixPaid,
   fetchRideByIdEnriched,
+  syncMercadoPagoPixStatus,
 } from '../lib/mobilityApi';
 import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import { speakPtBr } from '../lib/sound';
@@ -57,6 +58,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     valor: number;
   } | null>(null);
   const [autoApproved, setAutoApproved] = useState(false);
+  const [checkingAutoStatus, setCheckingAutoStatus] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [manualQrImgError, setManualQrImgError] = useState(false);
@@ -169,6 +171,11 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     const pollId = window.setInterval(async () => {
       try {
         if (paymentId) {
+          const synced = await syncMercadoPagoPixStatus(paymentId);
+          if (synced.status === 'aprovado') {
+            await handleConfirmed();
+            return;
+          }
           const { data } = await supabase
             .from('pagamentos_pix')
             .select('status')
@@ -432,6 +439,28 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                     className="w-full rounded-xl border border-[#E2E8F0] bg-white p-2 font-mono text-[11px] text-[#0F172A] outline-none resize-none"
                   />
                 </div>
+
+                <button
+                  type="button"
+                  disabled={checkingAutoStatus}
+                  onClick={async () => {
+                    setCheckingAutoStatus(true);
+                    try {
+                      const synced = await syncMercadoPagoPixStatus(autoPixData.id);
+                      if (synced.status === 'aprovado') {
+                        setAutoApproved(true);
+                        const freshRide = await fetchRideByIdEnriched(ride.id).catch(() => null);
+                        onDeclared(freshRide || { ...ride, payment_status: 'paid_pix' });
+                      }
+                    } finally {
+                      setCheckingAutoStatus(false);
+                    }
+                  }}
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-[#10B981] bg-[#ECFDF5] text-xs font-extrabold text-[#059669] active:scale-[0.98] disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${checkingAutoStatus ? 'animate-spin' : ''}`} />
+                  {checkingAutoStatus ? 'Consultando Mercado Pago...' : 'Já paguei · Verificar agora'}
+                </button>
               </>
             ) : null}
           </div>

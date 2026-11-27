@@ -130,23 +130,113 @@ async function startServer() {
   const httpServer = http.createServer(app);
   app.use(express.json({ limit: '15mb' }));
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, mode: 'supabase-direct', time: new Date().toISOString() });
+  const cleanCred = (raw?: string) => {
+    let val = (raw || '').trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1).trim();
+    }
+    if (val.startsWith('{{') && val.endsWith('}}')) {
+      val = val.slice(2, -2).trim();
+    }
+    return val;
+  };
+  const isMpPublicKey = (tok: string) =>
+    /^(APP_USR|TEST)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tok);
+  const resolveSbUrl = () =>
+    cleanCred(
+      process.env.SUPABASE_URL ||
+        process.env.VITE_SUPABASE_URL ||
+        'https://qonemlkgaoxolajrcnha.supabase.co'
+    )
+      .replace(/\/rest\/v1\/?$/i, '')
+      .replace(/\/auth\/v1\/?$/i, '')
+      .replace(/\/+$/, '');
+  const authenticateSbJwt = async (sbUrl: string, jwt: string, sbServiceKey: string) => {
+    const keys = Array.from(
+      new Set(
+        [
+          cleanCred(process.env.SUPABASE_ANON_KEY),
+          cleanCred(process.env.VITE_SUPABASE_ANON_KEY),
+          'sb_publishable_mx8M_cWJw-UAyMgg1ddt6Q_qJucyBsY',
+          sbServiceKey,
+        ].filter(Boolean)
+      )
+    );
+    for (const apikey of keys) {
+      try {
+        const r = await fetch(`${sbUrl}/auth/v1/user`, {
+          headers: { apikey, Authorization: `Bearer ${jwt}` },
+        });
+        if (r.ok) {
+          const u = (await r.json()) as { id?: string; email?: string };
+          if (u?.id) return u;
+        }
+      } catch {
+        // Try next key
+      }
+    }
+    return null;
+  };
+
+  app.get('/api/health', async (_req, res) => {
+    const mpToken = cleanCred(process.env.MP_ACCESS_TOKEN);
+    const sbUrl = resolveSbUrl();
+    const sbServiceKey = cleanCred(process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const mpIsPub = Boolean(mpToken && isMpPublicKey(mpToken));
+    let pagamentosPixReachable = false;
+    let supabaseHost = '';
+    try {
+      supabaseHost = sbUrl ? new URL(sbUrl).hostname : '';
+    } catch {
+      supabaseHost = '';
+    }
+    if (sbUrl && sbServiceKey) {
+      try {
+        const probe = await fetch(`${sbUrl}/rest/v1/pagamentos_pix?select=id&limit=1`, {
+          headers: { apikey: sbServiceKey, Authorization: `Bearer ${sbServiceKey}` },
+        });
+        pagamentosPixReachable = probe.ok;
+      } catch {
+        pagamentosPixReachable = false;
+      }
+    }
+    res.json({
+      ok: true,
+      mode: 'supabase-direct',
+      runtime: 'node-express',
+      worker: 'godriver-mobilidade',
+      mp_configured: Boolean(mpToken),
+      mp_token_format_ok: Boolean(mpToken && !mpIsPub),
+      mp_key_looks_like_public_key: mpIsPub,
+      webhook_secret_configured: Boolean(cleanCred(process.env.MP_WEBHOOK_SECRET)),
+      supabase_configured: Boolean(sbUrl && sbServiceKey),
+      supabase_url_host: supabaseHost,
+      pagamentos_pix_reachable: pagamentosPixReachable,
+      time: new Date().toISOString(),
+    });
   });
 
   app.post('/api/mp-create-pix', async (req, res) => {
     try {
-      const mpToken = (process.env.MP_ACCESS_TOKEN || '').trim();
-      const sbUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '')
-        .trim()
-        .replace(/\/$/, '');
-      const sbServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-      const sbVerifyKey = sbServiceKey || (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+      const mpToken = cleanCred(process.env.MP_ACCESS_TOKEN);
+      const sbUrl = resolveSbUrl();
+      const sbServiceKey = cleanCred(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
       if (!mpToken) {
         res.status(503).json({
           ok: false,
           error: 'MP_ACCESS_TOKEN não configurado nas variáveis do servidor/Cloudflare.',
+        });
+        return;
+      }
+      if (isMpPublicKey(mpToken)) {
+        res.status(400).json({
+          ok: false,
+          error:
+            'A variável MP_ACCESS_TOKEN está com a Chave Pública (Public Key UUID) em vez do Access Token secreto. No painel do Mercado Pago (Credenciais de produção), copie o campo "Access Token" e salve em MP_ACCESS_TOKEN.',
         });
         return;
       }
@@ -165,19 +255,9 @@ async function startServer() {
         return;
       }
 
-      const userRes = await fetch(`${sbUrl}/auth/v1/user`, {
-        headers: {
-          apikey: sbVerifyKey,
-          Authorization: `Bearer ${jwt}`,
-        },
-      });
-      if (!userRes.ok) {
-        res.status(401).json({ ok: false, error: 'Token de usuário inválido ou expirado.' });
-        return;
-      }
-      const authUser = (await userRes.json()) as { id?: string; email?: string };
+      const authUser = await authenticateSbJwt(sbUrl, jwt, sbServiceKey);
       if (!authUser?.id) {
-        res.status(401).json({ ok: false, error: 'Usuário autenticado não identificado.' });
+        res.status(401).json({ ok: false, error: 'Token de usuário inválido ou expirado.' });
         return;
       }
 
@@ -222,8 +302,15 @@ async function startServer() {
         return;
       }
 
-      const payerEmail = String(authUser.email || body.email || 'cliente@godriver.app').trim();
-      const payerName = String(body.nome || 'Cliente GoDriver').trim();
+      const rawEmail = String(authUser.email || body.email || '').trim().toLowerCase();
+      const payerEmail =
+        /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawEmail) && !rawEmail.endsWith('.local')
+          ? rawEmail
+          : `pagador.${authUser.id.replace(/[^a-z0-9]/gi, '').slice(0, 10)}@godriver.com.br`;
+      const cleanName =
+        String(body.nome || 'Cliente GoDriver').replace(/[^\p{L}\s]/gu, '').trim() ||
+        'Cliente GoDriver';
+      const nameParts = cleanName.split(/\s+/).filter(Boolean);
       const hostProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https');
       const hostName = String(req.headers['x-forwarded-host'] || req.get('host') || '');
       const baseOrigin = hostName ? `${hostProto}://${hostName}` : '';
@@ -237,45 +324,98 @@ async function startServer() {
         external_reference: `${tipo}:${authUser.id}:${corridaId || 'wallet'}:${Date.now()}`,
         payer: {
           email: payerEmail,
-          first_name: payerName.split(' ')[0] || 'Cliente',
-          last_name: payerName.split(' ').slice(1).join(' ') || 'GoDriver',
+          first_name: nameParts[0] || 'Cliente',
+          last_name: nameParts.slice(1).join(' ') || 'GoDriver',
         },
       };
-      if (baseOrigin && !baseOrigin.includes('localhost') && !baseOrigin.includes('127.0.0.1')) {
+      if (
+        baseOrigin &&
+        baseOrigin.startsWith('https://') &&
+        !baseOrigin.includes('localhost') &&
+        !baseOrigin.includes('127.0.0.1')
+      ) {
         mpPayload.notification_url = `${baseOrigin}/api/mp-webhook`;
       }
 
-      const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${mpToken}`,
-          'Content-Type': 'application/json',
-          'X-Idempotency-Key': crypto.randomUUID(),
-        },
-        body: JSON.stringify(mpPayload),
-      });
-      const mpData = (await mpRes.json()) as {
-        id?: number | string;
-        message?: string;
-        cause?: Array<{ description?: string }>;
-        point_of_interaction?: {
-          transaction_data?: { qr_code?: string; qr_code_base64?: string };
+      const callMp = async (payloadToSend: Record<string, unknown>) => {
+        const r = await fetch('https://api.mercadopago.com/v1/payments', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${mpToken}`,
+            'Content-Type': 'application/json',
+            'X-Idempotency-Key': crypto.randomUUID(),
+          },
+          body: JSON.stringify(payloadToSend),
+        });
+        const txt = await r.text();
+        let d: {
+          id?: number | string;
+          message?: string;
+          error?: string;
+          cause?: Array<{ code?: string | number; description?: string }>;
+          point_of_interaction?: {
+            transaction_data?: { qr_code?: string; qr_code_base64?: string };
+          };
+        } = {};
+        try {
+          d = JSON.parse(txt) as typeof d;
+        } catch {
+          // Non-JSON response
+        }
+        const causeDesc = (d.cause || [])
+          .map((c) => [c.code ? `[${c.code}]` : '', c.description || ''].filter(Boolean).join(' '))
+          .filter(Boolean)
+          .join('; ');
+        return {
+          ok: r.ok && Boolean(d?.id),
+          status: r.status,
+          data: d,
+          errorMessage: causeDesc || d.message || d.error || '',
         };
       };
-      if (!mpRes.ok || !mpData?.id) {
+
+      let mpAttempt = await callMp(mpPayload);
+      if (
+        !mpAttempt.ok &&
+        mpAttempt.status === 400 &&
+        /same|collector|payer|yourself|mesmo|próprio/i.test(mpAttempt.errorMessage || '')
+      ) {
+        mpAttempt = await callMp({
+          ...mpPayload,
+          payer: {
+            email: `pagador.${authUser.id.replace(/[^a-z0-9]/gi, '').slice(0, 10)}@godriver.com.br`,
+            first_name: nameParts[0] || 'Cliente',
+            last_name: nameParts.slice(1).join(' ') || 'GoDriver',
+          },
+        });
+      }
+
+      if (!mpAttempt.ok) {
+        const isAuthErr = mpAttempt.status === 401 || mpAttempt.status === 403;
         res.status(502).json({
           ok: false,
-          error:
-            mpData?.cause?.[0]?.description ||
-            mpData?.message ||
-            'Erro ao gerar Pix no Mercado Pago.',
+          error: isAuthErr
+            ? `Credencial MP_ACCESS_TOKEN recusada pelo Mercado Pago (HTTP ${mpAttempt.status}). Verifique se salvou o Access Token de Produção (não a Public Key).`
+            : mpAttempt.errorMessage
+            ? `Mercado Pago (${mpAttempt.status}): ${mpAttempt.errorMessage}`
+            : `Erro ao gerar Pix no Mercado Pago (HTTP ${mpAttempt.status}).`,
         });
         return;
       }
 
+      const mpData = mpAttempt.data;
       const mpPaymentId = String(mpData.id);
       const qrCode = mpData.point_of_interaction?.transaction_data?.qr_code || '';
       const qrCodeBase64 = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || '';
+
+      if (!qrCode && !qrCodeBase64) {
+        res.status(502).json({
+          ok: false,
+          error:
+            'O Mercado Pago criou o pagamento mas não retornou o QR Code Pix. Verifique se sua conta possui uma Chave Pix ativa cadastrada.',
+        });
+        return;
+      }
 
       const insertRes = await fetch(`${sbUrl}/rest/v1/pagamentos_pix`, {
         method: 'POST',
@@ -329,13 +469,97 @@ async function startServer() {
     }
   });
 
+  app.post('/api/mp-sync-payment', async (req, res) => {
+    try {
+      const mpToken = cleanCred(process.env.MP_ACCESS_TOKEN);
+      const sbUrl = resolveSbUrl();
+      const sbServiceKey = cleanCred(process.env.SUPABASE_SERVICE_ROLE_KEY);
+      if (!mpToken || !sbUrl || !sbServiceKey) {
+        res.status(503).json({ ok: false, error: 'Configuração incompleta.' });
+        return;
+      }
+
+      const authHeader = String(req.headers.authorization || '');
+      const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+      if (!jwt) {
+        res.status(401).json({ ok: false, error: 'Sessão não autenticada.' });
+        return;
+      }
+      const authUser = await authenticateSbJwt(sbUrl, jwt, sbServiceKey);
+      if (!authUser?.id) {
+        res.status(401).json({ ok: false, error: 'Sessão inválida.' });
+        return;
+      }
+
+      const pagamentoId = String((req.body as { pagamento_id?: string })?.pagamento_id || '').trim();
+      if (!pagamentoId) {
+        res.status(400).json({ ok: false, error: 'pagamento_id obrigatório.' });
+        return;
+      }
+
+      const rowRes = await fetch(
+        `${sbUrl}/rest/v1/pagamentos_pix?id=eq.${encodeURIComponent(pagamentoId)}&select=id,usuario_id,mp_payment_id,status&limit=1`,
+        {
+          headers: { apikey: sbServiceKey, Authorization: `Bearer ${sbServiceKey}` },
+        }
+      );
+      const rows = (await rowRes.json()) as Array<{
+        id: string;
+        usuario_id: string;
+        mp_payment_id?: string | null;
+        status: string;
+      }>;
+      const row = rows[0];
+      if (!row || row.usuario_id !== authUser.id) {
+        res.status(404).json({ ok: false, error: 'Pagamento não encontrado.' });
+        return;
+      }
+      if (row.status === 'aprovado') {
+        res.json({ ok: true, status: 'aprovado' });
+        return;
+      }
+      if (!row.mp_payment_id) {
+        res.json({ ok: true, status: row.status });
+        return;
+      }
+
+      const mpRes = await fetch(
+        `https://api.mercadopago.com/v1/payments/${encodeURIComponent(row.mp_payment_id)}`,
+        { headers: { Authorization: `Bearer ${mpToken}` } }
+      );
+      if (!mpRes.ok) {
+        res.json({ ok: true, status: row.status });
+        return;
+      }
+      const mpPayment = (await mpRes.json()) as { status?: string; id?: string | number };
+      if (mpPayment.status === 'approved') {
+        await fetch(`${sbUrl}/rest/v1/rpc/process_mercadopago_pix_approved`, {
+          method: 'POST',
+          headers: {
+            apikey: sbServiceKey,
+            Authorization: `Bearer ${sbServiceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ p_mp_payment_id: String(mpPayment.id || row.mp_payment_id) }),
+        });
+        res.json({ ok: true, status: 'aprovado' });
+        return;
+      }
+
+      res.json({ ok: true, status: row.status });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Erro ao sincronizar status Pix.',
+      });
+    }
+  });
+
   app.post('/api/mp-webhook', async (req, res) => {
     try {
-      const mpToken = (process.env.MP_ACCESS_TOKEN || '').trim();
-      const sbUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '')
-        .trim()
-        .replace(/\/$/, '');
-      const sbServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+      const mpToken = cleanCred(process.env.MP_ACCESS_TOKEN);
+      const sbUrl = resolveSbUrl();
+      const sbServiceKey = cleanCred(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
       if (!mpToken || !sbUrl || !sbServiceKey) {
         res.status(503).json({ ok: false, error: 'Configuração do servidor incompleta.' });
@@ -360,7 +584,7 @@ async function startServer() {
         return;
       }
 
-      const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
+      const secret = cleanCred(process.env.MP_WEBHOOK_SECRET);
       if (secret) {
         const xSig = String(req.headers['x-signature'] || '');
         const xReqId = String(req.headers['x-request-id'] || '');

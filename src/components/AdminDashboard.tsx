@@ -82,10 +82,12 @@ import {
   adminUpdateUserStatus,
   adminUpdateUserWalletBalance,
   cancelRide,
+  checkPixWorkerHealth,
   DEFAULT_PLATFORM_CONFIG,
   DEFAULT_PRICING_LIST,
   fetchAdminOverview,
   fetchPlatformEvents,
+  type PixWorkerHealthStatus,
   resolveDocumentDisplayUrl,
   uploadApkPackageFile,
   uploadPlatformAssetFile,
@@ -266,6 +268,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [savingPricing, setSavingPricing] = useState(false);
   const [savingPlatform, setSavingPlatform] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [pixHealthStatus, setPixHealthStatus] = useState<PixWorkerHealthStatus | null>(null);
+  const [checkingPixHealth, setCheckingPixHealth] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [adminPrefs, setAdminPrefs] = useState(() => getUserPreferences());
   const [supportAlerts, setSupportAlerts] = useState<
@@ -282,6 +286,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleCheckPixHealth = async () => {
+    setCheckingPixHealth(true);
+    try {
+      const status = await checkPixWorkerHealth();
+      setPixHealthStatus(status);
+    } finally {
+      setCheckingPixHealth(false);
+    }
   };
 
   const loadOverview = useCallback(async () => {
@@ -2756,10 +2770,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Central Pix Automático (Mercado Pago 24h) &amp; Manual ({pagamentosPix.length})
                   </h2>
                   <p className="text-xs text-[#475569]">
-                    Pagamentos via Mercado Pago são aprovados automaticamente via webhook; você também pode aprovar ou cancelar manualmente abaixo.
+                    Pagamentos via Mercado Pago são aprovados automaticamente via webhook ou verificação direta; você também pode aprovar ou cancelar manualmente abaixo.
                   </p>
                 </div>
+                <button
+                  type="button"
+                  disabled={checkingPixHealth}
+                  onClick={handleCheckPixHealth}
+                  className="flex min-h-[38px] items-center gap-1.5 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 text-xs font-extrabold text-[#2563EB] hover:bg-[#DBEAFE] disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${checkingPixHealth ? 'animate-spin' : ''}`} />
+                  {checkingPixHealth ? 'Testando...' : 'Testar Conexão Pix'}
+                </button>
               </div>
+
+              {pixHealthStatus && (
+                <div
+                  className={`rounded-2xl border p-3.5 text-xs space-y-1.5 ${
+                    pixHealthStatus.ok &&
+                    pixHealthStatus.mp_token_format_ok &&
+                    pixHealthStatus.pagamentos_pix_reachable
+                      ? 'border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]'
+                      : 'border-red-200 bg-red-50 text-red-900'
+                  }`}
+                >
+                  {pixHealthStatus.error ? (
+                    <p className="font-bold">{pixHealthStatus.error}</p>
+                  ) : (
+                    <>
+                      <p className="font-extrabold">
+                        Diagnóstico do Servidor ({pixHealthStatus.worker || pixHealthStatus.runtime || 'API'}):
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px]">
+                        <span>
+                          • MP_ACCESS_TOKEN:{' '}
+                          <strong>
+                            {!pixHealthStatus.mp_configured
+                              ? 'Ausente'
+                              : pixHealthStatus.mp_key_looks_like_public_key
+                              ? 'ERRO: Você colou a Public Key (UUID) no lugar do Access Token!'
+                              : 'Configurado (formato Access Token OK)'}
+                          </strong>
+                        </span>
+                        <span>
+                          • Tabela pagamentos_pix (Supabase):{' '}
+                          <strong>
+                            {pixHealthStatus.pagamentos_pix_reachable
+                              ? 'Conectada e acessível'
+                              : 'Sem acesso (verifique SUPABASE_SERVICE_ROLE_KEY e SQL)'}
+                          </strong>
+                        </span>
+                        <span>
+                          • MP_WEBHOOK_SECRET:{' '}
+                          <strong>
+                            {pixHealthStatus.webhook_secret_configured ? 'Configurado' : 'Opcional / não definido'}
+                          </strong>
+                        </span>
+                        <span>
+                          • Host Supabase:{' '}
+                          <strong className="font-mono-num">{pixHealthStatus.supabase_url_host || '—'}</strong>
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {pagamentosPix.length === 0 ? (
                 <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-6 text-center text-xs font-semibold text-[#475569]">
@@ -5389,31 +5464,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-5 shadow-xs space-y-3">
-              <div className="flex items-center gap-2.5">
-                <Zap className="h-5 w-5 text-[#2563EB] shrink-0" />
-                <h3 className="font-display text-base font-extrabold text-[#0F172A]">
-                  Tutorial Atualizado · Deploy Cloudflare Workers + Pix Mercado Pago 24h + Supabase
-                </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <Zap className="h-5 w-5 text-[#2563EB] shrink-0" />
+                  <h3 className="font-display text-base font-extrabold text-[#0F172A]">
+                    Tutorial Atualizado · Deploy Cloudflare Workers (godriver-mobilidade) + Pix Mercado Pago 24h
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  disabled={checkingPixHealth}
+                  onClick={handleCheckPixHealth}
+                  className="flex min-h-[36px] items-center gap-1.5 rounded-xl bg-[#2563EB] px-3 text-xs font-extrabold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${checkingPixHealth ? 'animate-spin' : ''}`} />
+                  {checkingPixHealth ? 'Testando...' : 'Testar Worker & MP'}
+                </button>
               </div>
               <ol className="space-y-2 text-xs text-[#1E293B] list-decimal pl-5 leading-relaxed">
                 <li>
                   <strong>1. Banco Supabase (Incremental):</strong> Clique em <em>Copiar SQL</em> acima no modo <strong>SQL Incremental Mínimo</strong> e execute no <strong>Supabase → SQL Editor</strong>. Ele garante os tipos <span className="font-mono-num font-bold">recarga_carteira</span> e <span className="font-mono-num font-bold">pagamento_corrida</span>, Realtime (<span className="font-mono-num">REPLICA IDENTITY FULL</span>) em <span className="font-mono-num">pagamentos_pix</span> e <span className="font-mono-num">rides</span>, e as RPCs <span className="font-mono-num">process_mercadopago_pix_approved</span> e <span className="font-mono-num">admin_approve_pagamento_pix</span>.
                 </li>
                 <li>
-                  <strong>2. Variáveis no Cloudflare Workers (<span className="font-mono-num">99.rikelmygbrl.workers.dev</span>):</strong> Confirme no Worker <span className="font-mono-num font-bold">99</span> os segredos/variáveis <span className="font-mono-num font-bold">MP_ACCESS_TOKEN</span>, <span className="font-mono-num font-bold">MP_WEBHOOK_SECRET</span>, <span className="font-mono-num font-bold">SUPABASE_URL</span>, <span className="font-mono-num font-bold">SUPABASE_SERVICE_ROLE_KEY</span> e no build <span className="font-mono-num font-bold">VITE_GEMINI_API_KEY</span>.
+                  <strong>2. Use o Access Token (NÃO a Public Key do &lt;script&gt;):</strong> No painel do Mercado Pago (<em>Suas integrações → Credenciais de produção</em>), o QR Code Pix é gerado 100% pelo servidor. Você <strong>não precisa</strong> colar o <span className="font-mono-num">&lt;script&gt;new MercadoPago("...")&lt;/script&gt;</span> no HTML e não deve salvar a <em>Public Key</em> em <span className="font-mono-num font-bold">MP_ACCESS_TOKEN</span> — copie o campo <strong>Access Token</strong> (secreto). Confirme também que sua conta Mercado Pago tem uma <strong>Chave Pix ativa</strong>.
                 </li>
                 <li>
-                  <strong>3. Webhook no Mercado Pago Developers:</strong> Configure a URL de notificação para{' '}
-                  <span className="font-mono-num font-bold bg-white px-1.5 py-0.5 rounded border border-[#BFDBFE]">
-                    https://99.rikelmygbrl.workers.dev/api/mp-webhook
+                  <strong>3. Variáveis no Worker <span className="font-mono-num">godriver-mobilidade</span>:</strong> No painel da Cloudflare (<em>Workers &amp; Pages → godriver-mobilidade → Settings → Variables and Secrets</em>), confirme <span className="font-mono-num font-bold">MP_ACCESS_TOKEN</span>, <span className="font-mono-num font-bold">MP_WEBHOOK_SECRET</span>, <span className="font-mono-num font-bold">SUPABASE_URL</span>, <span className="font-mono-num font-bold">SUPABASE_SERVICE_ROLE_KEY</span> e variável de build <span className="font-mono-num font-bold">VITE_GEMINI_API_KEY</span>.
+                </li>
+                <li>
+                  <strong>4. Webhook no Mercado Pago Developers:</strong> Configure a URL de notificação para{' '}
+                  <span className="font-mono-num font-bold bg-white px-1.5 py-0.5 rounded border border-[#BFDBFE] break-all">
+                    {`${typeof window !== 'undefined' ? window.location.origin : 'https://godriver-mobilidade.rikelmygbrl.workers.dev'}/api/mp-webhook`}
                   </span>{' '}
-                  marcando o tópico <strong>Pagamentos (payment)</strong>. O Worker já responde CORS e trata <span className="font-mono-num">/api/*</span> via <span className="font-mono-num">run_worker_first = ["/api/*"]</span> no <span className="font-mono-num">wrangler.toml</span>.
+                  marcando o tópico <strong>Pagamentos (payment)</strong>. O <span className="font-mono-num">wrangler.toml</span> já roteia <span className="font-mono-num">run_worker_first = ["/api/*"]</span>.
                 </li>
                 <li>
-                  <strong>4. Publicação / Redeploy:</strong> Rode <span className="font-mono-num font-bold">npm run build && npx wrangler deploy</span> (ou acione o build no Cloudflare) e teste a saúde da rota em <span className="font-mono-num">/api/health</span>.
-                </li>
-                <li>
-                  <strong>5. Logos &amp; Imagens (Google Drive):</strong> Links compartilhados do Google Drive inseridos na identidade visual ou QR Code são convertidos automaticamente para <span className="font-mono-num">lh3.googleusercontent.com/d/&lt;ID&gt;</span> com fallback seguro local caso o arquivo esteja privado ou offline.
+                  <strong>5. Publicação / Redeploy:</strong> Após alterar variáveis ou código, rode <span className="font-mono-num font-bold">npm run build && npx wrangler deploy</span> (ou acione novo deploy na Cloudflare) e clique em <strong>Testar Worker &amp; MP</strong> acima.
                 </li>
               </ol>
             </div>

@@ -46,6 +46,7 @@ import {
   getNightDutyWindowStatus,
   lookupWalletRecipient,
   requestWalletWithdrawal,
+  syncMercadoPagoPixStatus,
   transferirSaldo66,
   updateMyPay66Key,
 } from '../lib/mobilityApi';
@@ -180,6 +181,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     valor: number;
   } | null>(null);
   const [generatingAutoPix, setGeneratingAutoPix] = useState(false);
+  const [autoPixError, setAutoPixError] = useState<string | null>(null);
+  const [checkingAutoPix, setCheckingAutoPix] = useState(false);
   const [myPagamentosPix, setMyPagamentosPix] = useState<PagamentoPix[]>([]);
   const [hideBalance, setHideBalance] = useState<boolean>(() => {
     try {
@@ -352,6 +355,13 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     if (!autoPixCharge) return;
     const pollId = window.setInterval(async () => {
       try {
+        const synced = await syncMercadoPagoPixStatus(autoPixCharge.id);
+        if (synced.status === 'aprovado') {
+          setAutoPixCharge(null);
+          setSuccessMsg('Depósito Pix Automático confirmado! Seu saldo GoPay foi creditado na hora.');
+          await loadWalletData();
+          return;
+        }
         const { data } = await supabase
           .from('pagamentos_pix')
           .select('status')
@@ -624,9 +634,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
   const handleGenerateAutoPixDeposit = async () => {
     setError(null);
+    setAutoPixError(null);
     setSuccessMsg(null);
     if (numericAmount < 1) {
-      setError('Informe um valor mínimo de R$ 1,00 para depósito.');
+      setAutoPixError('Informe um valor mínimo de R$ 1,00 para depósito.');
       return;
     }
     setGeneratingAutoPix(true);
@@ -646,7 +657,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       });
       await loadWalletData();
     } catch (err) {
-      setError(
+      setAutoPixError(
         err instanceof Error
           ? err.message
           : 'Pix Automático indisponível no momento. Use o Pix Manual do Administrador.'
@@ -1329,6 +1340,33 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     </span>
                   </div>
 
+                  {autoPixError && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 space-y-2.5">
+                      <p className="text-xs font-bold text-amber-900 leading-relaxed">{autoPixError}</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleGenerateAutoPixDeposit}
+                          className="flex-1 min-h-[38px] rounded-xl border border-amber-300 bg-white text-xs font-extrabold text-[#0F172A]"
+                        >
+                          Tentar Novamente
+                        </button>
+                        {manualPixEnabled && !depositsBlockedNow && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAutoPixError(null);
+                              setDepositMethod('manual');
+                            }}
+                            className="flex-1 min-h-[38px] rounded-xl bg-[#2563EB] text-xs font-extrabold text-white"
+                          >
+                            Usar Pix Manual
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {!autoPixCharge ? (
                     <button
                       type="button"
@@ -1393,6 +1431,28 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
                       <button
                         type="button"
+                        disabled={checkingAutoPix}
+                        onClick={async () => {
+                          setCheckingAutoPix(true);
+                          try {
+                            const synced = await syncMercadoPagoPixStatus(autoPixCharge.id);
+                            if (synced.status === 'aprovado') {
+                              setAutoPixCharge(null);
+                              setSuccessMsg('Depósito Pix Automático confirmado! Seu saldo GoPay foi creditado na hora.');
+                              await loadWalletData();
+                            }
+                          } finally {
+                            setCheckingAutoPix(false);
+                          }
+                        }}
+                        className="flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-[#10B981] bg-[#ECFDF5] text-xs font-extrabold text-[#059669] active:scale-[0.98] disabled:opacity-60"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${checkingAutoPix ? 'animate-spin' : ''}`} />
+                        {checkingAutoPix ? 'Consultando Mercado Pago...' : 'Já paguei · Verificar agora'}
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => setAutoPixCharge(null)}
                         className="w-full text-[11px] font-bold text-[#475569] underline"
                       >
@@ -1401,7 +1461,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                     </div>
                   )}
 
-                  {myPagamentosPix.filter((p) => p.tipo === 'recarga').length > 0 && (
+                  {myPagamentosPix.filter((p) => p.tipo === 'recarga' || p.tipo === 'recarga_carteira').length > 0 && (
                     <div className="space-y-1.5 pt-1">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-[#475569]">
                         Recargas Pix Recentes

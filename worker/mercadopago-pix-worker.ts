@@ -14,6 +14,28 @@ interface WorkerEnv {
 }
 
 const DEFAULT_SUPABASE_URL = 'https://qonemlkgaoxolajrcnha.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_mx8M_cWJw-UAyMgg1ddt6Q_qJucyBsY';
+
+function cleanCredential(raw?: string): string {
+  let val = (raw || '').trim();
+  if (
+    (val.startsWith('"') && val.endsWith('"')) ||
+    (val.startsWith("'") && val.endsWith("'"))
+  ) {
+    val = val.slice(1, -1).trim();
+  }
+  if (val.startsWith('{{') && val.endsWith('}}')) {
+    val = val.slice(2, -2).trim();
+  }
+  return val;
+}
+
+function isMercadoPagoPublicKey(token: string): boolean {
+  // Public Key no Mercado Pago usa formato UUID: APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  return /^(APP_USR|TEST)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    token
+  );
+}
 
 function resolveAllowedCorsOrigin(request?: Request): string | null {
   if (!request) return null;
@@ -67,8 +89,55 @@ function jsonResponse(body: unknown, status = 200, request?: Request): Response 
 }
 
 function resolveSupabaseUrl(env: WorkerEnv): string {
-  const raw = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
-  return raw.replace(/\/+$/, '');
+  const raw = cleanCredential(env.SUPABASE_URL || env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL);
+  return raw
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/auth\/v1\/?$/i, '')
+    .replace(/\/+$/, '');
+}
+
+async function authenticateSupabaseUser(
+  sbUrl: string,
+  jwt: string,
+  env: WorkerEnv,
+  sbServiceKey: string
+): Promise<{ id?: string; email?: string } | null> {
+  const candidateKeys = Array.from(
+    new Set(
+      [
+        cleanCredential(env.SUPABASE_ANON_KEY),
+        cleanCredential(env.VITE_SUPABASE_ANON_KEY),
+        DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+        sbServiceKey,
+      ].filter(Boolean)
+    )
+  );
+
+  for (const apiKey of candidateKeys) {
+    try {
+      const userRes = await fetch(`${sbUrl}/auth/v1/user`, {
+        headers: {
+          apikey: apiKey,
+          Authorization: `Bearer ${jwt}`,
+        },
+      });
+      if (userRes.ok) {
+        const authUser = (await userRes.json()) as { id?: string; email?: string };
+        if (authUser?.id) return authUser;
+      }
+    } catch {
+      // Try next apikey candidate
+    }
+  }
+  return null;
+}
+
+function resolveValidPayerEmail(rawEmail: unknown, userId: string): string {
+  const email = String(rawEmail || '').trim().toLowerCase();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && !email.endsWith('.local')) {
+    return email;
+  }
+  return `pagador.${userId.replace(/[^a-z0-9]/gi, '').slice(0, 10) || 'cliente'}@godriver.com.br`;
 }
 
 async function verifyMercadoPagoWebhookSignature(
@@ -106,16 +175,81 @@ async function verifyMercadoPagoWebhookSignature(
   return computedHex.toLowerCase() === v1.toLowerCase();
 }
 
+interface MpPaymentCreateResult {
+  ok: boolean;
+  status: number;
+  data: {
+    id?: number | string;
+    status?: string;
+    message?: string;
+    error?: string;
+    cause?: Array<{ code?: string | number; description?: string }>;
+    point_of_interaction?: {
+      transaction_data?: {
+        qr_code?: string;
+        qr_code_base64?: string;
+      };
+    };
+  };
+  errorMessage?: string;
+}
+
+async function callMercadoPagoCreatePayment(
+  mpToken: string,
+  payload: Record<string, unknown>
+): Promise<MpPaymentCreateResult> {
+  const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${mpToken}`,
+      'Content-Type': 'application/json',
+      'X-Idempotency-Key': crypto.randomUUID(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const mpText = await mpRes.text();
+  let mpData: MpPaymentCreateResult['data'] = {};
+  try {
+    mpData = JSON.parse(mpText) as MpPaymentCreateResult['data'];
+  } catch {
+    // Non-JSON response from Mercado Pago
+  }
+
+  const causeDesc = (mpData?.cause || [])
+    .map((c) => [c.code ? `[${c.code}]` : '', c.description || ''].filter(Boolean).join(' '))
+    .filter(Boolean)
+    .join('; ');
+  const errorMessage = causeDesc || mpData?.message || mpData?.error || '';
+
+  return {
+    ok: mpRes.ok && Boolean(mpData?.id),
+    status: mpRes.status,
+    data: mpData,
+    errorMessage,
+  };
+}
+
 async function handleCreatePix(request: Request, env: WorkerEnv): Promise<Response> {
-  const mpToken = (env.MP_ACCESS_TOKEN || '').trim();
+  const mpToken = cleanCredential(env.MP_ACCESS_TOKEN);
   const sbUrl = resolveSupabaseUrl(env);
-  const sbServiceKey = (env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-  const sbVerifyKey = sbServiceKey || (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
+  const sbServiceKey = cleanCredential(env.SUPABASE_SERVICE_ROLE_KEY);
 
   if (!mpToken) {
     return jsonResponse(
       { ok: false, error: 'MP_ACCESS_TOKEN não configurado nas variáveis do Cloudflare Worker.' },
       503,
+      request
+    );
+  }
+  if (isMercadoPagoPublicKey(mpToken)) {
+    return jsonResponse(
+      {
+        ok: false,
+        error:
+          'A variável MP_ACCESS_TOKEN no Cloudflare está com a Chave Pública (Public Key UUID) em vez do Access Token secreto. No painel do Mercado Pago (Credenciais de produção), copie o campo "Access Token" (começa com APP_USR- seguido de números) e salve em MP_ACCESS_TOKEN no Cloudflare.',
+      },
+      400,
       request
     );
   }
@@ -133,24 +267,14 @@ async function handleCreatePix(request: Request, env: WorkerEnv): Promise<Respon
   const authHeader = request.headers.get('Authorization') || '';
   const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!jwt) {
-    return jsonResponse({ ok: false, error: 'Sessão não autenticada.' }, 401, request);
+    return jsonResponse({ ok: false, error: 'Sessão não autenticada. Faça login novamente.' }, 401, request);
   }
 
-  const userRes = await fetch(`${sbUrl}/auth/v1/user`, {
-    headers: {
-      apikey: sbVerifyKey,
-      Authorization: `Bearer ${jwt}`,
-    },
-  });
-  if (!userRes.ok) {
-    return jsonResponse({ ok: false, error: 'Token de usuário inválido ou expirado.' }, 401, request);
-  }
-  const authUser = (await userRes.json()) as { id?: string; email?: string };
+  const authUser = await authenticateSupabaseUser(sbUrl, jwt, env, sbServiceKey);
   if (!authUser?.id) {
-    return jsonResponse({ ok: false, error: 'Usuário autenticado não identificado.' }, 401, request);
+    return jsonResponse({ ok: false, error: 'Token de usuário inválido ou expirado. Faça login novamente.' }, 401, request);
   }
 
-  // Verifica se Pix Automático está habilitado no Admin
   const cfgRes = await fetch(
     `${sbUrl}/rest/v1/platform_settings?id=eq.1&select=mp_auto_pix_enabled`,
     {
@@ -204,73 +328,81 @@ async function handleCreatePix(request: Request, env: WorkerEnv): Promise<Respon
     );
   }
 
-  const payerEmail = String(authUser.email || body.email || 'cliente@godriver.app').trim();
-  const payerName = String(body.nome || 'Cliente GoDriver').trim();
+  const payerEmail = resolveValidPayerEmail(authUser.email || body.email, authUser.id);
+  const cleanName = String(body.nome || 'Cliente GoDriver').replace(/[^\p{L}\s]/gu, '').trim() || 'Cliente GoDriver';
+  const nameParts = cleanName.split(/\s+/).filter(Boolean);
   const requestOrigin = new URL(request.url).origin;
   const externalRef = `${tipo}:${authUser.id}:${corridaId || 'wallet'}:${Date.now()}`;
 
-  const mpPayload = {
+  const mpPayload: Record<string, unknown> = {
     transaction_amount: valor,
     description: isRidePix
       ? `GoDriver Corrida #${String(corridaId).slice(-4)}`
       : 'Recarga Carteira GoPay · GoDriver',
     payment_method_id: 'pix',
     external_reference: externalRef,
-    notification_url: `${requestOrigin}/api/mp-webhook`,
     payer: {
       email: payerEmail,
-      first_name: payerName.split(' ')[0] || 'Cliente',
-      last_name: payerName.split(' ').slice(1).join(' ') || 'GoDriver',
+      first_name: nameParts[0] || 'Cliente',
+      last_name: nameParts.slice(1).join(' ') || 'GoDriver',
     },
   };
-
-  const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${mpToken}`,
-      'Content-Type': 'application/json',
-      'X-Idempotency-Key': crypto.randomUUID(),
-    },
-    body: JSON.stringify(mpPayload),
-  });
-
-  const mpText = await mpRes.text();
-  let mpData: {
-    id?: number | string;
-    status?: string;
-    message?: string;
-    error?: string;
-    cause?: Array<{ code?: string | number; description?: string }>;
-    point_of_interaction?: {
-      transaction_data?: {
-        qr_code?: string;
-        qr_code_base64?: string;
-      };
-    };
-  } = {};
-  try {
-    mpData = JSON.parse(mpText) as typeof mpData;
-  } catch {
-    // Non-JSON response from Mercado Pago
+  if (requestOrigin.startsWith('https://')) {
+    mpPayload.notification_url = `${requestOrigin}/api/mp-webhook`;
   }
 
-  if (!mpRes.ok || !mpData?.id) {
-    const causeMsg = mpData?.cause?.[0]?.description || mpData?.message || mpData?.error;
+  let mpAttempt = await callMercadoPagoCreatePayment(mpToken, mpPayload);
+
+  // Se o próprio dono da conta Mercado Pago testar pagando com o mesmo e-mail da conta vendedora,
+  // o Mercado Pago recusa ("same user / collector cannot pay"). Fazemos 1 retry com alias neutro.
+  if (
+    !mpAttempt.ok &&
+    mpAttempt.status === 400 &&
+    /same|collector|payer|yourself|mesmo|próprio/i.test(mpAttempt.errorMessage || '')
+  ) {
+    const neutralEmail = `pagador.${authUser.id.replace(/[^a-z0-9]/gi, '').slice(0, 10)}@godriver.com.br`;
+    mpAttempt = await callMercadoPagoCreatePayment(mpToken, {
+      ...mpPayload,
+      payer: {
+        email: neutralEmail,
+        first_name: nameParts[0] || 'Cliente',
+        last_name: nameParts.slice(1).join(' ') || 'GoDriver',
+      },
+    });
+  }
+
+  if (!mpAttempt.ok) {
+    const isAuthErr = mpAttempt.status === 401 || mpAttempt.status === 403;
     return jsonResponse(
       {
         ok: false,
-        error: causeMsg
-          ? `Mercado Pago (${mpRes.status}): ${causeMsg}`
-          : `Erro ao gerar Pix no Mercado Pago (HTTP ${mpRes.status}).`,
+        error: isAuthErr
+          ? `Credencial MP_ACCESS_TOKEN recusada pelo Mercado Pago (HTTP ${mpAttempt.status}). Verifique se você salvou o Access Token de Produção (não a Public Key) nos segredos do Cloudflare Worker.`
+          : mpAttempt.errorMessage
+          ? `Mercado Pago (${mpAttempt.status}): ${mpAttempt.errorMessage}`
+          : `Erro ao gerar Pix no Mercado Pago (HTTP ${mpAttempt.status}).`,
       },
       502,
       request
     );
   }
 
+  const mpData = mpAttempt.data;
   const mpPaymentId = String(mpData.id);
   const qrCode = mpData.point_of_interaction?.transaction_data?.qr_code || '';
   const qrCodeBase64 = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || '';
+
+  if (!qrCode && !qrCodeBase64) {
+    return jsonResponse(
+      {
+        ok: false,
+        error:
+          'O Mercado Pago criou o pagamento mas não retornou o QR Code Pix. Verifique no app do Mercado Pago se sua conta possui uma Chave Pix ativa cadastrada.',
+      },
+      502,
+      request
+    );
+  }
 
   const insertRes = await fetch(`${sbUrl}/rest/v1/pagamentos_pix`, {
     method: 'POST',
@@ -337,10 +469,99 @@ async function handleCreatePix(request: Request, env: WorkerEnv): Promise<Respon
   );
 }
 
-async function handleMercadoPagoWebhook(request: Request, env: WorkerEnv): Promise<Response> {
-  const mpToken = (env.MP_ACCESS_TOKEN || '').trim();
+async function handleSyncPixStatus(request: Request, env: WorkerEnv): Promise<Response> {
+  const mpToken = cleanCredential(env.MP_ACCESS_TOKEN);
   const sbUrl = resolveSupabaseUrl(env);
-  const sbServiceKey = (env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const sbServiceKey = cleanCredential(env.SUPABASE_SERVICE_ROLE_KEY);
+
+  if (!mpToken || !sbUrl || !sbServiceKey) {
+    return jsonResponse({ ok: false, error: 'Configuração incompleta no Worker.' }, 503, request);
+  }
+
+  const authHeader = request.headers.get('Authorization') || '';
+  const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!jwt) {
+    return jsonResponse({ ok: false, error: 'Sessão não autenticada.' }, 401, request);
+  }
+
+  const authUser = await authenticateSupabaseUser(sbUrl, jwt, env, sbServiceKey);
+  if (!authUser?.id) {
+    return jsonResponse({ ok: false, error: 'Sessão inválida.' }, 401, request);
+  }
+
+  let body: { pagamento_id?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return jsonResponse({ ok: false, error: 'JSON inválido.' }, 400, request);
+  }
+  const pagamentoId = String(body.pagamento_id || '').trim();
+  if (!pagamentoId) {
+    return jsonResponse({ ok: false, error: 'pagamento_id é obrigatório.' }, 400, request);
+  }
+
+  const rowRes = await fetch(
+    `${sbUrl}/rest/v1/pagamentos_pix?id=eq.${encodeURIComponent(pagamentoId)}&select=id,usuario_id,mp_payment_id,status&limit=1`,
+    {
+      headers: {
+        apikey: sbServiceKey,
+        Authorization: `Bearer ${sbServiceKey}`,
+      },
+    }
+  );
+  if (!rowRes.ok) {
+    return jsonResponse({ ok: false, error: 'Falha ao consultar pagamentos_pix.' }, 500, request);
+  }
+  const rows = (await rowRes.json()) as Array<{
+    id: string;
+    usuario_id: string;
+    mp_payment_id?: string | null;
+    status: string;
+  }>;
+  const row = rows[0];
+  if (!row) {
+    return jsonResponse({ ok: false, error: 'Pagamento não encontrado.' }, 404, request);
+  }
+  if (row.usuario_id !== authUser.id) {
+    return jsonResponse({ ok: false, error: 'Acesso negado a este pagamento.' }, 403, request);
+  }
+  if (row.status === 'aprovado') {
+    return jsonResponse({ ok: true, status: 'aprovado' }, 200, request);
+  }
+  if (!row.mp_payment_id) {
+    return jsonResponse({ ok: true, status: row.status }, 200, request);
+  }
+
+  const mpRes = await fetch(
+    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(row.mp_payment_id)}`,
+    {
+      headers: { Authorization: `Bearer ${mpToken}` },
+    }
+  );
+  if (!mpRes.ok) {
+    return jsonResponse({ ok: true, status: row.status }, 200, request);
+  }
+  const mpPayment = (await mpRes.json()) as { status?: string; id?: string | number };
+  if (mpPayment.status === 'approved') {
+    await fetch(`${sbUrl}/rest/v1/rpc/process_mercadopago_pix_approved`, {
+      method: 'POST',
+      headers: {
+        apikey: sbServiceKey,
+        Authorization: `Bearer ${sbServiceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_mp_payment_id: String(mpPayment.id || row.mp_payment_id) }),
+    });
+    return jsonResponse({ ok: true, status: 'aprovado' }, 200, request);
+  }
+
+  return jsonResponse({ ok: true, status: row.status }, 200, request);
+}
+
+async function handleMercadoPagoWebhook(request: Request, env: WorkerEnv): Promise<Response> {
+  const mpToken = cleanCredential(env.MP_ACCESS_TOKEN);
+  const sbUrl = resolveSupabaseUrl(env);
+  const sbServiceKey = cleanCredential(env.SUPABASE_SERVICE_ROLE_KEY);
 
   if (!mpToken || !sbUrl || !sbServiceKey) {
     return jsonResponse(
@@ -367,7 +588,7 @@ async function handleMercadoPagoWebhook(request: Request, env: WorkerEnv): Promi
     return jsonResponse({ ok: true, ignored: true }, 200, request);
   }
 
-  const secret = (env.MP_WEBHOOK_SECRET || '').trim();
+  const secret = cleanCredential(env.MP_WEBHOOK_SECRET);
   if (secret) {
     const valid = await verifyMercadoPagoWebhookSignature(
       secret,
@@ -430,6 +651,55 @@ async function handleMercadoPagoWebhook(request: Request, env: WorkerEnv): Promi
   return jsonResponse({ ok: true, status: mpPayment.status || 'processed' }, 200, request);
 }
 
+async function handleHealthCheck(request: Request, env: WorkerEnv): Promise<Response> {
+  const mpToken = cleanCredential(env.MP_ACCESS_TOKEN);
+  const sbUrl = resolveSupabaseUrl(env);
+  const sbServiceKey = cleanCredential(env.SUPABASE_SERVICE_ROLE_KEY);
+  const webhookSecret = cleanCredential(env.MP_WEBHOOK_SECRET);
+
+  const mpConfigured = Boolean(mpToken);
+  const mpIsPublicKey = mpConfigured && isMercadoPagoPublicKey(mpToken);
+
+  let pagamentosPixReachable = false;
+  let supabaseHost = '';
+  try {
+    supabaseHost = sbUrl ? new URL(sbUrl).hostname : '';
+  } catch {
+    supabaseHost = '';
+  }
+
+  if (sbUrl && sbServiceKey) {
+    try {
+      const probe = await fetch(`${sbUrl}/rest/v1/pagamentos_pix?select=id&limit=1`, {
+        headers: {
+          apikey: sbServiceKey,
+          Authorization: `Bearer ${sbServiceKey}`,
+        },
+      });
+      pagamentosPixReachable = probe.ok;
+    } catch {
+      pagamentosPixReachable = false;
+    }
+  }
+
+  return jsonResponse(
+    {
+      ok: true,
+      runtime: 'cloudflare-worker',
+      worker: 'godriver-mobilidade',
+      mp_configured: mpConfigured,
+      mp_token_format_ok: mpConfigured && !mpIsPublicKey,
+      mp_key_looks_like_public_key: mpIsPublicKey,
+      webhook_secret_configured: Boolean(webhookSecret),
+      supabase_configured: Boolean(sbUrl && sbServiceKey),
+      supabase_url_host: supabaseHost,
+      pagamentos_pix_reachable: pagamentosPixReachable,
+    },
+    200,
+    request
+  );
+}
+
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
@@ -451,6 +721,13 @@ export default {
           return await handleCreatePix(request, env);
         }
 
+        if (pathname === '/api/mp-sync-payment') {
+          if (request.method !== 'POST') {
+            return jsonResponse({ ok: false, error: 'Use POST para /api/mp-sync-payment.' }, 405, request);
+          }
+          return await handleSyncPixStatus(request, env);
+        }
+
         if (pathname === '/api/mp-webhook') {
           if (request.method === 'GET') {
             return jsonResponse({ ok: true, endpoint: '/api/mp-webhook' }, 200, request);
@@ -462,19 +739,7 @@ export default {
         }
 
         if (pathname === '/api/health') {
-          return jsonResponse(
-            {
-              ok: true,
-              runtime: 'cloudflare-worker',
-              worker: '99',
-              mp_configured: Boolean((env.MP_ACCESS_TOKEN || '').trim()),
-              supabase_configured: Boolean(
-                resolveSupabaseUrl(env) && (env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
-              ),
-            },
-            200,
-            request
-          );
+          return await handleHealthCheck(request, env);
         }
 
         return jsonResponse({ ok: false, error: 'Endpoint de API não encontrado.' }, 404, request);

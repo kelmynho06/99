@@ -4514,5 +4514,63 @@ export async function adminApprovePagamentoPix(
   if (error) throw new Error(error.message);
 }
 
+export async function syncMercadoPagoPixStatus(
+  pagamentoId: string
+): Promise<{ ok: boolean; status: string }> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const jwt = sessionData.session?.access_token;
+    if (!jwt) return { ok: false, status: 'pendente' };
+    const res = await fetch('/api/mp-sync-payment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ pagamento_id: pagamentoId }),
+    });
+    if (!res.ok) return { ok: false, status: 'pendente' };
+    const text = await res.text();
+    const parsed = JSON.parse(text) as { ok?: boolean; status?: string };
+    return { ok: Boolean(parsed.ok), status: String(parsed.status || 'pendente') };
+  } catch {
+    return { ok: false, status: 'pendente' };
+  }
+}
+
+export interface PixWorkerHealthStatus {
+  ok: boolean;
+  runtime?: string;
+  worker?: string;
+  mp_configured?: boolean;
+  mp_token_format_ok?: boolean;
+  mp_key_looks_like_public_key?: boolean;
+  webhook_secret_configured?: boolean;
+  supabase_configured?: boolean;
+  supabase_url_host?: string;
+  pagamentos_pix_reachable?: boolean;
+  error?: string;
+}
+
+export async function checkPixWorkerHealth(): Promise<PixWorkerHealthStatus> {
+  try {
+    const res = await fetch('/api/health', { cache: 'no-store' });
+    const raw = await res.text();
+    try {
+      const parsed = JSON.parse(raw) as PixWorkerHealthStatus;
+      return parsed;
+    } catch {
+      return {
+        ok: false,
+        error: `A rota /api/health retornou resposta não-JSON (HTTP ${res.status}). Verifique se o Worker (run_worker_first = ["/api/*"]) está publicado.`,
+      };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Falha de rede ao consultar /api/health.',
+    };
+  }
+}
 
 
