@@ -6,11 +6,13 @@ import type {
   DirectMessage,
   DriverDetails,
   DriverFacialVerification,
+  DriverServiceMode,
   DriverVehicle,
   FacialVerificationStatus,
   GeoPoint,
   NotificationCategory,
   NotificationTargetScope,
+  PagamentoPix,
   PaymentMethod,
   PaymentStatus,
   PixKeyType,
@@ -75,6 +77,8 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   night_duty_start: '00:00',
   night_duty_end: '07:00',
   night_duty_auto_approve: true,
+  mp_auto_pix_enabled: true,
+  manual_pix_enabled: true,
 };
 
 function normalizeHHMM(raw: string | null | undefined, fallback: string): string {
@@ -208,6 +212,29 @@ export function rideMatchesDriverVehicle(
   return false;
 }
 
+export function rideMatchesDriverProfile(
+  category: RideCategory,
+  driver?: Pick<DriverDetails, 'vehicle_type' | 'service_mode'> | null
+): boolean {
+  if (!driver?.vehicle_type) return false;
+  const mode: DriverServiceMode = driver.service_mode || 'both';
+  const vType = driver.vehicle_type;
+
+  if (category === 'moto') {
+    return vType === 'moto' && mode !== 'only_delivery';
+  }
+  if (category === 'pop' || category === 'negocia') {
+    return vType === 'car' && mode !== 'only_delivery';
+  }
+  if (category === 'delivery_moto') {
+    return (vType === 'moto' || vType === 'delivery') && mode !== 'only_passenger';
+  }
+  if (category === 'delivery_car') {
+    return (vType === 'car' || vType === 'delivery') && mode !== 'only_passenger';
+  }
+  return false;
+}
+
 function readCachedDriverVehicles(
   userId: string
 ): { vehicles: DriverVehicle[]; activeVehicleId: string | null } | null {
@@ -326,6 +353,10 @@ function mapDbDriver(row: Record<string, unknown> | null | undefined): DriverDet
     cnh_url: String(row.cnh_url || ''),
     crlv_url: String(row.crlv_url || ''),
     vehicle_type: (row.vehicle_type as 'car' | 'moto' | 'delivery') || 'car',
+    service_mode:
+      row.service_mode === 'only_delivery' || row.service_mode === 'only_passenger'
+        ? row.service_mode
+        : 'both',
     vehicle_model: String(row.vehicle_model || ''),
     vehicle_plate: String(row.vehicle_plate || ''),
     vehicle_color: String(row.vehicle_color || ''),
@@ -838,6 +869,7 @@ export interface RegisterPayload {
   cnh_url?: string;
   crlv_url?: string;
   vehicle_type?: 'car' | 'moto' | 'delivery';
+  service_mode?: DriverServiceMode;
   vehicle_model?: string;
   vehicle_plate?: string;
   vehicle_color?: string;
@@ -928,6 +960,7 @@ export async function registerUser(payload: RegisterPayload): Promise<{
       cnh_url: cnhStored,
       crlv_url: crlvStored,
       vehicle_type: initialVehicle.vehicle_type,
+      service_mode: payload.service_mode || 'both',
       vehicle_model: initialVehicle.vehicle_model,
       vehicle_plate: initialVehicle.vehicle_plate,
       vehicle_color: initialVehicle.vehicle_color,
@@ -944,6 +977,7 @@ export async function registerUser(payload: RegisterPayload): Promise<{
     if (drvErr && (drvErr.code === '42703' || drvErr.code === 'PGRST204')) {
       delete drvPayload.vehicles;
       delete drvPayload.active_vehicle_id;
+      delete drvPayload.service_mode;
       const retry = await supabase.from('driver_profiles').upsert(drvPayload);
       drvErr = retry.error;
     }
@@ -1215,6 +1249,14 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       data.night_duty_auto_approve === undefined
         ? cached.night_duty_auto_approve ?? true
         : Boolean(data.night_duty_auto_approve),
+    mp_auto_pix_enabled:
+      data.mp_auto_pix_enabled === undefined
+        ? cached.mp_auto_pix_enabled ?? true
+        : Boolean(data.mp_auto_pix_enabled),
+    manual_pix_enabled:
+      data.manual_pix_enabled === undefined
+        ? cached.manual_pix_enabled ?? true
+        : Boolean(data.manual_pix_enabled),
   };
 }
 
@@ -1261,6 +1303,10 @@ export async function fetchOnlineDriversPublic(): Promise<UserProfile[]> {
         cnh_url: '',
         crlv_url: '',
         vehicle_type: (d.vehicle_type as 'car' | 'moto' | 'delivery') || 'car',
+        service_mode:
+          d.service_mode === 'only_delivery' || d.service_mode === 'only_passenger'
+            ? d.service_mode
+            : 'both',
         vehicle_model: String(d.vehicle_model || ''),
         vehicle_plate: '***-****',
         vehicle_color: String(d.vehicle_color || ''),
@@ -2508,6 +2554,47 @@ export async function switchDriverActiveVehicle(
   return saveDriverVehiclesAndSelect(currentUser.id, vehicles, target.id);
 }
 
+export async function updateDriverServiceMode(
+  userId: string,
+  serviceMode: DriverServiceMode
+): Promise<UserProfile> {
+  const { error } = await supabase
+    .from('driver_profiles')
+    .update({
+      service_mode: serviceMode,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId);
+  if (error && error.code !== '42703' && error.code !== 'PGRST204') {
+    throw new Error(error.message);
+  }
+  const refreshed = await fetchUserProfileById(userId);
+  if (!refreshed) throw new Error('Perfil não encontrado após salvar modalidade.');
+  return refreshed;
+}
+
+export async function adminUpdateDriverProfileControl(
+  userId: string,
+  patch: {
+    vehicle_type?: 'car' | 'moto' | 'delivery';
+    service_mode?: DriverServiceMode;
+  }
+): Promise<void> {
+  const body: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.vehicle_type) body.vehicle_type = patch.vehicle_type;
+  if (patch.service_mode) body.service_mode = patch.service_mode;
+
+  let { error } = await supabase.from('driver_profiles').update(body).eq('user_id', userId);
+  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+    delete body.service_mode;
+    const retry = await supabase.from('driver_profiles').update(body).eq('user_id', userId);
+    error = retry.error;
+  }
+  if (error) throw new Error(error.message);
+}
+
 export async function changeUserPassword(newPassword: string): Promise<void> {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(translateAuthError(error.message));
@@ -2691,6 +2778,8 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         night_duty_start: normalizeHHMM(config.night_duty_start, '00:00'),
         night_duty_end: normalizeHHMM(config.night_duty_end, '07:00'),
         night_duty_auto_approve: config.night_duty_auto_approve !== false,
+        mp_auto_pix_enabled: config.mp_auto_pix_enabled !== false,
+        manual_pix_enabled: config.manual_pix_enabled !== false,
       })
     );
   } catch {
@@ -2752,6 +2841,8 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     night_duty_start: normalizeHHMM(config.night_duty_start, '00:00'),
     night_duty_end: normalizeHHMM(config.night_duty_end, '07:00'),
     night_duty_auto_approve: config.night_duty_auto_approve !== false,
+    mp_auto_pix_enabled: config.mp_auto_pix_enabled !== false,
+    manual_pix_enabled: config.manual_pix_enabled !== false,
     updated_at: new Date().toISOString(),
   };
 
@@ -4243,7 +4334,7 @@ export function rankOnlineDriversByProximity(
         d.role === 'driver' &&
         d.status === 'active' &&
         Boolean(d.driver?.is_online) &&
-        rideMatchesDriverVehicle(ride.category, d.driver?.vehicle_type)
+        rideMatchesDriverProfile(ride.category, d.driver)
     )
     .map((driver) => {
       const lat = driver.driver?.current_lat;
@@ -4256,5 +4347,154 @@ export function rankOnlineDriversByProximity(
     })
     .sort((a, b) => a.distanceKm - b.distanceKm);
 }
+
+// --- PIX AUTOMÁTICO (MERCADO PAGO) + COEXISTÊNCIA COM PIX MANUAL ADMIN ---
+
+function mapDbPagamentoPix(
+  row: Record<string, unknown>,
+  profilesById?: Map<string, UserProfile>
+): PagamentoPix {
+  const uid = String(row.usuario_id || '');
+  return {
+    id: String(row.id),
+    usuario_id: uid,
+    corrida_id: row.corrida_id ? String(row.corrida_id) : null,
+    tipo: row.tipo === 'corrida' ? 'corrida' : 'recarga',
+    metodo_confirmacao:
+      row.metodo_confirmacao === 'manual_admin' ? 'manual_admin' : 'mercadopago_auto',
+    mp_payment_id: row.mp_payment_id ? String(row.mp_payment_id) : null,
+    valor: Number(row.valor ?? 0),
+    qr_code: row.qr_code ? String(row.qr_code) : null,
+    qr_code_base64: row.qr_code_base64 ? String(row.qr_code_base64) : null,
+    status: (row.status as PagamentoPix['status']) || 'pendente',
+    criado_em: String(row.criado_em || new Date().toISOString()),
+    aprovado_em: row.aprovado_em ? String(row.aprovado_em) : null,
+    usuario: profilesById?.get(uid),
+  };
+}
+
+export async function createMercadoPagoPix(input: {
+  tipo: 'recarga' | 'corrida';
+  valor: number;
+  corrida_id?: string | null;
+  email?: string;
+  nome?: string;
+}): Promise<{
+  id: string;
+  mp_payment_id: string;
+  qr_code: string;
+  qr_code_base64: string;
+  valor: number;
+  status: 'pendente';
+}> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const jwt = sessionData.session?.access_token;
+  if (!jwt) {
+    throw new Error('Faça login novamente para gerar o Pix Automático.');
+  }
+
+  const res = await fetch('/api/mp-create-pix', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      'Endpoint /api/mp-create-pix indisponível neste host. Configure o Cloudflare Worker ou use o Pix Manual do Administrador.'
+    );
+  }
+
+  const data = (await res.json()) as {
+    ok?: boolean;
+    error?: string;
+    id?: string;
+    mp_payment_id?: string;
+    qr_code?: string;
+    qr_code_base64?: string;
+    valor?: number;
+    status?: 'pendente';
+  };
+
+  if (!res.ok || !data.ok || !data.id) {
+    throw new Error(data.error || 'Erro ao criar cobrança Pix no Mercado Pago.');
+  }
+
+  return {
+    id: data.id,
+    mp_payment_id: String(data.mp_payment_id || ''),
+    qr_code: String(data.qr_code || ''),
+    qr_code_base64: String(data.qr_code_base64 || ''),
+    valor: Number(data.valor || input.valor),
+    status: 'pendente',
+  };
+}
+
+export async function createManualPagamentoPix(input: {
+  usuario_id: string;
+  tipo: 'recarga' | 'corrida';
+  valor: number;
+  corrida_id?: string | null;
+  qr_code?: string | null;
+}): Promise<PagamentoPix | null> {
+  try {
+    const { data, error } = await supabase
+      .from('pagamentos_pix')
+      .insert({
+        usuario_id: input.usuario_id,
+        corrida_id: input.corrida_id || null,
+        tipo: input.tipo,
+        metodo_confirmacao: 'manual_admin',
+        valor: Number(input.valor.toFixed(2)),
+        qr_code: input.qr_code || null,
+        status: 'pendente',
+      })
+      .select('*')
+      .maybeSingle();
+    if (error || !data) return null;
+    return mapDbPagamentoPix(data as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMyPagamentosPix(userId: string): Promise<PagamentoPix[]> {
+  const { data, error } = await supabase
+    .from('pagamentos_pix')
+    .select('*')
+    .eq('usuario_id', userId)
+    .order('criado_em', { ascending: false })
+    .limit(40);
+  if (error || !data) return [];
+  return data.map((row) => mapDbPagamentoPix(row as Record<string, unknown>));
+}
+
+export async function adminFetchPagamentosPix(
+  profilesById?: Map<string, UserProfile>
+): Promise<PagamentoPix[]> {
+  const { data, error } = await supabase
+    .from('pagamentos_pix')
+    .select('*')
+    .order('criado_em', { ascending: false })
+    .limit(120);
+  if (error || !data) return [];
+  return data.map((row) => mapDbPagamentoPix(row as Record<string, unknown>, profilesById));
+}
+
+export async function adminApprovePagamentoPix(
+  pagamentoId: string,
+  approve = true
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_approve_pagamento_pix', {
+    p_pagamento_id: pagamentoId,
+    p_approve: approve,
+  });
+  if (error) throw new Error(error.message);
+}
+
 
 

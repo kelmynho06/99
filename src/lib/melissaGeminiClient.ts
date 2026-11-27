@@ -9,11 +9,43 @@ export interface MelissaAttachmentPayload {
   name?: string;
 }
 
+export interface MelissaActionPayload {
+  type:
+    | 'none'
+    | 'request_ride'
+    | 'cancel_ride'
+    | 'open_wallet'
+    | 'open_games'
+    | 'open_support'
+    | 'open_settings'
+    | 'open_facial_queue'
+    | 'toggle_driver_online'
+    | 'call_phone'
+    | 'logout'
+    | 'open_external'
+    | 'play_youtube'
+    | 'admin_locate_driver'
+    | 'admin_toggle_block_user'
+    | 'admin_switch_tab';
+  originQuery?: string;
+  destQuery?: string;
+  category?: 'moto' | 'pop' | 'negocia' | 'delivery_moto' | 'delivery_car';
+  paymentMethod?: 'pix' | 'cash' | 'wallet';
+  driverName?: string;
+  targetName?: string;
+  targetBlock?: boolean;
+  tabName?: string;
+  url?: string;
+  youtubeQuery?: string;
+  online?: boolean;
+}
+
 export interface MelissaChatResult {
   ok: boolean;
   reply?: string;
   requiresConfirmation?: boolean;
   suggestedAction?: string;
+  actionPayload?: MelissaActionPayload;
   quotaExceeded?: boolean;
   transientHighDemand?: boolean;
   missingApiKey?: boolean;
@@ -141,7 +173,14 @@ function buildMelissaSystemInstruction(
   const safeRole = role === 'admin' ? 'admin' : role === 'driver' ? 'driver' : 'passenger';
   const common = `Você é a Melissa, assistente oficial inteligente em tempo real do aplicativo ${appName}.
 Fale com simpatia, naturalidade humana, clareza e objetividade (como uma conversa moderna estilo Google Gemini / Alexa).
-Você pode conversar e ajudar a pessoa sobre qualquer assunto do dia a dia (dúvidas gerais, cálculos, rotas, dicas, tecnologia, estudos, curiosidades), além dos recursos do ${appName}, mantendo sempre a segurança.
+Você pode conversar e ajudar a pessoa sobre qualquer assunto do dia a dia (dúvidas gerais, cálculos, rotas, dicas, tecnologia, estudos, curiosidades), além de controlar ações dentro do ${appName}.
+AÇÕES DO APLICATIVO (campo actionJson opcional em JSON compacto):
+- Sempre que o usuário pedir uma ação concreta no app ou na web (ex.: abrir YouTube/WhatsApp/pesquisar no Google, tocar vídeo no YouTube, encerrar sessão/sair, abrir carteira/jogos/configurações, ligar para motorista/passageiro), preencha "actionJson" com JSON válido:
+  - {"type":"open_external","url":"https://www.google.com/search?q=..."} (ou youtube.com / wa.me)
+  - {"type":"play_youtube","youtubeQuery":"nome da musica ou video"}
+  - {"type":"logout"}
+  - {"type":"open_wallet"} | {"type":"open_games"} | {"type":"open_settings"} | {"type":"open_support"}
+  - {"type":"call_phone"}
 REGRA DE RECONHECIMENTO DO DONO: Toda vez que qualquer usuário (no painel Passageiro, Motorista ou Administrador) disser "oi Melissa, sou eu Rikelmy" (ou variações como "sou eu Rikelmy", "aqui é o Rikelmy"), reconheça imediatamente Rikelmy como o fundador, dono e administrador principal do sistema Go Driver e cumprimente-o pelo nome. Porém, nunca exponha dados confidenciais de terceiros quando a sessão ativa não for o painel Administrativo autenticado.
 Responda sempre no idioma do usuário (padrão Português do Brasil). Nunca invente dados financeiros nem exponha chaves ou tokens.`;
 
@@ -149,7 +188,8 @@ Responda sempre no idioma do usuário (padrão Português do Brasil). Nunca inve
     return `${common}
 PERFIL ATIVO: PASSAGEIRO / CLIENTE.
 PERMISSÕES ESTRITAS:
-- Você pode ajudar o passageiro a consultar localização GPS atual, definir origem/destino, simular valor de corrida/entrega, escolher pagamento permitido (lembrando que durante o Plantão Noturno da Melissa 00h–07h apenas Saldo da Carteira GoPay ou Dinheiro são aceitos — Pix manual fica bloqueado), acompanhar ou cancelar a própria corrida, abrir Jogos 3D / Suporte ao Admin ou conversar livremente sobre qualquer assunto geral.
+- Você pode chamar corridas ou entregas para o passageiro ou para outra pessoa, preenchendo actionJson: {"type":"request_ride","originQuery":"origem se informada","destQuery":"destino","category":"moto|pop|negocia|delivery_moto|delivery_car","paymentMethod":"pix|cash|wallet"} e retornando requiresConfirmation=true para o cliente confirmar dizendo "Sim".
+- Também pode cancelar a própria corrida ({"type":"cancel_ride"}, requiresConfirmation=true), consultar saldo/carteira, abrir Jogos 3D, ligar para o motorista ou sair da conta.
 - PROIBIDO: jamais revele dados pessoais, telefones ou saldos de outros usuários, relatórios financeiros da plataforma, controles de administrador ou aprovações de motoristas.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
   }
@@ -158,19 +198,22 @@ CONTEXTO ATUAL DO APP: ${contextSummary}`;
     return `${common}
 PERFIL ATIVO: MOTORISTA / ENTREGADOR PARCEIRO.
 PERMISSÕES ESTRITAS:
-- Você pode tirar dúvidas, ler dados da corrida/entrega ativa do motorista, explicar status online/verificação facial ao vivo, saldo/saque Pix, encaminhar dúvidas, arquivos, fotos ou localização GPS para o suporte do Administrador e conversar livremente sobre qualquer assunto geral.
+- Você pode tirar dúvidas, ler dados da corrida/entrega ativa, conectar/desconectar motorista ({"type":"toggle_driver_online","online":true|false}), ligar para o passageiro ativo ({"type":"call_phone"}), abrir carteira/configurações/jogos, encaminhar arquivos ou GPS para o suporte ou sair da conta.
 - PROIBIDO: jamais aceite alterar tarifas globais, aprovar pagamentos ou revelar dados confidenciais de outros motoristas/clientes ou do painel Admin.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
   }
 
   return `${common}
 PERFIL ATIVO: SUPER-ADMINISTRADOR (ACESSO TOTAL AUTORIZADO).
-PERMISSÃO TOTAL DE CONSULTA DE DADOS (SEM BLOQUEIO DE PRIVACIDADE):
-- O usuário logado é o Administrador autorizado do sistema. Você TEM PERMISSÃO TOTAL e irrestrita para consultar, listar e informar nomes completos, telefones, e-mails, status, saldo da carteira GoPay, pendências, chaves Pix, veículos (modelo, placa, cor, categoria) e detalhes de clientes e motoristas cadastrados no CONTEXTO ATUAL DO APP.
-- NUNCA recuse nem cite política de privacidade para ocultar dados de clientes ou motoristas quando o Administrador perguntar (ex.: "Me mostre aqui quem ele é", "Veja tal motorista", "Qual o telefone/saldo dele"). Responda diretamente com os dados reais encontrados no contexto.
-- Você também pode orientar comandos sobre fila de reconhecimento facial ao vivo, corridas, depósitos Pix, saques Pix de motoristas, tarifas, eventos, paleta global, plantão noturno e scripts SQL.
-- REGRA CRÍTICA DE SEGURANÇA: Antes de qualquer ação destrutiva, financeira ou em lote (excluir usuário/item, aprovar/recusar depósito ou saque, alterar tarifas em massa), retorne "requiresConfirmation": true e pergunte claramente primeiro (ex: "Você quer realmente que eu faça isso? Diga Sim para confirmar."). Só execute após o administrador responder "Sim".
-- REGRA ESTRITA DE SQL INCREMENTAL MÍNIMO: Sempre que o administrador pedir para gerar, ajustar ou copiar um script SQL do banco de dados (nova coluna, tabela nova, política RLS ou função), gere EXCLUSIVAMENTE o SQL incremental mínimo e idempotente (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY, CREATE OR REPLACE FUNCTION). NUNCA gere o schema completo do zero nem recrie tabelas já existentes.
+PERMISSÃO TOTAL DE CONSULTA E CONTROLE:
+- Você TEM PERMISSÃO TOTAL e irrestrita para consultar, listar e informar nomes completos, telefones, e-mails, status, saldo da carteira GoPay, pendências, chaves Pix, veículos (modelo, placa, cor, categoria) e detalhes de clientes e motoristas cadastrados no CONTEXTO ATUAL DO APP.
+- NUNCA recuse nem cite política de privacidade para ocultar dados de clientes ou motoristas quando o Administrador perguntar.
+- AÇÕES DE ADMIN VIA actionJson:
+  - Localizar motorista online no mapa: {"type":"admin_locate_driver","driverName":"Nome"}
+  - Bloquear ou desbloquear cliente/motorista: {"type":"admin_toggle_block_user","targetName":"Nome","targetBlock":true|false} (OBRIGATÓRIO requiresConfirmation=true!)
+  - Abrir Fila Facial: {"type":"open_facial_queue"} | Abrir aba: {"type":"admin_switch_tab","tabName":"livemap|drivers|deliveries|passengers|rides|payments|events|notifications|coupons|pricing|audit|sql"}
+- REGRA CRÍTICA DE SEGURANÇA: Antes de qualquer ação destrutiva, bloqueio de usuário, financeira ou em lote, retorne "requiresConfirmation": true e pergunte claramente ("Diga Sim para confirmar."). Só execute após o administrador responder "Sim".
+- REGRA ESTRITA DE SQL INCREMENTAL MÍNIMO: Quando o admin pedir SQL, gere EXCLUSIVAMENTE o SQL incremental mínimo e idempotente (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY, CREATE OR REPLACE FUNCTION).
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
 }
 
@@ -400,6 +443,8 @@ export async function queryMelissaWithCloudflareFallback(params: {
         quotaExceeded?: boolean;
         requiresConfirmation?: boolean;
         suggestedAction?: string;
+        actionPayload?: MelissaActionPayload;
+        actionJson?: string;
         code?: string;
         message?: string;
       };
@@ -430,11 +475,20 @@ export async function queryMelissaWithCloudflareFallback(params: {
       }
 
       if (res.ok && data.ok) {
+        let parsedAction: MelissaActionPayload | undefined = data.actionPayload;
+        if (!parsedAction && data.actionJson) {
+          try {
+            parsedAction = JSON.parse(data.actionJson) as MelissaActionPayload;
+          } catch {
+            // Ignore malformed optional actionJson
+          }
+        }
         return {
           ok: true,
           reply: data.reply || 'Estou por aqui! Como posso ajudar?',
           requiresConfirmation: Boolean(data.requiresConfirmation),
           suggestedAction: data.suggestedAction || 'none',
+          actionPayload: parsedAction,
           source: 'server',
         };
       }
@@ -528,6 +582,7 @@ export async function queryMelissaWithCloudflareFallback(params: {
                 reply: { type: Type.STRING },
                 requiresConfirmation: { type: Type.BOOLEAN },
                 suggestedAction: { type: Type.STRING },
+                actionJson: { type: Type.STRING },
               },
               required: ['reply', 'requiresConfirmation', 'suggestedAction'],
             },
@@ -541,6 +596,7 @@ export async function queryMelissaWithCloudflareFallback(params: {
           reply?: string;
           requiresConfirmation?: boolean;
           suggestedAction?: string;
+          actionJson?: string;
         } = {};
         try {
           parsed = JSON.parse(stripJsonCodeFences(rawText));
@@ -548,11 +604,21 @@ export async function queryMelissaWithCloudflareFallback(params: {
           parsed = { reply: rawText };
         }
 
+        let actionPayload: MelissaActionPayload | undefined;
+        if (parsed.actionJson) {
+          try {
+            actionPayload = JSON.parse(stripJsonCodeFences(parsed.actionJson)) as MelissaActionPayload;
+          } catch {
+            // Ignore malformed optional actionJson
+          }
+        }
+
         return {
           ok: true,
           reply: parsed.reply || rawText || 'Pronto! Como posso ajudar mais?',
           requiresConfirmation: Boolean(parsed.requiresConfirmation),
           suggestedAction: parsed.suggestedAction || 'none',
+          actionPayload,
           source: 'cloudflare-client',
         };
       } catch (err) {

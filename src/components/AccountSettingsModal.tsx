@@ -45,6 +45,7 @@ import {
   compressImageFileToDataUrl,
   getDriverVehiclesList,
   saveDriverVehiclesAndSelect,
+  updateDriverServiceMode,
   updateUserLanguagePref,
   updateUserProfileSettings,
 } from '../lib/mobilityApi';
@@ -62,6 +63,7 @@ import {
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
+  DriverServiceMode,
   DriverVehicle,
   PaymentMethod,
   PixKeyType,
@@ -151,6 +153,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [vehicleType, setVehicleType] = useState<'car' | 'moto' | 'delivery'>(
     currentUser.driver?.vehicle_type || 'car'
   );
+  const [serviceMode, setServiceMode] = useState<DriverServiceMode>(
+    currentUser.driver?.service_mode || 'both'
+  );
   const [vehicleModel, setVehicleModel] = useState(currentUser.driver?.vehicle_model || '');
   const [vehiclePlate, setVehiclePlate] = useState(currentUser.driver?.vehicle_plate || '');
   const [vehicleColor, setVehicleColor] = useState(currentUser.driver?.vehicle_color || '');
@@ -211,6 +216,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setActiveVehicleId(next.activeVehicleId);
     if (currentUser.driver) {
       setVehicleType(currentUser.driver.vehicle_type);
+      setServiceMode(currentUser.driver.service_mode || 'both');
       setVehicleModel(currentUser.driver.vehicle_model);
       setVehiclePlate(currentUser.driver.vehicle_plate);
       setVehicleColor(currentUser.driver.vehicle_color);
@@ -218,6 +224,33 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       setPixKeyType(currentUser.driver.pix_key_type || 'cpf_cnpj');
     }
   }, [currentUser]);
+
+  const handleChangeServiceMode = async (nextMode: DriverServiceMode) => {
+    setFeedback(null);
+    setSaving(true);
+    try {
+      const updated = await updateDriverServiceMode(currentUser.id, nextMode);
+      setServiceMode(nextMode);
+      onUserUpdated(updated);
+      const label =
+        nextMode === 'only_passenger'
+          ? 'Somente Passageiros'
+          : nextMode === 'only_delivery'
+          ? 'Somente Entregas'
+          : 'Ambos (Corridas e Entregas)';
+      setFeedback({
+        type: 'ok',
+        msg: `Modalidade atualizada para ${label}. Você receberá apenas solicitações dessa modalidade.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'err',
+        msg: err instanceof Error ? err.message : 'Erro ao atualizar modalidade.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSelectSavedVehicle = async (veh: DriverVehicle) => {
     setFeedback(null);
@@ -1092,6 +1125,41 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
           {section === 'vehicle' && (
             <div className="space-y-4">
+              {/* Service Modality Selector */}
+              <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 space-y-2.5">
+                <div>
+                  <p className="text-xs font-extrabold text-[#0F172A]">
+                    Modalidade de Atendimento
+                  </p>
+                  <p className="text-[11px] text-[#475569]">
+                    Escolha se deseja receber apenas passageiros, apenas entregas ou ambos.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { id: 'both', label: 'Ambos' },
+                      { id: 'only_passenger', label: 'Só Passageiros' },
+                      { id: 'only_delivery', label: 'Só Entregas' },
+                    ] as Array<{ id: DriverServiceMode; label: string }>
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleChangeServiceMode(opt.id)}
+                      className={`min-h-[42px] rounded-xl border px-2 text-[11px] font-extrabold transition ${
+                        serviceMode === opt.id
+                          ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-xs'
+                          : 'bg-white text-[#475569] border-[#E2E8F0] hover:border-[#93C5FD]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Registered Vehicles Switcher */}
               <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">

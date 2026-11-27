@@ -31,7 +31,7 @@ import {
   markExplicitLanguageChoice,
   saveUserPreferences,
 } from '../lib/userPrefs';
-import type { PlatformConfig, UserProfile } from '../types/mobility';
+import type { DriverServiceMode, PlatformConfig, UserProfile } from '../types/mobility';
 import { LegalDocsModal, type LegalDocTab } from './LegalDocsModal';
 
 interface AuthScreenProps {
@@ -64,6 +64,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [password, setPassword] = useState('');
 
   const [vehicleType, setVehicleType] = useState<'car' | 'moto' | 'delivery'>('car');
+  const [serviceMode, setServiceMode] = useState<DriverServiceMode>('both');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
@@ -143,6 +144,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               cnh_url: cnhPreview,
               crlv_url: crlvPreview,
               vehicle_type: vehicleType,
+              service_mode: serviceMode,
               vehicle_model: vehicleModel,
               vehicle_plate: vehiclePlate,
               vehicle_color: vehicleColor,
@@ -546,6 +548,34 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     >
                       <Package className="h-4 w-4" /> {t.auth_vehicle_delivery}
                     </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#475569] mb-1">
+                      Modalidade de trabalho
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(
+                        [
+                          { id: 'both', label: 'Ambos' },
+                          { id: 'only_passenger', label: 'Só Passageiros' },
+                          { id: 'only_delivery', label: 'Só Entregas' },
+                        ] as Array<{ id: DriverServiceMode; label: string }>
+                      ).map((modeOpt) => (
+                        <button
+                          key={modeOpt.id}
+                          type="button"
+                          onClick={() => setServiceMode(modeOpt.id)}
+                          className={`min-h-[38px] rounded-xl border px-2 text-[11px] font-extrabold transition ${
+                            serviceMode === modeOpt.id
+                              ? 'bg-[#0F172A] text-white border-[#0F172A]'
+                              : 'bg-white text-[#475569] border-[#E2E8F0] hover:border-[#93C5FD]'
+                          }`}
+                        >
+                          {modeOpt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">

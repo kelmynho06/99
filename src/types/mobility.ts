@@ -85,6 +85,8 @@ export interface PlatformConfig {
   night_duty_start?: string;
   night_duty_end?: string;
   night_duty_auto_approve?: boolean;
+  mp_auto_pix_enabled?: boolean;
+  manual_pix_enabled?: boolean;
 }
 
 export interface PlatformEvent {
@@ -127,11 +129,14 @@ export interface DriverVehicle {
   vehicle_color: string;
 }
 
+export type DriverServiceMode = 'only_delivery' | 'only_passenger' | 'both';
+
 export interface DriverDetails {
   user_id: string;
   cnh_url: string;
   crlv_url: string;
   vehicle_type: 'car' | 'moto' | 'delivery';
+  service_mode?: DriverServiceMode;
   vehicle_model: string;
   vehicle_plate: string;
   vehicle_color: string;
@@ -436,4 +441,20 @@ export interface UserCoupon {
   used_at?: string | null;
   coupon?: Coupon | null;
   user?: UserProfile;
+}
+
+export interface PagamentoPix {
+  id: string;
+  usuario_id: string;
+  corrida_id?: string | null;
+  tipo: 'recarga' | 'corrida';
+  metodo_confirmacao: 'mercadopago_auto' | 'manual_admin';
+  mp_payment_id?: string | null;
+  valor: number;
+  qr_code?: string | null;
+  qr_code_base64?: string | null;
+  status: 'pendente' | 'aprovado' | 'cancelado' | 'expirado';
+  criado_em: string;
+  aprovado_em?: string | null;
+  usuario?: UserProfile;
 }

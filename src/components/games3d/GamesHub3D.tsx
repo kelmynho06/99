@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useState } from 'react';
 import {
   ArrowLeft,
   Car,
@@ -9,20 +9,37 @@ import {
   Trophy,
   X,
 } from 'lucide-react';
-import {
-  MotoDelivery3DGame,
-  Parking3DGame,
-  RushCar3DGame,
-  TowerStack3DGame,
-  TunnelNeon3DGame,
-} from './GamesBatchA';
-import {
-  Basketball3DGame,
-  BrickBreaker3DGame,
-  Penalty3DGame,
-  SpaceHop3DGame,
-  SphereTrack3DGame,
-} from './GamesBatchB';
+
+const RushCar3DGame = lazy(() =>
+  import('./GamesBatchA').then((m) => ({ default: m.RushCar3DGame }))
+);
+const MotoDelivery3DGame = lazy(() =>
+  import('./GamesBatchA').then((m) => ({ default: m.MotoDelivery3DGame }))
+);
+const Parking3DGame = lazy(() =>
+  import('./GamesBatchA').then((m) => ({ default: m.Parking3DGame }))
+);
+const TunnelNeon3DGame = lazy(() =>
+  import('./GamesBatchA').then((m) => ({ default: m.TunnelNeon3DGame }))
+);
+const TowerStack3DGame = lazy(() =>
+  import('./GamesBatchA').then((m) => ({ default: m.TowerStack3DGame }))
+);
+const SphereTrack3DGame = lazy(() =>
+  import('./GamesBatchB').then((m) => ({ default: m.SphereTrack3DGame }))
+);
+const Penalty3DGame = lazy(() =>
+  import('./GamesBatchB').then((m) => ({ default: m.Penalty3DGame }))
+);
+const Basketball3DGame = lazy(() =>
+  import('./GamesBatchB').then((m) => ({ default: m.Basketball3DGame }))
+);
+const SpaceHop3DGame = lazy(() =>
+  import('./GamesBatchB').then((m) => ({ default: m.SpaceHop3DGame }))
+);
+const BrickBreaker3DGame = lazy(() =>
+  import('./GamesBatchB').then((m) => ({ default: m.BrickBreaker3DGame }))
+);
 
 export type GameId3D =
   | 'rush'
@@ -292,76 +309,89 @@ export const GamesHub3D: React.FC<GamesHub3DProps> = ({ open, onClose }) => {
         </div>
       ) : (
         <div className="relative flex-1 overflow-hidden">
-          {selectedId === 'rush' && (
-            <RushCar3DGame
-              key={`rush-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'moto_delivery' && (
-            <MotoDelivery3DGame
-              key={`moto-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'parking' && (
-            <Parking3DGame
-              key={`park-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'tunnel_neon' && (
-            <TunnelNeon3DGame
-              key={`tunnel-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'tower_stack' && (
-            <TowerStack3DGame
-              key={`tower-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'sphere_track' && (
-            <SphereTrack3DGame
-              key={`sphere-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'penalty' && (
-            <Penalty3DGame
-              key={`pen-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'basketball' && (
-            <Basketball3DGame
-              key={`bask-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'space_hop' && (
-            <SpaceHop3DGame
-              key={`space-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
-          {selectedId === 'brick_breaker' && (
-            <BrickBreaker3DGame
-              key={`brick-${runSeed}`}
-              onScoreChange={handleScoreChange}
-              onGameOver={handleGameOver}
-            />
-          )}
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center bg-[#F4F6F9]">
+                <div className="rounded-2xl border border-[#E2E8F0] bg-white px-5 py-4 text-center shadow-sm">
+                  <p className="font-display text-sm font-extrabold text-[#0F172A]">
+                    Carregando motor 3D...
+                  </p>
+                  <p className="text-xs text-[#475569] mt-0.5">Preparando cenário Three.js</p>
+                </div>
+              </div>
+            }
+          >
+            {selectedId === 'rush' && (
+              <RushCar3DGame
+                key={`rush-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'moto_delivery' && (
+              <MotoDelivery3DGame
+                key={`moto-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'parking' && (
+              <Parking3DGame
+                key={`park-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'tunnel_neon' && (
+              <TunnelNeon3DGame
+                key={`tunnel-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'tower_stack' && (
+              <TowerStack3DGame
+                key={`tower-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'sphere_track' && (
+              <SphereTrack3DGame
+                key={`sphere-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'penalty' && (
+              <Penalty3DGame
+                key={`pen-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'basketball' && (
+              <Basketball3DGame
+                key={`bask-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'space_hop' && (
+              <SpaceHop3DGame
+                key={`space-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+            {selectedId === 'brick_breaker' && (
+              <BrickBreaker3DGame
+                key={`brick-${runSeed}`}
+                onScoreChange={handleScoreChange}
+                onGameOver={handleGameOver}
+              />
+            )}
+          </Suspense>
 
           {/* Clean non-blurred Game Over card */}
           {gameOverState && (

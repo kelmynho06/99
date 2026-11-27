@@ -4,15 +4,19 @@ import {
   Check,
   CheckCircle2,
   Copy,
+  ExternalLink,
   FileText,
   Gamepad2,
   MapPin,
+  Maximize2,
   Mic,
   MicOff,
+  Minimize2,
+  PhoneCall,
+  Play,
   RotateCcw,
   Send,
   ShieldAlert,
-  Sparkles,
   Volume2,
   VolumeX,
   X,
@@ -23,6 +27,7 @@ import {
   checkMelissaBackendStatus,
   isRikelmyOwnerGreeting,
   queryMelissaWithCloudflareFallback,
+  type MelissaActionPayload,
 } from '../lib/melissaGeminiClient';
 import {
   getNightDutyWindowStatus,
@@ -31,7 +36,78 @@ import {
 } from '../lib/mobilityApi';
 import { speakWithMelissaNaturalVoice, stopSpeech } from '../lib/sound';
 import { getUserPreferences, saveUserPreferences } from '../lib/userPrefs';
-import type { PlatformConfig, Ride, UserProfile } from '../types/mobility';
+import type {
+  PaymentMethod,
+  PlatformConfig,
+  Ride,
+  RideCategory,
+  UserProfile,
+} from '../types/mobility';
+
+/**
+ * Custom geometric GoDriver wave emblem for Melissa (replaces generic star icons)
+ */
+export const MelissaEmblem: React.FC<{ size?: number; className?: string }> = ({
+  size = 20,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 32 32"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    aria-hidden="true"
+  >
+    <circle cx="16" cy="16" r="13.5" stroke="currentColor" strokeWidth="2.1" opacity="0.28" />
+    <path
+      d="M7.5 16.5C9.8 11.2 12.6 11.2 14.8 16.5C17 21.8 19.8 21.8 22.1 16.5C23.1 14.1 24 13.1 25 13.1"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="24.5" cy="10" r="2.2" fill="currentColor" />
+  </svg>
+);
+
+export const MelissaTriggerButton: React.FC<{
+  onClick: () => void;
+  title?: string;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+}> = ({ onClick, title = 'Falar com a Melissa IA', size = 'md', className = '' }) => {
+  const dim =
+    size === 'lg'
+      ? 'h-12 w-12'
+      : size === 'sm'
+      ? 'h-9 w-9'
+      : 'h-10 w-10';
+  const iconSize = size === 'lg' ? 22 : size === 'sm' ? 18 : 20;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={`aurora-accent-flow relative flex ${dim} shrink-0 items-center justify-center rounded-full text-white shadow-md hover:scale-105 active:scale-95 transition-all duration-300 ${className}`}
+    >
+      <MelissaEmblem size={iconSize} />
+    </button>
+  );
+};
+
+interface ExternalLinkCard {
+  label: string;
+  url: string;
+}
+
+interface YouTubeEmbedInfo {
+  query: string;
+  videoId?: string;
+}
 
 interface ChatMessage {
   id: string;
@@ -40,16 +116,38 @@ interface ChatMessage {
   attachmentName?: string;
   attachmentUrl?: string;
   gpsCoords?: { lat: number; lng: number } | null;
+  externalLink?: ExternalLinkCard | null;
+  phoneLink?: { label: string; phone: string } | null;
+  youtubeEmbed?: YouTubeEmbedInfo | null;
   createdAt: string;
   animate?: boolean;
 }
 
-interface PendingAdminConfirmation {
-  action: 'delete_prompt' | 'financial_prompt' | 'open_wallet' | 'open_facial' | 'open_support';
-  summary: string;
-}
+type PendingConfirmation =
+  | {
+      action: 'delete_prompt' | 'financial_prompt' | 'open_wallet' | 'open_facial' | 'open_support';
+      summary: string;
+    }
+  | {
+      action: 'request_ride';
+      summary: string;
+      originQuery?: string;
+      destQuery: string;
+      category?: RideCategory;
+      paymentMethod?: PaymentMethod;
+    }
+  | {
+      action: 'cancel_ride';
+      summary: string;
+    }
+  | {
+      action: 'admin_toggle_block_user';
+      summary: string;
+      targetUser: UserProfile;
+      block: boolean;
+    };
 
-interface MelissaAssistantModalProps {
+export interface MelissaAssistantModalProps {
   open: boolean;
   currentUser: UserProfile;
   platformConfig?: PlatformConfig | null;
@@ -65,6 +163,18 @@ interface MelissaAssistantModalProps {
   onOpenSettings?: () => void;
   onOpenFacialQueue?: () => void;
   onTriggerAdminAction?: (action: string) => void;
+  onLogout?: () => void;
+  onMelissaRequestRide?: (params: {
+    originQuery?: string;
+    destQuery: string;
+    category?: RideCategory;
+    paymentMethod?: PaymentMethod;
+  }) => Promise<{ ok: boolean; summary: string }>;
+  onMelissaCancelRide?: () => Promise<boolean>;
+  onMelissaToggleOnline?: (online?: boolean) => Promise<string>;
+  onMelissaLocateDriver?: (driver: UserProfile) => void;
+  onMelissaToggleBlockUser?: (user: UserProfile, block: boolean) => Promise<void>;
+  onMelissaSwitchAdminTab?: (tabName: string) => void;
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -95,6 +205,59 @@ function getSpeechRecognitionConstructor(): (new () => SpeechRecognitionLike) | 
     webkitSpeechRecognition?: new () => SpeechRecognitionLike;
   };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+function isSafeHttpsUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractYouTubeVideoId(urlOrText: string): string | undefined {
+  const m = urlOrText.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+  );
+  return m?.[1];
+}
+
+const MELISSA_CHAT_STORAGE_PREFIX = 'godriver_melissa_chat_v1_';
+
+function loadSavedMelissaHistory(userId: string): ChatMessage[] {
+  if (!userId || typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(`${MELISSA_CHAT_STORAGE_PREFIX}${userId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ChatMessage[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.slice(-40).map((m) => ({ ...m, animate: false }));
+  } catch {
+    return [];
+  }
+}
+
+function persistMelissaHistory(userId: string, msgs: ChatMessage[]): void {
+  if (!userId || typeof window === 'undefined') return;
+  try {
+    const compact = msgs.slice(-40).map((m) => ({
+      ...m,
+      animate: false,
+      // Avoid storing heavy base64 images inside localStorage
+      attachmentUrl:
+        m.attachmentUrl && m.attachmentUrl.startsWith('data:') ? undefined : m.attachmentUrl,
+    }));
+    window.localStorage.setItem(
+      `${MELISSA_CHAT_STORAGE_PREFIX}${userId}`,
+      JSON.stringify(compact)
+    );
+  } catch {
+    // Ignore storage quota errors cleanly
+  }
 }
 
 const TypewriterText: React.FC<{
@@ -156,6 +319,13 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
   onOpenSettings,
   onOpenFacialQueue,
   onTriggerAdminAction,
+  onLogout,
+  onMelissaRequestRide,
+  onMelissaCancelRide,
+  onMelissaToggleOnline,
+  onMelissaLocateDriver,
+  onMelissaToggleBlockUser,
+  onMelissaSwitchAdminTab,
 }) => {
   const isAdmin = Boolean(currentUser.is_admin || currentUser.role === 'admin');
   const firstName = currentUser.full_name?.trim().split(' ')[0] || 'você';
@@ -163,7 +333,10 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
   const nightDuty = getNightDutyWindowStatus(platformConfig);
 
   const [prefs, setPrefs] = useState(getUserPreferences);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [minimized, setMinimized] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    loadSavedMelissaHistory(currentUser.id)
+  );
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -172,7 +345,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
   const [missingGeminiKey, setMissingGeminiKey] = useState(false);
   const [apiDiagnostic, setApiDiagnostic] = useState<string | null>(null);
   const [recognizedAsRikelmy, setRecognizedAsRikelmy] = useState(false);
-  const [pendingConfirm, setPendingConfirm] = useState<PendingAdminConfirmation | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmation | null>(null);
   const [pendingAttachment, setPendingAttachment] = useState<{
     base64: string;
     mimeType: string;
@@ -189,6 +362,10 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
+
+  useEffect(() => {
+    persistMelissaHistory(currentUser.id, messages);
+  }, [currentUser.id, messages]);
 
   const adminDirectoryContext = useMemo(() => {
     if (!isAdmin || adminUsers.length === 0) return '';
@@ -222,16 +399,25 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
 
   const buildWelcomeMenu = useCallback((): string => {
     if (isAdmin) {
-      return `Olá, ${firstName}! Sou a Melissa.\n\nEstou pronta no Painel Administrativo para conversar sobre qualquer assunto, consultar dados completos de clientes e motoristas ou executar atalhos rápidos:\n1. Resumo operacional e financeiro\n2. Fila de reconhecimento facial ao vivo\n3. Status do Plantão Noturno (${nightDuty.startTime} às ${nightDuty.endTime})\n4. Configurações, Paleta e SQL`;
+      return `Olá, ${firstName}! Sou a Melissa.\n\nEstou pronta no Painel Administrativo para localizar motoristas online, consultar dados, gerenciar contas (com sua confirmação) ou conversar sobre qualquer assunto:\n1. Resumo operacional e financeiro\n2. Fila de reconhecimento facial ao vivo\n3. Status do Plantão Noturno (${nightDuty.startTime} às ${nightDuty.endTime})\n4. Configurações, Paleta e SQL`;
     }
     if (currentUser.role === 'driver') {
-      return `Olá, ${firstName}! Sou a Melissa, sua assistente na ${appName}.\n\nPodemos conversar sobre qualquer coisa ou usar um atalho:\n1. Meu saldo GoPay e saques Pix\n2. Status da corrida/entrega ativa\n3. Abrir Central com 10 Jogos 3D\n4. Enviar mensagem, foto ou GPS ao Suporte`;
+      return `Olá, ${firstName}! Sou a Melissa, sua assistente na ${appName}.\n\nPosso conectar/desconectar você, ligar para o passageiro, abrir jogos ou conversar:\n1. Meu saldo GoPay e saques Pix\n2. Status da corrida/entrega ativa\n3. Abrir Central com 10 Jogos 3D\n4. Enviar mensagem, foto ou GPS ao Suporte`;
     }
-    return `Olá, ${firstName}! Sou a Melissa da ${appName}.\n\nPosso conversar e ajudar você com qualquer dúvida ou usar um atalho rápido:\n1. Ver meu saldo GoPay (${formatBRL(currentUser.wallet_balance)})\n2. Regras de pagamento e Plantão Noturno\n3. Jogar na Central com 10 Jogos 3D\n4. Enviar mensagem, foto ou GPS para o Suporte`;
-  }, [appName, currentUser.role, currentUser.wallet_balance, firstName, isAdmin, nightDuty.endTime, nightDuty.startTime]);
+    return `Olá, ${firstName}! Sou a Melissa da ${appName}.\n\nPosso chamar uma corrida ou entrega (inclusive para outra origem), abrir sites, ligar para o motorista ou conversar:\n1. Ver meu saldo GoPay (${formatBRL(currentUser.wallet_balance)})\n2. Regras de pagamento e Plantão Noturno\n3. Jogar na Central com 10 Jogos 3D\n4. Enviar mensagem, foto ou GPS para o Suporte`;
+  }, [
+    appName,
+    currentUser.role,
+    currentUser.wallet_balance,
+    firstName,
+    isAdmin,
+    nightDuty.endTime,
+    nightDuty.startTime,
+  ]);
 
   useEffect(() => {
     if (!open) {
+      setMinimized(false);
       alexaActiveRef.current = false;
       setAlexaListening(false);
       try {
@@ -249,27 +435,28 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
       setMissingGeminiKey(status === 'cloudflare-missing-key');
     });
 
-    setMessages((prev) =>
-      prev.length > 0
-        ? prev
-        : [
-            {
-              id: 'welcome-melissa',
-              sender: 'melissa',
-              text: buildWelcomeMenu(),
-              createdAt: new Date().toISOString(),
-              animate: true,
-            },
-          ]
-    );
+    setMessages((prev) => {
+      if (prev.length > 0) return prev;
+      const saved = loadSavedMelissaHistory(currentUser.id);
+      if (saved.length > 0) return saved;
+      return [
+        {
+          id: 'welcome-melissa',
+          sender: 'melissa',
+          text: buildWelcomeMenu(),
+          createdAt: new Date().toISOString(),
+          animate: true,
+        },
+      ];
+    });
     return () => {
       cancelled = true;
     };
-  }, [buildWelcomeMenu, open]);
+  }, [buildWelcomeMenu, currentUser.id, open]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, thinking, scrollToBottom]);
+  }, [messages, thinking, minimized, scrollToBottom]);
 
   const speakReply = useCallback(async (text: string) => {
     if (!getUserPreferences().voice_enabled) return;
@@ -283,7 +470,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
 
   const appendMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'createdAt'>) => {
     setMessages((prev) => [
-      ...prev,
+      ...prev.slice(-39),
       {
         ...msg,
         id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -321,9 +508,258 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
     [currentUser.full_name, currentUser.id, currentUser.role]
   );
 
+  const findAdminUserByName = useCallback(
+    (nameQuery: string, driversOnly = false): UserProfile | null => {
+      const clean = nameQuery
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ');
+      if (!clean) return null;
+
+      const pool = driversOnly
+        ? adminUsers.filter((u) => u.role === 'driver')
+        : adminUsers.filter((u) => !u.is_admin && u.role !== 'admin');
+
+      const exact = pool.find((u) =>
+        u.full_name
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .includes(clean)
+      );
+      if (exact) return exact;
+
+      const tokens = clean.split(' ').filter((t) => t.length >= 2);
+      if (tokens.length === 0) return null;
+
+      // Prioritize online drivers when locating drivers
+      const sorted = [...pool].sort(
+        (a, b) => Number(Boolean(b.driver?.is_online)) - Number(Boolean(a.driver?.is_online))
+      );
+      return (
+        sorted.find((u) => {
+          const norm = u.full_name
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          return tokens.some((tok) => norm.includes(tok));
+        }) || null
+      );
+    },
+    [adminUsers]
+  );
+
+  const executeStructuredAction = useCallback(
+    async (
+      action: MelissaActionPayload,
+      requireConfirmFlag: boolean
+    ): Promise<{
+      replyOverride?: string;
+      externalLink?: ExternalLinkCard | null;
+      phoneLink?: { label: string; phone: string } | null;
+      youtubeEmbed?: YouTubeEmbedInfo | null;
+    } | null> => {
+      if (!action || action.type === 'none') return null;
+
+      if (action.type === 'logout' && onLogout) {
+        window.setTimeout(() => {
+          onLogout();
+        }, 700);
+        return {
+          replyOverride: 'Encerrando sua sessão agora com segurança. Até logo!',
+        };
+      }
+
+      if (action.type === 'open_wallet' && onOpenWallet) {
+        onOpenWallet();
+        return null;
+      }
+      if (action.type === 'open_games' && onOpenGames) {
+        onOpenGames();
+        return null;
+      }
+      if (action.type === 'open_support' && onOpenSupport) {
+        onOpenSupport();
+        return null;
+      }
+      if (action.type === 'open_settings' && onOpenSettings) {
+        onOpenSettings();
+        return null;
+      }
+      if (action.type === 'open_facial_queue' && onOpenFacialQueue) {
+        onOpenFacialQueue();
+        return null;
+      }
+
+      if (action.type === 'admin_switch_tab' && isAdmin && action.tabName && onMelissaSwitchAdminTab) {
+        onMelissaSwitchAdminTab(action.tabName);
+        return null;
+      }
+
+      if (action.type === 'open_external' && action.url) {
+        const safeUrl = isSafeHttpsUrl(action.url);
+        if (safeUrl) {
+          const hostLabel = safeUrl.includes('youtube')
+            ? 'Abrir YouTube'
+            : safeUrl.includes('wa.me') || safeUrl.includes('whatsapp')
+            ? 'Abrir WhatsApp'
+            : 'Abrir no Google';
+          return {
+            externalLink: { label: hostLabel, url: safeUrl },
+          };
+        }
+      }
+
+      if (action.type === 'play_youtube') {
+        const q = (action.youtubeQuery || 'música relaxante').trim();
+        const vid = action.url ? extractYouTubeVideoId(action.url) : undefined;
+        return {
+          youtubeEmbed: { query: q, videoId: vid },
+          externalLink: {
+            label: `Buscar "${q}" no YouTube`,
+            url: `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+          },
+        };
+      }
+
+      if (action.type === 'call_phone') {
+        const targetPhone =
+          currentUser.role === 'driver'
+            ? activeRide?.passenger?.phone
+            : activeRide?.driver?.phone;
+        const targetName =
+          currentUser.role === 'driver'
+            ? activeRide?.passenger?.full_name || 'Passageiro'
+            : activeRide?.driver?.full_name || 'Motorista';
+        if (targetPhone) {
+          return {
+            phoneLink: { label: `Ligar para ${targetName}`, phone: targetPhone },
+          };
+        }
+        return {
+          replyOverride:
+            'Não há uma corrida ativa com telefone disponível neste momento para realizar a ligação.',
+        };
+      }
+
+      if (
+        action.type === 'toggle_driver_online' &&
+        currentUser.role === 'driver' &&
+        onMelissaToggleOnline
+      ) {
+        const msg = await onMelissaToggleOnline(action.online);
+        return { replyOverride: msg };
+      }
+
+      if (action.type === 'request_ride' && currentUser.role === 'passenger' && action.destQuery) {
+        setPendingConfirm({
+          action: 'request_ride',
+          summary: `Solicitar ${action.category || 'corrida'} para "${action.destQuery}"${
+            action.originQuery ? ` saindo de "${action.originQuery}"` : ''
+          }`,
+          originQuery: action.originQuery,
+          destQuery: action.destQuery,
+          category: action.category,
+          paymentMethod: action.paymentMethod,
+        });
+        return null;
+      }
+
+      if (action.type === 'cancel_ride' && currentUser.role === 'passenger' && activeRide) {
+        setPendingConfirm({
+          action: 'cancel_ride',
+          summary: `Cancelar corrida para ${activeRide.destination_address}`,
+        });
+        return null;
+      }
+
+      if (action.type === 'admin_locate_driver' && isAdmin && action.driverName) {
+        const drv = findAdminUserByName(action.driverName, true);
+        if (!drv) {
+          return {
+            replyOverride: `Não encontrei nenhum motorista cadastrado com o nome "${action.driverName}".`,
+          };
+        }
+        onMelissaLocateDriver?.(drv);
+        if (
+          drv.driver?.is_online &&
+          typeof drv.driver.current_lat === 'number' &&
+          typeof drv.driver.current_lng === 'number'
+        ) {
+          return {
+            replyOverride: `Motorista ${drv.full_name} está ONLINE agora! Centralizei o mapa administrativo na posição dele (${drv.driver.current_lat.toFixed(5)}, ${drv.driver.current_lng.toFixed(5)}) · Veículo: ${drv.driver.vehicle_model} (${drv.driver.vehicle_plate}).`,
+          };
+        }
+        return {
+          replyOverride: `Encontrei ${drv.full_name} (${drv.driver?.vehicle_model || 'Motorista'}), mas ele está OFFLINE no momento.`,
+        };
+      }
+
+      if (
+        action.type === 'admin_toggle_block_user' &&
+        isAdmin &&
+        action.targetName &&
+        onMelissaToggleBlockUser
+      ) {
+        const target = findAdminUserByName(action.targetName, false);
+        if (!target) {
+          return {
+            replyOverride: `Não encontrei nenhum usuário com o nome "${action.targetName}".`,
+          };
+        }
+        const shouldBlock = action.targetBlock !== false;
+        if (requireConfirmFlag || !pendingConfirm) {
+          setPendingConfirm({
+            action: 'admin_toggle_block_user',
+            summary: `${shouldBlock ? 'Bloquear/Suspender' : 'Reativar'} ${target.full_name}`,
+            targetUser: target,
+            block: shouldBlock,
+          });
+          return {
+            replyOverride: `Confirmação de segurança: você deseja ${
+              shouldBlock ? 'bloquear/suspender' : 'reativar'
+            } a conta de ${target.full_name} (${
+              target.role === 'driver' ? 'Motorista' : 'Passageiro'
+            })? Responda "Sim" para confirmar ou "Não" para cancelar.`,
+          };
+        }
+      }
+
+      return null;
+    },
+    [
+      activeRide,
+      currentUser.role,
+      findAdminUserByName,
+      isAdmin,
+      onLogout,
+      onMelissaLocateDriver,
+      onMelissaSwitchAdminTab,
+      onMelissaToggleBlockUser,
+      onMelissaToggleOnline,
+      onOpenFacialQueue,
+      onOpenGames,
+      onOpenSettings,
+      onOpenSupport,
+      onOpenWallet,
+      pendingConfirm,
+    ]
+  );
+
   // Local instant rule engine (zero AI quota consumed!)
   const tryLocalChatbotResponse = useCallback(
-    async (rawText: string): Promise<{ handled: boolean; reply?: string }> => {
+    async (
+      rawText: string
+    ): Promise<{
+      handled: boolean;
+      reply?: string;
+      externalLink?: ExternalLinkCard | null;
+      phoneLink?: { label: string; phone: string } | null;
+      youtubeEmbed?: YouTubeEmbedInfo | null;
+    }> => {
       const normalized = rawText
         .trim()
         .toLowerCase()
@@ -350,35 +786,61 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
       // Handle pending confirmation ("Sim" / "Não")
       if (pendingConfirm) {
         if (/^(sim|s|claro|pode|confirmar|confirmo|ok|vai)$/.test(normalized)) {
-          const action = pendingConfirm.action;
+          const currentPending = pendingConfirm;
           setPendingConfirm(null);
-          if (action === 'open_wallet' && onOpenWallet) {
+
+          if (currentPending.action === 'open_wallet' && onOpenWallet) {
             onOpenWallet();
-            return {
-              handled: true,
-              reply: 'Confirmado! Abri a sua carteira GoPay.',
-            };
+            return { handled: true, reply: 'Confirmado! Abri a sua carteira GoPay.' };
           }
-          if (action === 'open_facial' && onOpenFacialQueue) {
+          if (currentPending.action === 'open_facial' && onOpenFacialQueue) {
             onOpenFacialQueue();
             return {
               handled: true,
               reply: 'Confirmado! Abrindo a Fila de Reconhecimento Facial ao Vivo agora.',
             };
           }
-          if (action === 'open_support' && onOpenSupport) {
+          if (currentPending.action === 'open_support' && onOpenSupport) {
             onOpenSupport();
+            return { handled: true, reply: 'Confirmado! Abri o chat de suporte direto.' };
+          }
+          if (currentPending.action === 'request_ride' && onMelissaRequestRide) {
+            const res = await onMelissaRequestRide({
+              originQuery: currentPending.originQuery,
+              destQuery: currentPending.destQuery,
+              category: currentPending.category,
+              paymentMethod: currentPending.paymentMethod,
+            });
+            return { handled: true, reply: res.summary };
+          }
+          if (currentPending.action === 'cancel_ride' && onMelissaCancelRide) {
+            const cancelled = await onMelissaCancelRide();
             return {
               handled: true,
-              reply: 'Confirmado! Abri o chat de suporte direto.',
+              reply: cancelled
+                ? 'Sua corrida foi cancelada conforme solicitado.'
+                : 'Não foi possível cancelar esta corrida no status atual.',
+            };
+          }
+          if (
+            currentPending.action === 'admin_toggle_block_user' &&
+            isAdmin &&
+            onMelissaToggleBlockUser
+          ) {
+            await onMelissaToggleBlockUser(currentPending.targetUser, currentPending.block);
+            return {
+              handled: true,
+              reply: `Pronto! A conta de ${currentPending.targetUser.full_name} foi ${
+                currentPending.block ? 'bloqueada/suspensa' : 'reativada'
+              } no sistema.`,
             };
           }
           if (onTriggerAdminAction) {
-            onTriggerAdminAction(pendingConfirm.summary);
+            onTriggerAdminAction(currentPending.summary);
           }
           return {
             handled: true,
-            reply: `Confirmado! ${pendingConfirm.summary} — verifique os detalhes na tela correspondente do painel para concluir com segurança.`,
+            reply: `Confirmado! ${currentPending.summary} — verifique os detalhes na tela correspondente do painel.`,
           };
         }
         if (/^(nao|n|cancela|cancelar|deixa|parar)$/.test(normalized)) {
@@ -387,6 +849,247 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
             handled: true,
             reply: 'Tudo bem, cancelei essa solicitação. Nenhuma alteração foi feita.',
           };
+        }
+      }
+
+      // Automatic Logout
+      if (
+        /(encerrar sessao|sair da conta|fazer logout|deslogar|melissa sair|pode sair)/.test(
+          normalized
+        ) &&
+        onLogout
+      ) {
+        window.setTimeout(() => {
+          onLogout();
+        }, 700);
+        return {
+          handled: true,
+          reply: 'Encerrando sua sessão agora com segurança. Até logo!',
+        };
+      }
+
+      // Call active driver or passenger
+      if (/(ligar para|telefonar para|chamar no telefone|ligue para)/.test(normalized)) {
+        const targetPhone =
+          currentUser.role === 'driver'
+            ? activeRide?.passenger?.phone
+            : activeRide?.driver?.phone;
+        const targetLabel =
+          currentUser.role === 'driver'
+            ? activeRide?.passenger?.full_name || 'Passageiro'
+            : activeRide?.driver?.full_name || 'Motorista';
+        if (targetPhone) {
+          return {
+            handled: true,
+            reply: `Aqui está o atalho direto para ligar para ${targetLabel} (${targetPhone}):`,
+            phoneLink: { label: `Ligar para ${targetLabel}`, phone: targetPhone },
+          };
+        }
+        return {
+          handled: true,
+          reply:
+            'Você precisa estar com uma corrida ativa atribuída para ligar diretamente pelo aplicativo.',
+        };
+      }
+
+      // YouTube music/video embed on demand
+      const ytPlayMatch = rawText.match(
+        /(?:tocar|colocar|assistir|abrir musica|buscar video|no youtube)\s+(.+)/i
+      );
+      if (
+        ytPlayMatch &&
+        /(youtube|musica|video|clipe)/i.test(normalized) &&
+        ytPlayMatch[1].trim().length >= 2
+      ) {
+        const query = ytPlayMatch[1].replace(/no youtube/gi, '').trim();
+        return {
+          handled: true,
+          reply: `Preparei o reprodutor do YouTube sob demanda para "${query}". Toque abaixo se quiser abrir ou assistir aqui:`,
+          youtubeEmbed: { query },
+          externalLink: {
+            label: `Abrir "${query}" no YouTube`,
+            url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+          },
+        };
+      }
+
+      // External quick web links (YouTube, WhatsApp, Google Search)
+      if (/^(abrir|abra|ir para)\s+(o\s+)?youtube\b/.test(normalized)) {
+        return {
+          handled: true,
+          reply: 'Aqui está o atalho seguro para abrir o YouTube:',
+          externalLink: { label: 'Abrir YouTube', url: 'https://www.youtube.com' },
+        };
+      }
+      if (/^(abrir|abra|ir para)\s+(o\s+)?whatsapp\b/.test(normalized)) {
+        return {
+          handled: true,
+          reply: 'Aqui está o atalho seguro para abrir o WhatsApp:',
+          externalLink: { label: 'Abrir WhatsApp', url: 'https://wa.me/' },
+        };
+      }
+      const googleMatch = rawText.match(
+        /(?:pesquis[ae]r?|procur[ae]r?|busc[ae]r?)\s+(?:no\s+google\s+)?(.+)/i
+      );
+      if (googleMatch && /google/i.test(normalized) && googleMatch[1].trim().length >= 2) {
+        const query = googleMatch[1].replace(/no google/gi, '').trim();
+        return {
+          handled: true,
+          reply: `Preparei sua pesquisa no Google para "${query}":`,
+          externalLink: {
+            label: `Pesquisar "${query}" no Google`,
+            url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+          },
+        };
+      }
+
+      // Driver instant online/offline toggle
+      if (currentUser.role === 'driver' && onMelissaToggleOnline) {
+        if (/(ficar online|conectar agora|entrar online|ligar modo)/.test(normalized)) {
+          const msg = await onMelissaToggleOnline(true);
+          return { handled: true, reply: msg };
+        }
+        if (/(ficar offline|pausar corridas|desconectar agora|ficar off)/.test(normalized)) {
+          const msg = await onMelissaToggleOnline(false);
+          return { handled: true, reply: msg };
+        }
+      }
+
+      // Admin locate online driver by name
+      if (isAdmin && onMelissaLocateDriver) {
+        const locMatch = rawText.match(
+          /(?:localiz[ae]r?|onde\s+est[aá]|achar|encontrar)\s+(?:o\s+)?(?:motorista|entregador)?\s*(.+)/i
+        );
+        if (
+          locMatch &&
+          /(localiz|onde est|achar motorista|encontrar motorista)/i.test(normalized)
+        ) {
+          const targetName = locMatch[1].replace(/\bno mapa\b/gi, '').trim();
+          const drv = findAdminUserByName(targetName, true);
+          if (!drv) {
+            return {
+              handled: true,
+              reply: `Não encontrei nenhum motorista com o nome "${targetName}".`,
+            };
+          }
+          onMelissaLocateDriver(drv);
+          if (
+            drv.driver?.is_online &&
+            typeof drv.driver.current_lat === 'number' &&
+            typeof drv.driver.current_lng === 'number'
+          ) {
+            return {
+              handled: true,
+              reply: `Motorista ${drv.full_name} está ONLINE agora! Centralizei o mapa administrativo em ${drv.driver.current_lat.toFixed(5)}, ${drv.driver.current_lng.toFixed(5)} (${drv.driver.vehicle_model} · ${drv.driver.vehicle_plate}).`,
+            };
+          }
+          return {
+            handled: true,
+            reply: `Encontrei ${drv.full_name} (${drv.driver?.vehicle_model || 'Veículo'}), porém está OFFLINE no momento.`,
+          };
+        }
+
+        // Admin block / suspend / unblock with confirmation
+        const blockMatch = rawText.match(
+          /(?:bloque[ae]r?|suspender|desbloque[ae]r?|reativar)\s+(?:o\s+|a\s+)?(?:cliente|passageiro|motorista|entregador|usuario|conta\s+de)?\s*(.+)/i
+        );
+        if (
+          blockMatch &&
+          /(bloquear|bloqueie|suspender|suspenda|desbloquear|desbloqueie|reativar|reative)/.test(
+            normalized
+          )
+        ) {
+          const targetName = blockMatch[1].trim();
+          const target = findAdminUserByName(targetName, false);
+          if (!target) {
+            return {
+              handled: true,
+              reply: `Não encontrei usuário com o nome "${targetName}". Informe o nome completo ou primeiro nome cadastrado.`,
+            };
+          }
+          const shouldBlock = !/(desbloquear|desbloqueie|reativar|reative)/.test(normalized);
+          setPendingConfirm({
+            action: 'admin_toggle_block_user',
+            summary: `${shouldBlock ? 'Bloquear' : 'Reativar'} ${target.full_name}`,
+            targetUser: target,
+            block: shouldBlock,
+          });
+          return {
+            handled: true,
+            reply: `Confirmação de segurança: você quer mesmo ${
+              shouldBlock ? 'bloquear/suspender' : 'reativar'
+            } ${target.full_name} (${
+              target.role === 'driver' ? 'Motorista' : 'Cliente'
+            })? Responda "Sim" para confirmar ou "Não" para cancelar.`,
+          };
+        }
+      }
+
+      // Passenger local quick ride/delivery call & cancel
+      if (currentUser.role === 'passenger') {
+        if (/(cancelar corrida|cancelar entrega|cancela a corrida)/.test(normalized)) {
+          if (!activeRide) {
+            return {
+              handled: true,
+              reply: 'Você não possui nenhuma corrida ou entrega ativa para cancelar agora.',
+            };
+          }
+          setPendingConfirm({
+            action: 'cancel_ride',
+            summary: `Cancelar corrida para ${activeRide.destination_address}`,
+          });
+          return {
+            handled: true,
+            reply: `Você quer confirmar o cancelamento da corrida para "${activeRide.destination_address}"? Responda "Sim" para confirmar.`,
+          };
+        }
+
+        const rideIntentMatch = rawText.match(
+          /(?:cham[ae]r?|pedir|solicitar)\s+(?:um|uma)?\s*(moto|carro|pop|entrega|corrida|viagem)?\s*(?:para\s+(?:minha\s+\w+|meu\s+\w+)\s+)?(?:(?:de|do|da|saindo\s+de)\s+(.+?)\s+)?(?:para|ate|até|pro|pra)\s+(.+)/i
+        );
+        if (
+          rideIntentMatch &&
+          /(chama|chame|pedir|solicitar)/.test(normalized) &&
+          /(moto|carro|pop|entrega|corrida|viagem|para |ate |até )/.test(normalized) &&
+          onMelissaRequestRide
+        ) {
+          const vehicleToken = (rideIntentMatch[1] || '').toLowerCase();
+          const originQuery = (rideIntentMatch[2] || '').trim();
+          const destQuery = (rideIntentMatch[3] || '').trim();
+          const category: RideCategory =
+            vehicleToken === 'moto'
+              ? 'moto'
+              : vehicleToken === 'entrega'
+              ? 'delivery_moto'
+              : vehicleToken === 'carro' || vehicleToken === 'pop'
+              ? 'pop'
+              : 'pop';
+
+          if (destQuery.length >= 3) {
+            setPendingConfirm({
+              action: 'request_ride',
+              summary: `Chamar ${
+                category === 'moto'
+                  ? 'Moto'
+                  : category === 'delivery_moto'
+                  ? 'Entrega'
+                  : 'Carro Pop'
+              } para "${destQuery}"`,
+              originQuery: originQuery || undefined,
+              destQuery,
+              category,
+            });
+            return {
+              handled: true,
+              reply: `Entendi! Vou preparar uma solicitação de ${
+                category === 'moto'
+                  ? 'Moto'
+                  : category === 'delivery_moto'
+                  ? 'Entrega'
+                  : 'Carro Pop'
+              }${originQuery ? ` saindo de "${originQuery}"` : ' da sua origem atual'} até "${destQuery}". Responda "Sim" para confirmar a chamada!`,
+            };
+          }
         }
       }
 
@@ -506,8 +1209,16 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         };
       }
 
+      if (/(configuracoes|abrir config|meu perfil)/.test(normalized) && onOpenSettings) {
+        onOpenSettings();
+        return {
+          handled: true,
+          reply: 'Abri suas configurações agora!',
+        };
+      }
+
       // Admin destructive safety prompt
-      if (isAdmin && /(excluir|deletar|apagar|remover|banir|suspender|zerar)/.test(normalized)) {
+      if (isAdmin && /(excluir|deletar|apagar|remover|banir|zerar)/.test(normalized)) {
         setPendingConfirm({
           action: 'delete_prompt',
           summary: rawText.trim(),
@@ -557,11 +1268,18 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
       currentUser.reserved_balance,
       currentUser.role,
       currentUser.wallet_balance,
+      findAdminUserByName,
       isAdmin,
       nightDuty.enabled,
       nightDuty.endTime,
       nightDuty.isActive,
       nightDuty.startTime,
+      onLogout,
+      onMelissaCancelRide,
+      onMelissaLocateDriver,
+      onMelissaRequestRide,
+      onMelissaToggleBlockUser,
+      onMelissaToggleOnline,
       onOpenFacialQueue,
       onOpenGames,
       onOpenSettings,
@@ -716,6 +1434,9 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
             appendMessage({
               sender: 'melissa',
               text: localRes.reply,
+              externalLink: localRes.externalLink,
+              phoneLink: localRes.phoneLink,
+              youtubeEmbed: localRes.youtubeEmbed,
               animate: true,
             });
             setThinking(false);
@@ -821,14 +1542,36 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
 
         setMissingGeminiKey(false);
         setApiDiagnostic(null);
-        const replyText = aiResult.reply || 'Pronto! Como posso ajudar mais?';
-        if (aiResult.requiresConfirmation && isAdmin) {
+
+        let replyText = aiResult.reply || 'Pronto! Como posso ajudar mais?';
+        let externalLink: ExternalLinkCard | null | undefined = null;
+        let phoneLink: { label: string; phone: string } | null | undefined = null;
+        let youtubeEmbed: YouTubeEmbedInfo | null | undefined = null;
+
+        if (aiResult.actionPayload) {
+          const exec = await executeStructuredAction(
+            aiResult.actionPayload,
+            Boolean(aiResult.requiresConfirmation)
+          );
+          if (exec?.replyOverride) replyText = exec.replyOverride;
+          externalLink = exec?.externalLink;
+          phoneLink = exec?.phoneLink;
+          youtubeEmbed = exec?.youtubeEmbed;
+        } else if (aiResult.requiresConfirmation && isAdmin) {
           setPendingConfirm({
             action: 'financial_prompt',
             summary: userMsgText,
           });
         }
-        appendMessage({ sender: 'melissa', text: replyText, animate: true });
+
+        appendMessage({
+          sender: 'melissa',
+          text: replyText,
+          externalLink,
+          phoneLink,
+          youtubeEmbed,
+          animate: true,
+        });
         setThinking(false);
         await speakReply(replyText);
 
@@ -853,6 +1596,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
       currentUser.id,
       currentUser.role,
       currentUser.wallet_balance,
+      executeStructuredAction,
       forwardPayloadToAdmin,
       input,
       isAdmin,
@@ -1038,7 +1782,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
     setPendingConfirm(null);
     setPendingAttachment(null);
     setApiDiagnostic(null);
-    setMessages([
+    const fresh: ChatMessage[] = [
       {
         id: `welcome-${Date.now()}`,
         sender: 'melissa',
@@ -1046,7 +1790,9 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         createdAt: new Date().toISOString(),
         animate: true,
       },
-    ]);
+    ];
+    setMessages(fresh);
+    persistMelissaHistory(currentUser.id, fresh);
   };
 
   const extractSqlSnippet = (text: string): string | null => {
@@ -1081,13 +1827,116 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
 
   if (!open) return null;
 
+  const lastMelissaMsg = [...messages].reverse().find((m) => m.sender === 'melissa');
+
+  // Compact Minimized Floating Mode: lets user drag map & navigate app while still chatting with Melissa
+  if (minimized) {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-3 z-[1280] flex justify-center px-3 pb-safe">
+        <div className="melissa-light-shell pointer-events-auto w-full max-w-md rounded-3xl border border-[#CBD5E1] bg-white p-3 shadow-2xl melissa-color-transition">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="aurora-accent-flow flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white">
+                <MelissaEmblem size={17} />
+              </div>
+              <div className="min-w-0">
+                <p className="melissa-ink text-xs font-extrabold truncate">
+                  Melissa {thinking ? '· pensando...' : speaking ? '· falando...' : '· ativa'}
+                </p>
+                <p className="melissa-ink-muted text-[11px] truncate">
+                  {lastMelissaMsg?.text || 'Pode navegar no app enquanto conversamos'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setMinimized(false)}
+                className="melissa-muted-surface melissa-ink flex h-8 w-8 items-center justify-center rounded-full border border-[#E2E8F0] hover:brightness-95 transition"
+                title="Expandir Melissa"
+                aria-label="Expandir Melissa"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="melissa-muted-surface melissa-ink flex h-8 w-8 items-center justify-center rounded-full border border-[#E2E8F0] hover:brightness-95 transition"
+                title="Fechar Melissa"
+                aria-label="Fechar Melissa"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {pendingConfirm && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSendText('Sim')}
+                className="flex-1 rounded-xl bg-[#10B981] py-1.5 text-[11px] font-extrabold text-white"
+              >
+                Sim, confirmar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendText('Não')}
+                className="rounded-xl bg-red-600 px-3 py-1.5 text-[11px] font-extrabold text-white"
+              >
+                Não
+              </button>
+            </div>
+          )}
+
+          <div className="mt-2 flex items-center gap-1.5 rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] p-1">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleSendText();
+                }
+              }}
+              placeholder="Falar ou digitar com a Melissa..."
+              className="melissa-composer-input min-w-0 flex-1 px-2.5 py-1.5 text-xs outline-none"
+            />
+            <button
+              type="button"
+              onClick={toggleAlexaContinuous}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                alexaListening ? 'bg-red-600 text-white' : 'bg-[#EFF6FF] text-[#2563EB]'
+              }`}
+              title="Voz"
+            >
+              {alexaListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              disabled={thinking || !input.trim()}
+              onClick={() => void handleSendText()}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2563EB] text-white disabled:opacity-40"
+              aria-label="Enviar"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const showCleanHero = messages.length <= 1;
+
   return (
     <div className="melissa-light-shell fixed inset-0 z-[1280] flex flex-col bg-white text-[#0F172A] h-[100dvh] w-screen overflow-hidden">
-      {/* Minimal Modern Gemini-Inspired Top Header */}
-      <header className="melissa-surface melissa-hairline flex items-center justify-between gap-3 border-b px-4 sm:px-6 py-3 pt-safe shrink-0">
+      {/* Clean Gemini-Inspired Top Header (NO "Fazer upgrade") */}
+      <header className="melissa-surface melissa-hairline melissa-color-transition flex items-center justify-between gap-3 border-b px-4 sm:px-6 py-3 pt-safe shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2563EB] via-[#0EA5E9] to-[#6366F1] text-white shadow-xs">
-            <Sparkles className="h-4 w-4" />
+          <div className="aurora-accent-flow relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-xs">
+            <MelissaEmblem size={19} />
           </div>
           <div className="min-w-0">
             <h2 className="melissa-ink font-display text-[15px] font-bold truncate leading-tight">
@@ -1110,8 +1959,18 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
+            onClick={() => setMinimized(true)}
+            className="melissa-muted-surface melissa-hairline melissa-ink melissa-color-transition flex h-9 w-9 items-center justify-center rounded-full border hover:brightness-95"
+            title="Minimizar e mexer no app"
+            aria-label="Minimizar Melissa"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
             onClick={handleResetChat}
-            className="melissa-muted-surface melissa-hairline melissa-ink flex h-9 w-9 items-center justify-center rounded-full border hover:brightness-95 transition"
+            className="melissa-muted-surface melissa-hairline melissa-ink melissa-color-transition flex h-9 w-9 items-center justify-center rounded-full border hover:brightness-95"
             title="Nova conversa"
             aria-label="Nova conversa"
           >
@@ -1125,7 +1984,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
               setPrefs(next);
               if (!next.voice_enabled) stopSpeech();
             }}
-            className={`melissa-hairline flex h-9 w-9 items-center justify-center rounded-full border transition ${
+            className={`melissa-hairline melissa-color-transition flex h-9 w-9 items-center justify-center rounded-full border ${
               prefs.voice_enabled
                 ? 'bg-[#EFF6FF] text-[#2563EB]'
                 : 'melissa-muted-surface melissa-ink-muted'
@@ -1138,7 +1997,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="melissa-muted-surface melissa-hairline melissa-ink flex h-9 w-9 items-center justify-center rounded-full border hover:brightness-95 transition"
+            className="melissa-muted-surface melissa-hairline melissa-ink melissa-color-transition flex h-9 w-9 items-center justify-center rounded-full border hover:brightness-95"
             aria-label="Fechar Melissa"
           >
             <X className="h-4 w-4" />
@@ -1156,7 +2015,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         </div>
       )}
 
-      {/* Detailed API Diagnostic Banner (Only for non-transient key/config issues) */}
+      {/* Detailed API Diagnostic Banner */}
       {apiDiagnostic && !missingGeminiKey && !quotaExhausted && (
         <div className="melissa-warning-banner flex items-center justify-between gap-2 border-b px-4 py-2 text-xs font-semibold shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -1181,9 +2040,24 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         </div>
       )}
 
-      {/* Clean Modern Gemini-Style Conversation Stream */}
-      <div className="flex-1 overflow-y-auto bg-white px-4 sm:px-6 py-6">
+      {/* Clean Light Gemini-Inspired Conversation Stream */}
+      <div className="flex-1 overflow-y-auto bg-white px-4 sm:px-6 py-6 melissa-color-transition">
         <div className="mx-auto max-w-2xl space-y-6">
+          {showCleanHero && (
+            <div className="rounded-3xl border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 melissa-color-transition">
+              <div className="flex items-center gap-2.5 text-sm font-bold text-[#2563EB]">
+                <MelissaEmblem size={20} />
+                <span>Olá, {firstName}!</span>
+              </div>
+              <h3 className="mt-1.5 font-display text-2xl font-extrabold text-[#0F172A] tracking-tight">
+                Como posso te ajudar hoje?
+              </h3>
+              <p className="mt-1 text-xs font-medium text-[#475569]">
+                Converse por voz ou texto. Posso executar ações no {appName}, abrir sites e lembrar nossa conversa aqui no aparelho.
+              </p>
+            </div>
+          )}
+
           {messages.map((m) => {
             const sqlSnippet =
               m.sender === 'melissa' && isAdmin ? extractSqlSnippet(m.text) : null;
@@ -1191,7 +2065,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
             if (m.sender === 'user') {
               return (
                 <div key={m.id} className="flex justify-end">
-                  <div className="melissa-bubble-user max-w-[85%] sm:max-w-[75%] rounded-3xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-line">
+                  <div className="melissa-bubble-user melissa-color-transition max-w-[85%] sm:max-w-[75%] rounded-3xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-line">
                     {m.attachmentUrl && m.attachmentUrl.startsWith('data:image') && (
                       <img
                         src={m.attachmentUrl}
@@ -1212,23 +2086,76 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
             }
 
             return (
-              <div key={m.id} className="melissa-bubble-assistant space-y-2">
+              <div key={m.id} className="melissa-bubble-assistant space-y-2.5 melissa-color-transition">
                 <div className="flex items-center gap-2.5">
                   <div
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2563EB] via-[#0EA5E9] to-[#6366F1] text-white"
+                    className="aurora-accent-flow flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white"
                     aria-hidden="true"
                   >
-                    <Sparkles className="h-3.5 w-3.5" />
+                    <MelissaEmblem size={15} />
                   </div>
                   <span className="melissa-ink text-sm font-bold tracking-tight">Melissa</span>
                 </div>
 
-                <div className="pl-9 text-[15px] leading-[1.65] melissa-ink whitespace-pre-line">
-                  <TypewriterText
-                    text={m.text}
-                    animate={Boolean(m.animate)}
-                    onStep={scrollToBottom}
-                  />
+                <div className="pl-9 text-[15px] leading-[1.65] melissa-ink whitespace-pre-line space-y-3">
+                  <div>
+                    <TypewriterText
+                      text={m.text}
+                      animate={Boolean(m.animate)}
+                      onStep={scrollToBottom}
+                    />
+                  </div>
+
+                  {m.phoneLink && (
+                    <a
+                      href={`tel:${m.phoneLink.phone.replace(/[^+\d]/g, '')}`}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-[#10B981] px-4 py-2.5 text-xs font-extrabold text-white shadow-sm hover:bg-[#059669] transition"
+                    >
+                      <PhoneCall className="h-4 w-4" />
+                      <span>{m.phoneLink.label}</span>
+                    </a>
+                  )}
+
+                  {m.youtubeEmbed && (
+                    <div className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-2.5 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#0F172A]">
+                        <Play className="h-3.5 w-3.5 text-red-600" />
+                        <span>YouTube · {m.youtubeEmbed.query}</span>
+                      </div>
+                      <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
+                        <iframe
+                          title={`YouTube ${m.youtubeEmbed.query}`}
+                          src={
+                            m.youtubeEmbed.videoId
+                              ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+                                  m.youtubeEmbed.videoId
+                                )}`
+                              : `https://www.youtube-nocookie.com/embed?listType=search&list=${encodeURIComponent(
+                                  m.youtubeEmbed.query
+                                )}`
+                          }
+                          className="h-full w-full border-0"
+                          loading="lazy"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {m.externalLink && isSafeHttpsUrl(m.externalLink.url) && (
+                    <div>
+                      <a
+                        href={m.externalLink.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-2 text-xs font-extrabold text-[#1D4ED8] hover:bg-[#DBEAFE] transition"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        <span>{m.externalLink.label}</span>
+                      </a>
+                    </div>
+                  )}
 
                   {sqlSnippet && (
                     <div className="mt-3 pt-2.5 border-t border-[#E2E8F0] flex items-center justify-between gap-2">
@@ -1262,8 +2189,8 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
           {thinking && (
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2563EB] via-[#0EA5E9] to-[#6366F1] text-white animate-pulse">
-                  <Sparkles className="h-3.5 w-3.5" />
+                <div className="aurora-accent-flow flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white animate-pulse">
+                  <MelissaEmblem size={15} />
                 </div>
                 <span className="melissa-ink text-sm font-bold tracking-tight">Melissa</span>
               </div>
@@ -1292,7 +2219,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
               key={num}
               type="button"
               onClick={() => void handleSendText(num)}
-              className="melissa-muted-surface melissa-hairline melissa-ink rounded-full border px-3 py-1.5 text-xs font-semibold hover:brightness-95 shrink-0 transition"
+              className="melissa-muted-surface melissa-hairline melissa-ink melissa-color-transition rounded-full border px-3 py-1.5 text-xs font-semibold hover:brightness-95 shrink-0"
             >
               Opção {num}
             </button>
@@ -1359,7 +2286,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
 
       {/* Clean Gemini-Style Floating Composer */}
       <footer className="melissa-surface px-4 py-3 pb-safe shrink-0">
-        <div className="mx-auto flex max-w-2xl items-center gap-1.5 rounded-3xl border border-[#CBD5E1] bg-white p-1.5 shadow-sm focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/15 transition">
+        <div className="mx-auto flex max-w-2xl items-center gap-1.5 rounded-3xl border border-[#CBD5E1] bg-white p-1.5 shadow-sm focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/15 melissa-color-transition">
           <input
             ref={photoInputRef}
             type="file"

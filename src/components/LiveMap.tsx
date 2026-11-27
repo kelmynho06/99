@@ -50,6 +50,8 @@ interface LiveMapProps {
   enable3dHud?: boolean;
   speedKmh?: number;
   showSpeedometer?: boolean;
+  recenterNonce?: number;
+  focusPoint?: { lat: number; lng: number; nonce: number; zoom?: number } | null;
 }
 
 function findClosestRouteIndex(
@@ -95,6 +97,7 @@ function MapController({
   userPanned,
   onUserPanChange,
   recenterNonce,
+  focusPoint,
   pickOnMapMode,
   onMapPick,
   onZoomChange,
@@ -108,12 +111,15 @@ function MapController({
   userPanned: boolean;
   onUserPanChange: (panned: boolean) => void;
   recenterNonce: number;
+  focusPoint?: LiveMapProps['focusPoint'];
   pickOnMapMode?: 'origin' | 'destination' | null;
   onMapPick?: (lat: number, lng: number) => void;
   onZoomChange: (zoomFn: { zoomIn: () => void; zoomOut: () => void }) => void;
 }) {
   const map = useMap();
   const initialFollowFittedRef = useRef(false);
+  const lastHandledRecenterRef = useRef(0);
+  const lastHandledFocusRef = useRef(0);
 
   useEffect(() => {
     onZoomChange({
@@ -165,10 +171,24 @@ function MapController({
   }, [map, followVehicle, enable3dHud, driverPosition?.lat, driverPosition?.lng, userPanned, recenterNonce]);
 
   useEffect(() => {
-    if (!followVehicle && (!routeCoords || routeCoords.length < 2)) {
-      map.setView(center, map.getZoom(), { animate: true });
+    if (recenterNonce > 0 && recenterNonce !== lastHandledRecenterRef.current) {
+      lastHandledRecenterRef.current = recenterNonce;
+      if (!followVehicle) {
+        const target = driverPosition ? [driverPosition.lat, driverPosition.lng] as [number, number] : center;
+        map.setView(target, Math.max(map.getZoom(), 15), { animate: true });
+      }
     }
-  }, [map, center, routeCoords, followVehicle]);
+  }, [map, recenterNonce, followVehicle, center, driverPosition]);
+
+  useEffect(() => {
+    if (focusPoint && focusPoint.nonce !== lastHandledFocusRef.current) {
+      lastHandledFocusRef.current = focusPoint.nonce;
+      onUserPanChange(true);
+      map.setView([focusPoint.lat, focusPoint.lng], focusPoint.zoom ?? Math.max(map.getZoom(), 16), {
+        animate: true,
+      });
+    }
+  }, [map, focusPoint, onUserPanChange]);
 
   return null;
 }
@@ -215,6 +235,8 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   enable3dHud = false,
   speedKmh = 0,
   showSpeedometer = false,
+  recenterNonce: externalRecenterNonce = 0,
+  focusPoint = null,
 }) => {
   const { t } = useTranslation();
   const isOnline = useOnlineStatus();
@@ -227,6 +249,13 @@ export const LiveMap: React.FC<LiveMapProps> = ({
     zoomIn: () => {},
     zoomOut: () => {},
   });
+
+  useEffect(() => {
+    if (externalRecenterNonce > 0) {
+      setUserPanned(false);
+      setRecenterNonce((n) => n + 1);
+    }
+  }, [externalRecenterNonce]);
 
   useEffect(() => {
     return subscribeUserPreferences((prefs) => {
@@ -476,6 +505,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
             userPanned={userPanned}
             onUserPanChange={setUserPanned}
             recenterNonce={recenterNonce}
+            focusPoint={focusPoint}
             pickOnMapMode={pickOnMapMode}
             onMapPick={onMapPick}
             onZoomChange={(api) => {

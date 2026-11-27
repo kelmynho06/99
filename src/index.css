@@ -397,25 +397,32 @@
   color: #94A3B8;
 }
 
-/* Melissa Light Shell: Always bright, crisp, and legible in all 3 panels regardless of global dark mode or palette */
+/* Melissa Light Shell: Always bright, crisp, and legible in all 3 panels with smooth static color transitions */
 .melissa-light-shell {
-  background-color: #F8FAFC !important;
+  background-color: #FFFFFF !important;
   color: #0F172A !important;
   color-scheme: light;
+  transition: background-color 320ms ease, color 260ms ease, border-color 280ms ease;
+}
+
+.melissa-light-shell .melissa-color-transition {
+  transition: background-color 300ms ease, color 240ms ease, border-color 260ms ease, box-shadow 260ms ease, transform 180ms ease;
 }
 
 .melissa-light-shell .melissa-surface {
   background-color: #FFFFFF !important;
   color: #0F172A !important;
+  transition: background-color 300ms ease, border-color 260ms ease;
 }
 
 .melissa-light-shell .melissa-muted-surface {
   background-color: #F1F5F9 !important;
   color: #0F172A !important;
+  transition: background-color 260ms ease, color 240ms ease;
 }
 
 .melissa-light-shell .melissa-hairline {
-  border-color: #CBD5E1 !important;
+  border-color: #E2E8F0 !important;
 }
 
 .melissa-light-shell .melissa-ink {

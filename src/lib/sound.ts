@@ -58,6 +58,8 @@ let cachedVoiceByLang: Record<string, SpeechSynthesisVoice> = {};
 let voicesChangedBound = false;
 let activeAudioElement: HTMLAudioElement | null = null;
 
+let speechQueueToken = 0;
+
 function bindVoicesChangedListener(): void {
   if (voicesChangedBound || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   voicesChangedBound = true;
@@ -68,6 +70,64 @@ function bindVoicesChangedListener(): void {
   } catch {
     // Ignore browsers that only expose onvoiceschanged property
   }
+}
+
+export async function waitForVoicesReady(timeoutMs = 1400): Promise<SpeechSynthesisVoice[]> {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+  bindVoicesChangedListener();
+  try {
+    const existing = window.speechSynthesis.getVoices();
+    if (existing.length > 0) return existing;
+  } catch {
+    return [];
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let pollId: number | null = null;
+    let timeoutId: number | null = null;
+
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      if (pollId !== null) window.clearInterval(pollId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      try {
+        window.speechSynthesis.removeEventListener('voiceschanged', onVoicesChanged);
+      } catch {
+        // Ignore
+      }
+      try {
+        resolve(window.speechSynthesis.getVoices());
+      } catch {
+        resolve([]);
+      }
+    };
+
+    const onVoicesChanged = () => {
+      try {
+        if (window.speechSynthesis.getVoices().length > 0) done();
+      } catch {
+        done();
+      }
+    };
+
+    try {
+      window.speechSynthesis.addEventListener('voiceschanged', onVoicesChanged);
+    } catch {
+      // Fallback to polling below
+    }
+
+    pollId = window.setInterval(() => {
+      try {
+        if (window.speechSynthesis.getVoices().length > 0) done();
+      } catch {
+        done();
+      }
+    }, 120);
+
+    timeoutId = window.setTimeout(done, timeoutMs);
+  });
 }
 
 function getSharedAudioContext(): AudioContext | null {
@@ -96,6 +156,9 @@ export async function unlockAudioContext(): Promise<void> {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.getVoices();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
     } catch {
       // Ignore
     }
@@ -315,7 +378,7 @@ function clearSpeechWatchdog(): void {
   }
 }
 
-function pumpSpeechQueue(onAllFinished?: () => void): void {
+async function pumpSpeechQueue(onAllFinished?: () => void, afterCancel = false): Promise<void> {
   const prefs = getUserPreferences();
   if (!prefs.voice_enabled) {
     speechQueue.length = 0;
@@ -342,8 +405,19 @@ function pumpSpeechQueue(onAllFinished?: () => void): void {
     return;
   }
 
+  const token = ++speechQueueToken;
+  isSpeakingFromQueue = true;
+
   try {
-    isSpeakingFromQueue = true;
+    // Android WebView TTS bugfix: wait briefly after cancel() and ensure voices are loaded
+    if (afterCancel) {
+      await new Promise<void>((r) => window.setTimeout(r, 65));
+    }
+    if (token !== speechQueueToken) return;
+
+    await waitForVoicesReady(650);
+    if (token !== speechQueueToken) return;
+
     const utterance = new SpeechSynthesisUtterance(next.text);
     const activeLang = prefs.language || 'pt-BR';
     const voice = resolveMelissaVoice(activeLang);
@@ -358,18 +432,29 @@ function pumpSpeechQueue(onAllFinished?: () => void): void {
       utterance.voice = voice;
     }
 
+    let advanced = false;
     const advance = () => {
+      if (advanced || token !== speechQueueToken) return;
+      advanced = true;
       clearSpeechWatchdog();
       isSpeakingFromQueue = false;
-      pumpSpeechQueue(onAllFinished);
+      void pumpSpeechQueue(onAllFinished, false);
     };
 
     utterance.onend = advance;
     utterance.onerror = advance;
 
-    const estimatedMs = Math.min(18_000, Math.max(3200, next.text.length * 78));
+    const estimatedMs = Math.min(20_000, Math.max(3600, next.text.length * 85));
     clearSpeechWatchdog();
     speechWatchdogTimer = window.setTimeout(advance, estimatedMs);
+
+    try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch {
+      // Ignore resume error
+    }
 
     window.speechSynthesis.speak(utterance);
   } catch {
@@ -380,6 +465,7 @@ function pumpSpeechQueue(onAllFinished?: () => void): void {
 }
 
 export function stopSpeech(): void {
+  speechQueueToken += 1;
   speechQueue.length = 0;
   isSpeakingFromQueue = false;
   clearSpeechWatchdog();
@@ -427,7 +513,8 @@ export function speakPtBr(text: string, interrupt = true, onDone?: () => void): 
       return;
     }
 
-    if (interrupt) {
+    const didInterrupt = interrupt;
+    if (didInterrupt) {
       stopSpeech();
     } else if (speechQueue.some((item) => item.text === clean)) {
       onDone?.();
@@ -441,7 +528,7 @@ export function speakPtBr(text: string, interrupt = true, onDone?: () => void): 
       }
       speechQueue.push({ text: clause });
     }
-    pumpSpeechQueue(onDone);
+    void pumpSpeechQueue(onDone, didInterrupt);
   } catch {
     onDone?.();
   }

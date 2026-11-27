@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   Banknote,
   Bell,
-  Bot,
   Briefcase,
   Car,
   CheckCircle2,
@@ -109,10 +108,9 @@ import { AccountSettingsModal } from './AccountSettingsModal';
 import { AvatarImage } from './AvatarImage';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
-import { GamesHub3D } from './games3d/GamesHub3D';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
-import { MelissaAssistantModal } from './MelissaAssistantModal';
+import { MelissaAssistantModal, MelissaTriggerButton } from './MelissaAssistantModal';
 import { NotificationsModal } from './NotificationsModal';
 import { PixPaymentModal } from './PixPaymentModal';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -120,6 +118,10 @@ import { Qr66PayScannerModal } from './Qr66PayScannerModal';
 import { RatingModal } from './RatingModal';
 import { Receipt66PayModal } from './Receipt66PayModal';
 import { RideChatModal } from './RideChatModal';
+
+const LazyGamesHub3D = React.lazy(() =>
+  import('./games3d/GamesHub3D').then((m) => ({ default: m.GamesHub3D }))
+);
 
 interface PassengerViewProps {
   currentUser: UserProfile;
@@ -1257,15 +1259,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
 
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
+                <MelissaTriggerButton
                   onClick={() => setMelissaOpen((v) => !v)}
-                  className="aurora-accent-flow flex h-10 items-center gap-1.5 rounded-full px-3 text-xs font-extrabold text-white shadow-sm active:scale-95 transition"
-                  aria-label="Assistente Melissa"
-                >
-                  <Bot className="h-4 w-4 shrink-0" />
-                  <span>Melissa</span>
-                </button>
+                  title="Assistente Melissa"
+                  size="md"
+                />
                 <button
                   type="button"
                   onClick={handleOpenNotifications}
@@ -1504,15 +1502,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
 
             <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
+              <MelissaTriggerButton
                 onClick={() => setMelissaOpen((v) => !v)}
-                className="aurora-accent-flow flex h-11 items-center gap-1.5 rounded-full px-3 text-xs font-extrabold text-white shadow-lg active:scale-95 transition"
-                aria-label="Assistente Melissa"
-              >
-                <Bot className="h-4 w-4 shrink-0" />
-                <span className="hidden xs:inline">Melissa</span>
-              </button>
+                title="Assistente Melissa"
+                size="md"
+                className="h-11 w-11"
+              />
               <button
                 type="button"
                 onClick={handleOpenNotifications}
@@ -1594,16 +1589,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
+            <MelissaTriggerButton
               onClick={() => setMelissaOpen((v) => !v)}
-              className="aurora-accent-flow flex h-11 items-center gap-1.5 rounded-2xl px-3 text-xs font-extrabold text-white shadow-lg active:scale-95 transition"
-              aria-label="Assistente Melissa"
               title="Assistente Melissa"
-            >
-              <Bot className="h-4 w-4 shrink-0" />
-              <span>Melissa</span>
-            </button>
+              size="md"
+              className="h-11 w-11"
+            />
 
             <button
               type="button"
@@ -1760,71 +1751,69 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </div>
             )}
 
-            {/* EXACT GPS EMBARQUE + 1-TAP NEARBY PLACE CHIPS */}
-            {gpsFixed && (
-              <div className="space-y-1.5 px-0.5">
-                <div className="flex items-center justify-between gap-2 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveSearchField('origin');
-                      setAddressTab('search');
-                      setAddressScreenOpen(true);
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                  >
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#10B981] ring-2 ring-[#10B981]/25" />
-                    <span className="truncate font-bold text-[#0F172A]">
-                      {t.boarding_prefix} {origin.address || t.current_location}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveSearchField('origin');
-                      setAddressTab('search');
-                      setAddressScreenOpen(true);
-                    }}
-                    className="shrink-0 text-[11px] font-extrabold text-[#2563EB] hover:underline"
-                  >
-                    {t.edit_btn}
-                  </button>
-                </div>
-
-                {nearbyPickupOptions.length > 0 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-                    {nearbyPickupOptions.map((opt, idx) => {
-                      const shortName = opt.address.split('·')[0].trim();
-                      const isSelected = origin.address
-                        .toLowerCase()
-                        .startsWith(shortName.toLowerCase());
-                      return (
-                        <button
-                          key={`${opt.lat}-${opt.lng}-${idx}`}
-                          type="button"
-                          onClick={() => {
-                            setOrigin({
-                              lat: opt.lat,
-                              lng: opt.lng,
-                              address: opt.address,
-                            });
-                            setOriginQuery(opt.address);
-                          }}
-                          className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
-                            isSelected
-                              ? 'border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]'
-                              : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#475569] hover:border-[#2563EB]'
-                          }`}
-                        >
-                          <MapPin className="h-3 w-3 shrink-0 text-[#2563EB]" />
-                          <span className="max-w-[140px] truncate">{shortName}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+            {/* EXACT GPS EMBARQUE (ALWAYS EDITABLE) + 1-TAP NEARBY PLACE CHIPS */}
+            <div className="space-y-1.5 px-0.5">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSearchField('origin');
+                    setAddressTab('search');
+                    setAddressScreenOpen(true);
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#10B981] ring-2 ring-[#10B981]/25" />
+                  <span className="truncate font-bold text-[#0F172A]">
+                    {t.boarding_prefix} {origin.address || (gpsFixed ? t.current_location : t.detecting_gps)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSearchField('origin');
+                    setAddressTab('search');
+                    setAddressScreenOpen(true);
+                  }}
+                  className="shrink-0 text-[11px] font-extrabold text-[#2563EB] hover:underline"
+                >
+                  {t.edit_btn}
+                </button>
               </div>
-            )}
+
+              {gpsFixed && nearbyPickupOptions.length > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                  {nearbyPickupOptions.map((opt, idx) => {
+                    const shortName = opt.address.split('·')[0].trim();
+                    const isSelected = origin.address
+                      .toLowerCase()
+                      .startsWith(shortName.toLowerCase());
+                    return (
+                      <button
+                        key={`${opt.lat}-${opt.lng}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          setOrigin({
+                            lat: opt.lat,
+                            lng: opt.lng,
+                            address: opt.address,
+                          });
+                          setOriginQuery(opt.address);
+                        }}
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
+                          isSelected
+                            ? 'border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]'
+                            : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#475569] hover:border-[#2563EB]'
+                        }`}
+                      >
+                        <MapPin className="h-3 w-3 shrink-0 text-[#2563EB]" />
+                        <span className="max-w-[140px] truncate">{shortName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {/* PRIMARY TOP SEARCH TRIGGER */}
             <button
@@ -2108,25 +2097,42 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               /* CATEGORY & FARE SELECTION BOTTOM SHEET */
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#E2E8F0]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveSearchField('destination');
-                      setAddressTab('search');
-                      setAddressScreenOpen(true);
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <ArrowLeft className="h-4 w-4 shrink-0 text-[#475569]" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-extrabold text-[#0F172A] truncate">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSearchField('origin');
+                        setAddressTab('search');
+                        setAddressScreenOpen(true);
+                      }}
+                      className="flex w-full items-center gap-1.5 text-left hover:text-[#2563EB]"
+                    >
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-[#10B981]" />
+                      <span className="text-[11px] font-bold text-[#475569] truncate">
+                        Partida: {origin.address || t.current_location}
+                      </span>
+                      <span className="text-[10px] font-extrabold text-[#2563EB] shrink-0">
+                        ({t.edit_btn})
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSearchField('destination');
+                        setAddressTab('search');
+                        setAddressScreenOpen(true);
+                      }}
+                      className="flex w-full items-center gap-1.5 text-left hover:text-[#2563EB]"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-[#475569]" />
+                      <span className="text-xs font-extrabold text-[#0F172A] truncate">
                         {destination.address}
-                      </p>
-                      <p className="text-[11px] text-[#475569] font-mono-num truncate">
-                        {origin.address || t.current_location} · {distanceKm} km · {durationMin} min
-                      </p>
-                    </div>
-                  </button>
+                      </span>
+                      <span className="text-[11px] text-[#2563EB] font-mono-num shrink-0">
+                        · {distanceKm} km · {durationMin} min
+                      </span>
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
@@ -3208,7 +3214,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             </div>
 
             <div className="mt-3 space-y-2.5">
-              <div className="flex items-center gap-2.5 rounded-2xl border border-[#E2E8F0] bg-white px-3.5 py-1.5 focus-within:border-[#2563EB]">
+              <div className="flex items-center gap-2 rounded-2xl border border-[#E2E8F0] bg-white px-3.5 py-1.5 focus-within:border-[#2563EB]">
                 {serviceTab === 'delivery' ? (
                   <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[3.5px] border-[#2563EB] bg-white" />
                 ) : (
@@ -3231,6 +3237,18 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   title="Atualizar GPS"
                 >
                   <Crosshair className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddressScreenOpen(false);
+                    setPickOnMapMode('origin');
+                  }}
+                  className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] px-2 text-[11px] font-extrabold text-[#2563EB]"
+                  title="Marcar ponto de embarque no mapa"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>Mapa</span>
                 </button>
               </div>
 
@@ -4296,14 +4314,142 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             setMelissaOpen(false);
             setSettingsOpen(true);
           }}
+          onLogout={onLogout}
+          onMelissaCancelRide={async () => {
+            if (!activeRide || activeRide.status === 'in_progress') return false;
+            await executeCancelRide();
+            return true;
+          }}
+          onMelissaRequestRide={async ({
+            originQuery: reqOriginQuery,
+            destQuery: reqDestQuery,
+            category: reqCategory,
+            paymentMethod: reqPayment,
+          }) => {
+            if (activeRide) {
+              return {
+                ok: false,
+                summary: 'Você já tem uma corrida em andamento. Cancele ou finalize antes de pedir outra.',
+              };
+            }
+            let resolvedOrigin = origin;
+            if (reqOriginQuery && reqOriginQuery.trim().length >= 3) {
+              const origHits = await searchAddresses(reqOriginQuery.trim(), origin.lat, origin.lng);
+              const aiOrigHits =
+                origHits.length > 0
+                  ? origHits
+                  : await searchAddressesWithMelissaAI(
+                      reqOriginQuery.trim(),
+                      origin.lat,
+                      origin.lng,
+                      weather?.city
+                    );
+              if (aiOrigHits[0]) {
+                resolvedOrigin = {
+                  lat: aiOrigHits[0].lat,
+                  lng: aiOrigHits[0].lng,
+                  address: aiOrigHits[0].address,
+                };
+                setOrigin(resolvedOrigin);
+                setOriginQuery(aiOrigHits[0].address);
+              }
+            }
+
+            const destHits = await searchAddresses(
+              reqDestQuery.trim(),
+              resolvedOrigin.lat,
+              resolvedOrigin.lng
+            );
+            const finalDestHits =
+              destHits.length > 0
+                ? destHits
+                : await searchAddressesWithMelissaAI(
+                    reqDestQuery.trim(),
+                    resolvedOrigin.lat,
+                    resolvedOrigin.lng,
+                    weather?.city
+                  );
+            if (!finalDestHits[0]) {
+              return {
+                ok: false,
+                summary: `Não localizei o endereço "${reqDestQuery}". Informe o nome da rua, número ou ponto de referência.`,
+              };
+            }
+
+            const resolvedDest: GeoPoint = {
+              lat: finalDestHits[0].lat,
+              lng: finalDestHits[0].lng,
+              address: finalDestHits[0].address,
+            };
+            const targetCategory: RideCategory = reqCategory || 'pop';
+            const catPricing =
+              pricing.find((p) => p.category === targetCategory) || pricing[0];
+            const route = await fetchRouteGeometry(
+              resolvedOrigin.lat,
+              resolvedOrigin.lng,
+              resolvedDest.lat,
+              resolvedDest.lng
+            );
+            const km = Math.max(0.6, route.distanceKm);
+            const baseFare = catPricing
+              ? Number(
+                  Math.max(
+                    catPricing.min_fare,
+                    catPricing.base_fare + km * catPricing.per_km_rate
+                  ).toFixed(2)
+                )
+              : 10;
+            const totalFare = Number((baseFare + pendingDebt).toFixed(2));
+            let targetPayment: PaymentMethod = reqPayment || paymentMethod || 'cash';
+            if (targetPayment === 'wallet' && walletBalance < totalFare) {
+              targetPayment = 'cash';
+            }
+
+            setDestination(resolvedDest);
+            setDestQuery(resolvedDest.address);
+            setCategory(targetCategory);
+            setPaymentMethod(targetPayment);
+            setRouteCoords(route.coords);
+            setDistanceKm(route.distanceKm);
+            setDurationMin(route.durationMin);
+
+            const isDel =
+              targetCategory === 'delivery_moto' || targetCategory === 'delivery_car';
+            const created = await createRideRequest({
+              passenger_id: currentUser.id,
+              category: targetCategory,
+              payment_method: targetPayment,
+              origin: {
+                ...resolvedOrigin,
+                address: resolvedOrigin.address || t.current_location,
+              },
+              destination: resolvedDest,
+              distance_km: km,
+              estimated_fare: totalFare,
+              negotiated_fare: targetCategory === 'negocia' ? baseFare : null,
+              delivery_notes: null,
+              require_pin: isDel ? requireDeliveryPin : true,
+              pending_debt_included: pendingDebt,
+              coupon_id: null,
+              user_coupon_id: null,
+              discount_amount: 0,
+            });
+            onRideUpsert(created);
+            return {
+              ok: true,
+              summary: `${CATEGORY_LABELS[targetCategory]} para ${resolvedDest.address.split('·')[0].trim()} · ${formatBRL(totalFare)} (${targetPayment === 'wallet' ? 'GoPay' : 'Dinheiro'}). Buscando parceiro próximo!`,
+            };
+          }}
         />
       )}
 
       {gamesOpen && (
-        <GamesHub3D
-          open={gamesOpen}
-          onClose={() => setGamesOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <LazyGamesHub3D
+            open={gamesOpen}
+            onClose={() => setGamesOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

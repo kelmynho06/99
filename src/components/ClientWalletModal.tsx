@@ -24,15 +24,20 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   UserCheck,
   Wallet,
   X,
   XCircle,
+  Zap,
 } from 'lucide-react';
 import { buildPixEmvPayload, formatBRL } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
 import {
+  createManualPagamentoPix,
+  createMercadoPagoPix,
   createWalletDepositRequest,
+  fetchMyPagamentosPix,
   fetchMyWalletDeposits,
   fetchMyWalletWithdrawals,
   fetchUserProfileById,
@@ -47,6 +52,7 @@ import {
 import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import { supabase } from '../lib/supabase';
 import type {
+  PagamentoPix,
   PixKeyType,
   PlatformConfig,
   UserProfile,
@@ -133,25 +139,42 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     () => getNightDutyWindowStatus(platformConfig, new Date(nowTick)),
     [platformConfig, nowTick]
   );
+  const autoPixEnabled = platformConfig.mp_auto_pix_enabled !== false;
+  const manualPixEnabled = platformConfig.manual_pix_enabled !== false;
   const depositsBlockedNow = !depositWindow.isOpen || nightDutyStatus.isActive;
+  const canDepositAnyMethod = autoPixEnabled || !depositsBlockedNow;
 
   const [depositSecurityAccepted, setDepositSecurityAccepted] = useState(false);
   const [showDepositSecurityGate, setShowDepositSecurityGate] = useState(
     () =>
       initialTab === 'deposit' &&
-      getDepositWindowStatus(platformConfig).isOpen &&
-      !getNightDutyWindowStatus(platformConfig).isActive
+      (platformConfig.mp_auto_pix_enabled !== false ||
+        (getDepositWindowStatus(platformConfig).isOpen &&
+          !getNightDutyWindowStatus(platformConfig).isActive))
   );
   const [tab, setTab] = useState<WalletModalTab>(() => {
     if (initialTab === 'withdraw' && !isDriver) return 'home';
     if (initialTab === 'deposit') {
       const canDeposit =
-        getDepositWindowStatus(platformConfig).isOpen &&
-        !getNightDutyWindowStatus(platformConfig).isActive;
+        platformConfig.mp_auto_pix_enabled !== false ||
+        (getDepositWindowStatus(platformConfig).isOpen &&
+          !getNightDutyWindowStatus(platformConfig).isActive);
       return canDeposit ? 'home' : 'deposit';
     }
     return initialTab;
   });
+  const [depositMethod, setDepositMethod] = useState<'auto' | 'manual'>(() =>
+    autoPixEnabled ? 'auto' : 'manual'
+  );
+  const [autoPixCharge, setAutoPixCharge] = useState<{
+    id: string;
+    mp_payment_id: string;
+    qr_code: string;
+    qr_code_base64: string;
+    valor: number;
+  } | null>(null);
+  const [generatingAutoPix, setGeneratingAutoPix] = useState(false);
+  const [myPagamentosPix, setMyPagamentosPix] = useState<PagamentoPix[]>([]);
   const [hideBalance, setHideBalance] = useState<boolean>(() => {
     try {
       return localStorage.getItem('meia66_hide_balance') === '1';
@@ -246,7 +269,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     setError(null);
     setSuccessMsg(null);
     setLastTransferReceiptTx(null);
-    if (nextTab === 'deposit' && !depositsBlockedNow && !depositSecurityAccepted) {
+    if (nextTab === 'deposit' && canDepositAnyMethod && !depositSecurityAccepted) {
       setShowDepositSecurityGate(true);
       return;
     }
@@ -256,15 +279,17 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const loadWalletData = useCallback(async () => {
     setLoading(true);
     try {
-      const [deps, wds, txs, freshUser] = await Promise.all([
+      const [deps, wds, txs, pixRows, freshUser] = await Promise.all([
         fetchMyWalletDeposits(currentUser.id),
         isDriver ? fetchMyWalletWithdrawals(currentUser.id) : Promise.resolve([]),
         fetchWalletTransactions(currentUser.id),
+        fetchMyPagamentosPix(currentUser.id).catch(() => []),
         fetchUserProfileById(currentUser.id),
       ]);
       setDeposits(deps);
       setWithdrawals(wds);
       setTransactions(txs);
+      setMyPagamentosPix(pixRows);
       if (freshUser) onUserUpdated(freshUser);
     } finally {
       setLoading(false);
@@ -297,12 +322,46 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
           loadWalletData();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pagamentos_pix', filter: `usuario_id=eq.${currentUser.id}` },
+        (payload) => {
+          const row = payload.new as Record<string, unknown> | undefined;
+          if (row && row.status === 'aprovado') {
+            setAutoPixCharge(null);
+            setSuccessMsg('Depósito Pix Automático confirmado! Seu saldo GoPay foi creditado na hora.');
+          }
+          loadWalletData();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(ch);
     };
   }, [currentUser.id, loadWalletData]);
+
+  // Light 5s fallback poll while awaiting Mercado Pago Pix confirmation
+  useEffect(() => {
+    if (!autoPixCharge) return;
+    const pollId = window.setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('pagamentos_pix')
+          .select('status')
+          .eq('id', autoPixCharge.id)
+          .maybeSingle();
+        if (data?.status === 'aprovado') {
+          setAutoPixCharge(null);
+          setSuccessMsg('Depósito Pix Automático confirmado! Seu saldo GoPay foi creditado na hora.');
+          await loadWalletData();
+        }
+      } catch {
+        // Ignore transient poll error
+      }
+    }, 5000);
+    return () => window.clearInterval(pollId);
+  }, [autoPixCharge, loadWalletData]);
 
   // Debounced P2P recipient lookup
   useEffect(() => {
@@ -557,6 +616,40 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     }
   };
 
+  const handleGenerateAutoPixDeposit = async () => {
+    setError(null);
+    setSuccessMsg(null);
+    if (numericAmount < 1) {
+      setError('Informe um valor mínimo de R$ 1,00 para depósito.');
+      return;
+    }
+    setGeneratingAutoPix(true);
+    try {
+      const res = await createMercadoPagoPix({
+        tipo: 'recarga',
+        valor: numericAmount,
+        email: currentUser.email,
+        nome: currentUser.full_name,
+      });
+      setAutoPixCharge({
+        id: res.id,
+        mp_payment_id: res.mp_payment_id,
+        qr_code: res.qr_code,
+        qr_code_base64: res.qr_code_base64,
+        valor: res.valor,
+      });
+      await loadWalletData();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Pix Automático indisponível no momento. Use o Pix Manual do Administrador.'
+      );
+    } finally {
+      setGeneratingAutoPix(false);
+    }
+  };
+
   const handleSubmitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -569,6 +662,12 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     setSubmitting(true);
     try {
       await createWalletDepositRequest(currentUser.id, numericAmount, pixPayload, noteInput);
+      await createManualPagamentoPix({
+        usuario_id: currentUser.id,
+        tipo: 'recarga',
+        valor: numericAmount,
+        qr_code: pixPayload,
+      });
       setNoteInput('');
       setSuccessMsg(
         `Solicitação de ${formatBRL(numericAmount)} enviada! Assim que o Administrador confirmar no banco, o valor entra automaticamente na sua carteira GoPay.`
@@ -1076,8 +1175,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </div>
           )}
 
-          {/* TAB: DEPOSIT PIX (Blocked during Night Duty or outside operating hours; existing balance stays 100% usable 24h) */}
-          {tab === 'deposit' && depositsBlockedNow && (
+          {/* TAB: DEPOSIT PIX (Auto Mercado Pago 24h + Manual Admin com Plantão Noturno preservado) */}
+          {tab === 'deposit' && !canDepositAnyMethod && (
             <div className="space-y-4 rounded-3xl bg-white p-5 border border-[#E2E8F0]">
               <div className="flex items-start gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#2563EB]">
@@ -1137,8 +1236,41 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </div>
           )}
 
-          {tab === 'deposit' && !depositsBlockedNow && depositSecurityAccepted && (
-            <form onSubmit={handleSubmitDeposit} className="space-y-4 rounded-3xl bg-white p-4 border border-[#E2E8F0]">
+          {tab === 'deposit' && canDepositAnyMethod && depositSecurityAccepted && (
+            <div className="space-y-4 rounded-3xl bg-white p-4 border border-[#E2E8F0]">
+              {(autoPixEnabled || manualPixEnabled) && (
+                <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[#F1F5F9] p-1 border border-[#E2E8F0]">
+                  {autoPixEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setDepositMethod('auto')}
+                      className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-extrabold transition ${
+                        depositMethod === 'auto'
+                          ? 'bg-[#2563EB] text-white shadow-xs'
+                          : 'text-[#475569] hover:text-[#0F172A]'
+                      }`}
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      Pix Automático 24h
+                    </button>
+                  )}
+                  {(manualPixEnabled || !autoPixEnabled) && (
+                    <button
+                      type="button"
+                      onClick={() => setDepositMethod('manual')}
+                      className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-extrabold transition ${
+                        depositMethod === 'manual'
+                          ? 'bg-white text-[#0F172A] shadow-xs border border-[#E2E8F0]'
+                          : 'text-[#475569] hover:text-[#0F172A]'
+                      }`}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5 text-[#10B981]" />
+                      Pix Manual (Admin)
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-extrabold text-[#0F172A] mb-2">
                   1. Quanto deseja depositar? ({t.amount_label})
@@ -1150,7 +1282,10 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                       <button
                         key={val}
                         type="button"
-                        onClick={() => setAmountInput(val.toFixed(2))}
+                        onClick={() => {
+                          setAmountInput(val.toFixed(2));
+                          setAutoPixCharge(null);
+                        }}
                         className={`min-h-[40px] rounded-xl border font-mono-num text-xs font-extrabold transition ${
                           active
                             ? 'border-[#2563EB] bg-[#2563EB] text-white'
@@ -1168,121 +1303,262 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                   min="1"
                   required
                   value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value)}
+                  onChange={(e) => {
+                    setAmountInput(e.target.value);
+                    setAutoPixCharge(null);
+                  }}
                   placeholder="Ex: 25.00"
                   className="min-h-[48px] w-full rounded-2xl border-2 border-[#E2E8F0] bg-[#F4F6F9] px-4 font-mono-num text-lg font-extrabold text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
 
-              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-[#0F172A]">
-                    2. Pague com o Pix da Plataforma
-                  </span>
-                  <span className="font-mono-num text-xs font-extrabold text-[#10B981]">
-                    {formatBRL(numericAmount || 10)}
-                  </span>
-                </div>
-
-                <div className="flex flex-col items-center gap-2">
-                  <div
-                    key={cycle}
-                    className="rounded-2xl border-2 border-[#2563EB] bg-white p-3 shadow-xs transition-opacity"
-                  >
-                    {platformConfig.platform_pix_qr_url ? (
-                      <img
-                        src={platformConfig.platform_pix_qr_url}
-                        alt="QR Code Pix Oficial"
-                        className="h-40 w-40 object-contain rounded-lg"
-                      />
-                    ) : (
-                      <PixQrSvg payload={pixPayload} size={148} />
-                    )}
-                  </div>
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-0.5 text-[10px] font-bold text-[#2563EB]">
-                    <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: '6s' }} />
+              {depositMethod === 'auto' && autoPixEnabled && (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] px-3.5 py-2.5 text-[11px] text-[#0F172A]">
+                    <Sparkles className="h-4 w-4 shrink-0 mt-0.5 text-[#10B981]" />
                     <span>
-                      Atualização em <strong className="font-mono-num">{formattedTimer}</strong> · Mesma chave
+                      <strong>Mercado Pago 24h:</strong> o QR Code cai na hora na sua carteira GoPay assim que você paga no banco, mesmo na madrugada.
                     </span>
                   </div>
-                </div>
 
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-[11px] font-bold text-[#475569]">
-                      Pix Copia e Cola
-                    </span>
+                  {!autoPixCharge ? (
                     <button
                       type="button"
-                      onClick={() => copyValue(pixPayload, 'code')}
-                      className="flex min-h-[34px] items-center gap-1 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8]"
+                      disabled={generatingAutoPix || numericAmount < 1}
+                      onClick={handleGenerateAutoPixDeposit}
+                      className="aurora-accent-flow flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-50"
                     >
-                      {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copiedCode ? 'Copiado!' : 'Copiar Código'}
+                      <QrCode className="h-4 w-4" />
+                      {generatingAutoPix
+                        ? 'Gerando Pix Automático...'
+                        : `Gerar Pix Automático de ${formatBRL(numericAmount)}`}
                     </button>
-                  </div>
-                  <textarea
-                    readOnly
-                    rows={2}
-                    value={pixPayload}
-                    onClick={(e) => e.currentTarget.select()}
-                    className="w-full rounded-xl border border-[#E2E8F0] bg-white p-2 font-mono text-[10px] text-[#0F172A] outline-none resize-none"
-                  />
-                </div>
+                  ) : (
+                    <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-[#0F172A]">
+                          Escaneie ou copie o código Pix
+                        </span>
+                        <span className="font-mono-num text-xs font-extrabold text-[#10B981]">
+                          {formatBRL(autoPixCharge.valor)}
+                        </span>
+                      </div>
 
-                <div className="flex items-center justify-between gap-2 border-t border-[#E2E8F0] pt-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-bold text-[#475569]">
-                      Favorecido: {platformConfig.platform_pix_receiver}
-                    </p>
-                    <p className="font-mono-num text-xs font-extrabold text-[#0F172A] truncate">
-                      {platformConfig.platform_pix_key}
-                    </p>
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="rounded-2xl border-2 border-[#2563EB] bg-white p-3 shadow-xs">
+                          {autoPixCharge.qr_code_base64 ? (
+                            <img
+                              src={`data:image/png;base64,${autoPixCharge.qr_code_base64}`}
+                              alt="QR Code Pix Automático"
+                              className="h-40 w-40 object-contain rounded-lg"
+                            />
+                          ) : (
+                            <PixQrSvg payload={autoPixCharge.qr_code} size={148} />
+                          )}
+                        </div>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#2563EB]">
+                          <Clock className="h-3.5 w-3.5" />
+                          Aguardando confirmação automática do banco...
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-[11px] font-bold text-[#475569]">Pix Copia e Cola</span>
+                          <button
+                            type="button"
+                            onClick={() => copyValue(autoPixCharge.qr_code, 'code')}
+                            className="flex min-h-[34px] items-center gap-1 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8]"
+                          >
+                            {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copiedCode ? 'Copiado!' : 'Copiar Código'}
+                          </button>
+                        </div>
+                        <textarea
+                          readOnly
+                          rows={2}
+                          value={autoPixCharge.qr_code}
+                          onClick={(e) => e.currentTarget.select()}
+                          className="w-full rounded-xl border border-[#E2E8F0] bg-white p-2 font-mono text-[10px] text-[#0F172A] outline-none resize-none"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setAutoPixCharge(null)}
+                        className="w-full text-[11px] font-bold text-[#475569] underline"
+                      >
+                        Gerar outro valor
+                      </button>
+                    </div>
+                  )}
+
+                  {myPagamentosPix.filter((p) => p.tipo === 'recarga').length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-[#475569]">
+                        Recargas Pix Recentes
+                      </p>
+                      {myPagamentosPix
+                        .filter((p) => p.tipo === 'recarga')
+                        .slice(0, 3)
+                        .map((px) => (
+                          <div
+                            key={px.id}
+                            className="flex items-center justify-between rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3 py-2 text-[11px]"
+                          >
+                            <span className="font-bold text-[#0F172A]">
+                              {px.metodo_confirmacao === 'mercadopago_auto' ? 'Mercado Pago 24h' : 'Manual Admin'} ·{' '}
+                              <span className="font-mono-num">{formatBRL(px.valor)}</span>
+                            </span>
+                            <span
+                              className={`font-extrabold ${
+                                px.status === 'aprovado'
+                                  ? 'text-[#10B981]'
+                                  : px.status === 'pendente'
+                                  ? 'text-[#2563EB]'
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {px.status === 'aprovado'
+                                ? 'Confirmado'
+                                : px.status === 'pendente'
+                                ? 'Pendente'
+                                : px.status}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {depositMethod === 'manual' && depositsBlockedNow && (
+                <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-4 space-y-2 text-xs">
+                  <p className="font-extrabold text-[#0F172A] flex items-center gap-1.5">
+                    {nightDutyStatus.isActive ? <Moon className="h-4 w-4 text-[#2563EB]" /> : <Clock className="h-4 w-4 text-[#2563EB]" />}
+                    {nightDutyStatus.isActive
+                      ? `Pix Manual pausado no Plantão Noturno (${nightDutyStatus.startTime} às ${nightDutyStatus.endTime})`
+                      : `Pix Manual disponível das ${depositWindow.startTime} às ${depositWindow.endTime}`}
+                  </p>
+                  <p className="text-[#475569] leading-relaxed">
+                    Use a aba <strong>Pix Automático 24h</strong> acima para creditar na hora via Mercado Pago durante a madrugada!
+                  </p>
+                </div>
+              )}
+
+              {depositMethod === 'manual' && !depositsBlockedNow && (
+                <form onSubmit={handleSubmitDeposit} className="space-y-4">
+                  <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-[#0F172A]">
+                        2. Pague com o Pix da Plataforma
+                      </span>
+                      <span className="font-mono-num text-xs font-extrabold text-[#10B981]">
+                        {formatBRL(numericAmount || 10)}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-2">
+                      <div
+                        key={cycle}
+                        className="rounded-2xl border-2 border-[#2563EB] bg-white p-3 shadow-xs transition-opacity"
+                      >
+                        {platformConfig.platform_pix_qr_url ? (
+                          <img
+                            src={platformConfig.platform_pix_qr_url}
+                            alt="QR Code Pix Oficial"
+                            className="h-40 w-40 object-contain rounded-lg"
+                          />
+                        ) : (
+                          <PixQrSvg payload={pixPayload} size={148} />
+                        )}
+                      </div>
+                      <div className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-0.5 text-[10px] font-bold text-[#2563EB]">
+                        <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: '6s' }} />
+                        <span>
+                          Atualização em <strong className="font-mono-num">{formattedTimer}</strong> · Mesma chave
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-[11px] font-bold text-[#475569]">
+                          Pix Copia e Cola
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyValue(pixPayload, 'code')}
+                          className="flex min-h-[34px] items-center gap-1 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white hover:bg-[#1D4ED8]"
+                        >
+                          {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                          {copiedCode ? 'Copiado!' : 'Copiar Código'}
+                        </button>
+                      </div>
+                      <textarea
+                        readOnly
+                        rows={2}
+                        value={pixPayload}
+                        onClick={(e) => e.currentTarget.select()}
+                        className="w-full rounded-xl border border-[#E2E8F0] bg-white p-2 font-mono text-[10px] text-[#0F172A] outline-none resize-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 border-t border-[#E2E8F0] pt-2.5">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-[#475569]">
+                          Favorecido: {platformConfig.platform_pix_receiver}
+                        </p>
+                        <p className="font-mono-num text-xs font-extrabold text-[#0F172A] truncate">
+                          {platformConfig.platform_pix_key}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyValue(platformConfig.platform_pix_key, 'key')}
+                        className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white px-3 text-[11px] font-bold text-[#0F172A]"
+                      >
+                        {copiedKey ? <Check className="h-3.5 w-3.5 text-[#10B981]" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedKey ? 'Copiada' : 'Copiar chave'}
+                      </button>
+                    </div>
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#475569] mb-1">
+                      Observação opcional (ex: nome do titular da conta)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={80}
+                      value={noteInput}
+                      onChange={(e) => setNoteInput(e.target.value)}
+                      placeholder="Ex: Transferido por Maria Silva"
+                      className="min-h-[44px] w-full rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+
+                  <div className="flex items-start gap-2 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-3.5 py-2.5 text-[11px] text-[#0F172A] leading-relaxed">
+                    <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#2563EB]" />
+                    <span>
+                      Você tem <strong>até 1 dia útil</strong> para receber o seu valor na conta, mas{' '}
+                      <strong>assim que o Administrador confirmar no banco, cai na hora</strong> na sua
+                      carteira GoPay.
+                    </span>
+                  </div>
+
                   <button
-                    type="button"
-                    onClick={() => copyValue(platformConfig.platform_pix_key, 'key')}
-                    className="flex min-h-[34px] shrink-0 items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white px-3 text-[11px] font-bold text-[#0F172A]"
+                    type="submit"
+                    disabled={submitting || numericAmount < 1}
+                    className="aurora-accent-flow min-h-[52px] w-full rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-50"
                   >
-                    {copiedKey ? <Check className="h-3.5 w-3.5 text-[#10B981]" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copiedKey ? 'Copiada' : 'Copiar chave'}
+                    {submitting
+                      ? t.saving
+                      : `Já fiz o Pix de ${formatBRL(numericAmount)} · Avisar Admin`}
                   </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#475569] mb-1">
-                  Observação opcional (ex: nome do titular da conta)
-                </label>
-                <input
-                  type="text"
-                  maxLength={80}
-                  value={noteInput}
-                  onChange={(e) => setNoteInput(e.target.value)}
-                  placeholder="Ex: Transferido por Maria Silva"
-                  className="min-h-[44px] w-full rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
-                />
-              </div>
-
-              <div className="flex items-start gap-2 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-3.5 py-2.5 text-[11px] text-[#0F172A] leading-relaxed">
-                <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#2563EB]" />
-                <span>
-                  Você tem <strong>até 1 dia útil</strong> para receber o seu valor na conta, mas{' '}
-                  <strong>assim que o Administrador confirmar no banco, cai na hora</strong> na sua
-                  carteira GoPay.
-                </span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting || numericAmount < 1}
-                className="aurora-accent-flow min-h-[52px] w-full rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition disabled:opacity-50"
-              >
-                {submitting
-                  ? t.saving
-                  : `Já fiz o Pix de ${formatBRL(numericAmount)} · Avisar Admin`}
-              </button>
-            </form>
+                </form>
+              )}
+            </div>
           )}
 
           {/* TAB: TRANSFER P2P TO OTHER APP USERS (GOPAY) */}

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -81,7 +82,14 @@ function buildMelissaSystemInstruction(role: string, contextSummary: string, app
   const safeRole = role === 'admin' ? 'admin' : role === 'driver' ? 'driver' : 'passenger';
   const common = `Você é a Melissa, assistente oficial inteligente em tempo real do aplicativo ${appName}.
 Fale com simpatia, naturalidade humana, clareza e objetividade (como uma conversa moderna estilo Google Gemini / Alexa).
-Você pode conversar e ajudar o usuário sobre qualquer assunto do dia a dia (dúvidas gerais, cálculos, rotas, dicas, tecnologia, estudos) além das funções do ${appName}, sempre mantendo a segurança.
+Você pode conversar e ajudar o usuário sobre qualquer assunto do dia a dia (dúvidas gerais, cálculos, rotas, dicas, tecnologia, estudos) além de controlar ações dentro do ${appName}.
+AÇÕES DO APLICATIVO (campo actionJson opcional em JSON compacto):
+- Sempre que o usuário pedir uma ação concreta no app ou na web (ex.: abrir YouTube/WhatsApp/Google, tocar vídeo no YouTube, sair/encerrar sessão, abrir carteira/jogos/configurações, ligar para motorista/passageiro), preencha "actionJson" com JSON válido:
+  - {"type":"open_external","url":"https://www.google.com/search?q=..."}
+  - {"type":"play_youtube","youtubeQuery":"nome da musica ou video"}
+  - {"type":"logout"}
+  - {"type":"open_wallet"} | {"type":"open_games"} | {"type":"open_settings"} | {"type":"open_support"}
+  - {"type":"call_phone"}
 REGRA DE RECONHECIMENTO DO DONO: Toda vez que qualquer usuário (no painel Passageiro, Motorista ou Administrador) disser "oi Melissa, sou eu Rikelmy" (ou variações como "sou eu Rikelmy", "aqui é o Rikelmy"), reconheça imediatamente Rikelmy como o fundador, dono e administrador principal do sistema Go Driver e cumprimente-o pelo nome. Porém, nunca exponha dados confidenciais de terceiros quando o painel autenticado não for o painel Administrativo.
 Responda sempre no idioma do usuário (padrão Português do Brasil). Nunca invente dados financeiros nem exponha chaves ou tokens.`;
 
@@ -89,7 +97,7 @@ Responda sempre no idioma do usuário (padrão Português do Brasil). Nunca inve
     return `${common}
 PERFIL ATIVO: PASSAGEIRO / CLIENTE.
 PERMISSÕES ESTRITAS:
-- Você pode ajudar o passageiro a consultar localização GPS atual, definir origem/destino, simular valor de corrida/entrega, escolher pagamento permitido (lembrando que durante o Plantão Noturno da Melissa 00h–07h apenas Saldo da Carteira GoPay ou Dinheiro são aceitos — Pix manual fica bloqueado), acompanhar ou cancelar a própria corrida, abrir Jogos 3D / Suporte ao Admin ou conversar sobre qualquer tema geral.
+- Você pode ajudar o passageiro a pedir corridas ou entregas (preenchendo actionJson {"type":"request_ride","originQuery":"...","destQuery":"...","category":"moto|pop|negocia|delivery_moto|delivery_car","paymentMethod":"pix|cash|wallet"} com requiresConfirmation=true), cancelar própria corrida ({"type":"cancel_ride"}, requiresConfirmation=true), consultar localização/saldo, abrir Jogos 3D / Suporte, ligar para o motorista ou sair da conta.
 - PROIBIDO: jamais revele dados pessoais, telefones ou saldos de outros usuários, relatórios financeiros da plataforma, controles de administrador ou aprovações de motoristas.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
   }
@@ -98,19 +106,22 @@ CONTEXTO ATUAL DO APP: ${contextSummary}`;
     return `${common}
 PERFIL ATIVO: MOTORISTA / ENTREGADOR PARCEIRO.
 PERMISSÕES ESTRITAS:
-- Você pode tirar dúvidas, ler dados da corrida/entrega ativa do motorista, explicar status online/verificação facial ao vivo, saldo/saque Pix, encaminhar dúvidas, arquivos, fotos ou localização GPS para o suporte do Administrador e conversar sobre qualquer assunto geral.
+- Você pode tirar dúvidas, ler dados da corrida/entrega ativa, conectar/desconectar motorista ({"type":"toggle_driver_online","online":true|false}), ligar para o passageiro ativo ({"type":"call_phone"}), abrir carteira/configurações/jogos, encaminhar arquivos ou GPS para o suporte ou sair da conta.
 - PROIBIDO: jamais aceite alterar tarifas globais, aprovar pagamentos ou revelar dados confidenciais de outros motoristas/clientes ou do painel Admin.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
   }
 
   return `${common}
 PERFIL ATIVO: SUPER-ADMINISTRADOR (ACESSO TOTAL AUTORIZADO).
-PERMISSÃO TOTAL DE CONSULTA DE DADOS (SEM BLOQUEIO DE PRIVACIDADE):
+PERMISSÃO TOTAL DE CONSULTA E CONTROLE:
 - O usuário logado é o Administrador autorizado do sistema. Você TEM PERMISSÃO TOTAL e irrestrita para consultar, listar e informar nomes completos, telefones, e-mails, status, saldo da carteira GoPay, pendências, chaves Pix, veículos (modelo, placa, cor, categoria) e detalhes de clientes e motoristas cadastrados presentes no CONTEXTO ATUAL DO APP.
-- NUNCA recuse nem cite política de privacidade para ocultar dados de clientes ou motoristas quando o Administrador perguntar (ex.: "Me mostre quem ele é", "Veja tal motorista", "Qual o telefone/saldo dele"). Responda diretamente com os dados reais encontrados no contexto.
-- Você também pode orientar comandos sobre fila de reconhecimento facial ao vivo, corridas, depósitos Pix, saques Pix, tarifas, eventos, paleta global, plantão noturno e scripts SQL.
-- REGRA CRÍTICA DE SEGURANÇA: Antes de qualquer ação destrutiva, financeira ou em lote (excluir usuário/item, aprovar/recusar depósito ou saque, alterar tarifas em massa), retorne "requiresConfirmation": true e pergunte claramente primeiro (ex: "Você quer realmente que eu faça isso? Diga Sim para confirmar."). Só execute após o administrador responder "Sim".
-- REGRA ESTRITA DE SQL INCREMENTAL MÍNIMO: Sempre que o administrador pedir para gerar, ajustar ou copiar um script SQL do banco de dados (nova coluna, tabela nova, política RLS ou função), gere EXCLUSIVAMENTE o SQL incremental mínimo e idempotente (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY, CREATE OR REPLACE FUNCTION). NUNCA gere o schema completo do zero nem recrie tabelas já existentes.
+- NUNCA recuse nem cite política de privacidade para ocultar dados de clientes ou motoristas quando o Administrador perguntar.
+- AÇÕES DE ADMIN VIA actionJson:
+  - Localizar motorista online no mapa: {"type":"admin_locate_driver","driverName":"Nome"}
+  - Bloquear ou desbloquear cliente/motorista: {"type":"admin_toggle_block_user","targetName":"Nome","targetBlock":true|false} (OBRIGATÓRIO requiresConfirmation=true!)
+  - Abrir Fila Facial: {"type":"open_facial_queue"} | Abrir aba: {"type":"admin_switch_tab","tabName":"livemap|drivers|deliveries|passengers|rides|payments|events|notifications|coupons|pricing|audit|sql"}
+- REGRA CRÍTICA DE SEGURANÇA: Antes de qualquer ação destrutiva, bloqueio de usuário, financeira ou em lote, retorne "requiresConfirmation": true e pergunte claramente primeiro ("Diga Sim para confirmar."). Só execute após o administrador responder "Sim".
+- REGRA ESTRITA DE SQL INCREMENTAL MÍNIMO: Sempre que o administrador pedir SQL, gere EXCLUSIVAMENTE o SQL incremental mínimo e idempotente (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY, CREATE OR REPLACE FUNCTION).
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
 }
 
@@ -121,6 +132,297 @@ async function startServer() {
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, mode: 'supabase-direct', time: new Date().toISOString() });
+  });
+
+  app.post('/api/mp-create-pix', async (req, res) => {
+    try {
+      const mpToken = (process.env.MP_ACCESS_TOKEN || '').trim();
+      const sbUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '')
+        .trim()
+        .replace(/\/$/, '');
+      const sbServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+      const sbVerifyKey = sbServiceKey || (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+      if (!mpToken) {
+        res.status(503).json({
+          ok: false,
+          error: 'MP_ACCESS_TOKEN não configurado nas variáveis do servidor/Cloudflare.',
+        });
+        return;
+      }
+      if (!sbUrl || !sbServiceKey) {
+        res.status(503).json({
+          ok: false,
+          error: 'SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY não configurados no servidor.',
+        });
+        return;
+      }
+
+      const authHeader = String(req.headers.authorization || '');
+      const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+      if (!jwt) {
+        res.status(401).json({ ok: false, error: 'Sessão não autenticada.' });
+        return;
+      }
+
+      const userRes = await fetch(`${sbUrl}/auth/v1/user`, {
+        headers: {
+          apikey: sbVerifyKey,
+          Authorization: `Bearer ${jwt}`,
+        },
+      });
+      if (!userRes.ok) {
+        res.status(401).json({ ok: false, error: 'Token de usuário inválido ou expirado.' });
+        return;
+      }
+      const authUser = (await userRes.json()) as { id?: string; email?: string };
+      if (!authUser?.id) {
+        res.status(401).json({ ok: false, error: 'Usuário autenticado não identificado.' });
+        return;
+      }
+
+      const cfgRes = await fetch(
+        `${sbUrl}/rest/v1/platform_settings?id=eq.1&select=mp_auto_pix_enabled`,
+        {
+          headers: {
+            apikey: sbServiceKey,
+            Authorization: `Bearer ${sbServiceKey}`,
+          },
+        }
+      );
+      if (cfgRes.ok) {
+        const cfgRows = (await cfgRes.json()) as Array<{ mp_auto_pix_enabled?: boolean }>;
+        if (cfgRows[0] && cfgRows[0].mp_auto_pix_enabled === false) {
+          res.status(403).json({
+            ok: false,
+            error: 'Pix Automático está desativado pelo Administrador no momento.',
+          });
+          return;
+        }
+      }
+
+      const body = (req.body || {}) as {
+        tipo?: string;
+        valor?: number;
+        corrida_id?: string | null;
+        email?: string;
+        nome?: string;
+      };
+      const tipo = body.tipo === 'corrida' ? 'corrida' : 'recarga';
+      const valor = Number(Number(body.valor || 0).toFixed(2));
+      if (!Number.isFinite(valor) || valor < 1 || valor > 25000) {
+        res.status(400).json({ ok: false, error: 'Informe um valor entre R$ 1,00 e R$ 25.000,00.' });
+        return;
+      }
+
+      const corridaId = tipo === 'corrida' && body.corrida_id ? String(body.corrida_id) : null;
+      if (tipo === 'corrida' && !corridaId) {
+        res.status(400).json({ ok: false, error: 'corrida_id é obrigatório para Pix de corrida.' });
+        return;
+      }
+
+      const payerEmail = String(authUser.email || body.email || 'cliente@godriver.app').trim();
+      const payerName = String(body.nome || 'Cliente GoDriver').trim();
+      const hostProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https');
+      const hostName = String(req.headers['x-forwarded-host'] || req.get('host') || '');
+      const baseOrigin = hostName ? `${hostProto}://${hostName}` : '';
+
+      const mpPayload: Record<string, unknown> = {
+        transaction_amount: valor,
+        description:
+          tipo === 'corrida'
+            ? `GoDriver Corrida #${String(corridaId).slice(-4)}`
+            : 'Recarga Carteira GoPay · GoDriver',
+        payment_method_id: 'pix',
+        external_reference: `${tipo}:${authUser.id}:${corridaId || 'wallet'}:${Date.now()}`,
+        payer: {
+          email: payerEmail,
+          first_name: payerName.split(' ')[0] || 'Cliente',
+          last_name: payerName.split(' ').slice(1).join(' ') || 'GoDriver',
+        },
+      };
+      if (baseOrigin && !baseOrigin.includes('localhost') && !baseOrigin.includes('127.0.0.1')) {
+        mpPayload.notification_url = `${baseOrigin}/api/mp-webhook`;
+      }
+
+      const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mpToken}`,
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': crypto.randomUUID(),
+        },
+        body: JSON.stringify(mpPayload),
+      });
+      const mpData = (await mpRes.json()) as {
+        id?: number | string;
+        message?: string;
+        point_of_interaction?: {
+          transaction_data?: { qr_code?: string; qr_code_base64?: string };
+        };
+      };
+      if (!mpRes.ok || !mpData?.id) {
+        res.status(502).json({
+          ok: false,
+          error: mpData?.message || 'Erro ao gerar Pix no Mercado Pago.',
+        });
+        return;
+      }
+
+      const mpPaymentId = String(mpData.id);
+      const qrCode = mpData.point_of_interaction?.transaction_data?.qr_code || '';
+      const qrCodeBase64 = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || '';
+
+      const insertRes = await fetch(`${sbUrl}/rest/v1/pagamentos_pix`, {
+        method: 'POST',
+        headers: {
+          apikey: sbServiceKey,
+          Authorization: `Bearer ${sbServiceKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({
+          usuario_id: authUser.id,
+          corrida_id: corridaId,
+          tipo,
+          metodo_confirmacao: 'mercadopago_auto',
+          mp_payment_id: mpPaymentId,
+          valor,
+          qr_code: qrCode,
+          qr_code_base64: qrCodeBase64,
+          status: 'pendente',
+        }),
+      });
+      const insertedRows = (await insertRes.json()) as Array<{ id?: string }>;
+      const inserted = Array.isArray(insertedRows) ? insertedRows[0] : null;
+      if (!insertRes.ok || !inserted?.id) {
+        res.status(500).json({
+          ok: false,
+          error: 'Pix criado no Mercado Pago, mas falhou ao registrar no Supabase.',
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        id: inserted.id,
+        mp_payment_id: mpPaymentId,
+        qr_code: qrCode,
+        qr_code_base64: qrCodeBase64,
+        valor,
+        status: 'pendente',
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Erro interno ao gerar Pix Mercado Pago.',
+      });
+    }
+  });
+
+  app.post('/api/mp-webhook', async (req, res) => {
+    try {
+      const mpToken = (process.env.MP_ACCESS_TOKEN || '').trim();
+      const sbUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '')
+        .trim()
+        .replace(/\/$/, '');
+      const sbServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+      if (!mpToken || !sbUrl || !sbServiceKey) {
+        res.status(503).json({ ok: false, error: 'Configuração do servidor incompleta.' });
+        return;
+      }
+
+      const body = (req.body || {}) as {
+        type?: string;
+        topic?: string;
+        data?: { id?: string | number };
+      };
+      const rawId =
+        body?.data?.id ??
+        (req.query['data.id'] as string | undefined) ??
+        (req.query.id as string | undefined) ??
+        '';
+      const paymentId = String(rawId || '').trim();
+      const eventType = String(body?.type || body?.topic || req.query.topic || '');
+
+      if (!paymentId || (eventType && eventType !== 'payment')) {
+        res.json({ ok: true, ignored: true });
+        return;
+      }
+
+      const secret = (process.env.MP_WEBHOOK_SECRET || '').trim();
+      if (secret) {
+        const xSig = String(req.headers['x-signature'] || '');
+        const xReqId = String(req.headers['x-request-id'] || '');
+        const sigParts = Object.fromEntries(
+          xSig.split(',').map((kv) => {
+            const idx = kv.indexOf('=');
+            return idx === -1
+              ? [kv.trim(), '']
+              : [kv.slice(0, idx).trim(), kv.slice(idx + 1).trim()];
+          })
+        );
+        if (!sigParts.ts || !sigParts.v1) {
+          res.status(401).json({ ok: false, error: 'Assinatura webhook ausente.' });
+          return;
+        }
+        const manifest = `id:${paymentId};request-id:${xReqId};ts:${sigParts.ts};`;
+        const computed = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+        const a = Buffer.from(computed.toLowerCase(), 'utf8');
+        const b = Buffer.from(String(sigParts.v1).toLowerCase(), 'utf8');
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+          res.status(401).json({ ok: false, error: 'Assinatura webhook inválida.' });
+          return;
+        }
+      }
+
+      const mpRes = await fetch(
+        `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
+        {
+          headers: { Authorization: `Bearer ${mpToken}` },
+        }
+      );
+      if (!mpRes.ok) {
+        res.status(502).json({ ok: false, error: 'Falha ao consultar pagamento no Mercado Pago.' });
+        return;
+      }
+
+      const mpPayment = (await mpRes.json()) as { status?: string; id?: number | string };
+      if (mpPayment.status === 'approved') {
+        await fetch(`${sbUrl}/rest/v1/rpc/process_mercadopago_pix_approved`, {
+          method: 'POST',
+          headers: {
+            apikey: sbServiceKey,
+            Authorization: `Bearer ${sbServiceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ p_mp_payment_id: String(mpPayment.id || paymentId) }),
+        });
+      } else if (mpPayment.status === 'cancelled' || mpPayment.status === 'rejected') {
+        await fetch(
+          `${sbUrl}/rest/v1/pagamentos_pix?mp_payment_id=eq.${encodeURIComponent(
+            paymentId
+          )}&status=eq.pendente`,
+          {
+            method: 'PATCH',
+            headers: {
+              apikey: sbServiceKey,
+              Authorization: `Bearer ${sbServiceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status: 'cancelado' }),
+          }
+        );
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Erro no webhook Mercado Pago.',
+      });
+    }
   });
 
   app.get('/api/migration-sql', (_req, res) => {
@@ -238,6 +540,10 @@ async function startServer() {
                       description:
                         'Ação opcional: none, open_wallet, open_games, open_support, forward_to_admin, toggle_night_duty, open_facial_queue, open_settings',
                     },
+                    actionJson: {
+                      type: Type.STRING,
+                      description: 'JSON opcional estruturado com parâmetros da ação no aplicativo.',
+                    },
                   },
                   required: ['reply', 'requiresConfirmation', 'suggestedAction'],
                 },
@@ -261,7 +567,12 @@ async function startServer() {
         throw lastErr;
       }
 
-      let parsed: { reply?: string; requiresConfirmation?: boolean; suggestedAction?: string } = {};
+      let parsed: {
+        reply?: string;
+        requiresConfirmation?: boolean;
+        suggestedAction?: string;
+        actionJson?: string;
+      } = {};
       try {
         parsed = JSON.parse(rawText);
       } catch {
@@ -273,6 +584,7 @@ async function startServer() {
         reply: parsed.reply || 'Estou por aqui! Como posso te ajudar?',
         requiresConfirmation: Boolean(parsed.requiresConfirmation),
         suggestedAction: parsed.suggestedAction || 'none',
+        actionJson: parsed.actionJson || undefined,
       });
     } catch (err) {
       if (isTransientDemandError(err)) {

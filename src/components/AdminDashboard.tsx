@@ -5,7 +5,6 @@ import {
   Bell,
   BellRing,
   Bike,
-  Bot,
   Car,
   Check,
   CheckCircle2,
@@ -33,6 +32,7 @@ import {
   Radio,
   RefreshCw,
   ScanFace,
+  Search,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -45,6 +45,7 @@ import {
   VolumeX,
   Wallet,
   X,
+  Zap,
 } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
 import { fetchAuditLogsFromSupabase } from '../lib/audit';
@@ -52,6 +53,7 @@ import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAsset
 import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import { formatBRL } from '../lib/geo';
 import {
+  adminApprovePagamentoPix,
   adminApproveWalletDeposit,
   adminAssignClientDebt,
   adminConfirmPixRide,
@@ -62,6 +64,7 @@ import {
   adminDeleteUserAccount,
   adminFetchCouponsOverview,
   adminFetchFacialQueue,
+  adminFetchPagamentosPix,
   adminFetchSentNotifications,
   adminGrantCouponToUsers,
   adminPayDriverPix,
@@ -75,6 +78,7 @@ import {
   adminSettleDispute,
   adminToggleCoupon,
   adminTogglePlatformEvent,
+  adminUpdateDriverProfileControl,
   adminUpdateUserStatus,
   adminUpdateUserWalletBalance,
   cancelRide,
@@ -105,8 +109,10 @@ import type {
   AuditLogEntry,
   Coupon,
   DriverFacialVerification,
+  DriverServiceMode,
   NotificationCategory,
   NotificationTargetScope,
+  PagamentoPix,
   PeriodFilter,
   PlatformConfig,
   PlatformEvent,
@@ -124,7 +130,7 @@ import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
-import { MelissaAssistantModal } from './MelissaAssistantModal';
+import { MelissaAssistantModal, MelissaTriggerButton } from './MelissaAssistantModal';
 import migrationDeltaSqlRaw from '../../supabase/migration_incremental_delta.sql?raw';
 import schemaCompleteSqlRaw from '../../supabase/schema_completo.sql?raw';
 
@@ -197,6 +203,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [confirmingPixRideId, setConfirmingPixRideId] = useState<string | null>(null);
   const [processingDepositId, setProcessingDepositId] = useState<string | null>(null);
   const [processingWithdrawalId, setProcessingWithdrawalId] = useState<string | null>(null);
+  const [pagamentosPix, setPagamentosPix] = useState<PagamentoPix[]>([]);
+  const [processingPagamentoPixId, setProcessingPagamentoPixId] = useState<string | null>(null);
   const [copiedWithdrawPixId, setCopiedWithdrawPixId] = useState<string | null>(null);
   const [debtModalClient, setDebtModalClient] = useState<UserProfile | null>(null);
   const [debtAmountInput, setDebtAmountInput] = useState<string>('');
@@ -216,6 +224,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [chatTargetUser, setChatTargetUser] = useState<UserProfile | null>(null);
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<[number, number]>([-23.55052, -46.633308]);
+  const [driverSearchQuery, setDriverSearchQuery] = useState('');
+  const [adminFocusPoint, setAdminFocusPoint] = useState<{
+    lat: number;
+    lng: number;
+    nonce: number;
+    zoom?: number;
+  } | null>(null);
+  const [updatingDriverCtrlId, setUpdatingDriverCtrlId] = useState<string | null>(null);
 
   const [eventTitle, setEventTitle] = useState('');
   const [eventDesc, setEventDesc] = useState('');
@@ -293,6 +309,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setCoupons(couponsRes.coupons);
       setCouponGrants(couponsRes.grants);
       setFacialQueue(facialRes);
+      const profilesMap = new Map(data.users.map((u) => [u.id, u]));
+      const pixRecords = await adminFetchPagamentosPix(profilesMap).catch(() => []);
+      setPagamentosPix(pixRecords);
 
       const firstOnlineWithGps = data.users.find(
         (u) => u.role === 'driver' && u.driver?.is_online && u.driver.current_lat && u.driver.current_lng
@@ -382,6 +401,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'wallet_withdrawals' },
+        () => {
+          loadOverview();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pagamentos_pix' },
         () => {
           loadOverview();
         }
@@ -492,6 +518,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const onlineDriversWithGps = useMemo(
     () => onlineDrivers.filter((d) => Boolean(d.driver?.current_lat && d.driver?.current_lng)),
     [onlineDrivers]
+  );
+
+  const filteredOnlineDrivers = useMemo(() => {
+    const q = driverSearchQuery.trim().toLowerCase();
+    if (!q) return onlineDrivers;
+    return onlineDrivers.filter(
+      (d) =>
+        d.full_name.toLowerCase().includes(q) ||
+        (d.driver?.vehicle_plate || '').toLowerCase().includes(q) ||
+        (d.driver?.vehicle_model || '').toLowerCase().includes(q)
+    );
+  }, [onlineDrivers, driverSearchQuery]);
+
+  const pendingAutoPixCount = useMemo(
+    () =>
+      pagamentosPix.filter(
+        (p) => p.status === 'pendente' && p.metodo_confirmacao === 'mercadopago_auto'
+      ).length,
+    [pagamentosPix]
   );
 
   const clients = useMemo(
@@ -947,6 +992,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showToast(err instanceof Error ? err.message : 'Erro ao estornar solicitação de saque.');
     } finally {
       setProcessingWithdrawalId(null);
+    }
+  };
+
+  const handleApprovePagamentoPix = async (p: PagamentoPix, approve: boolean) => {
+    setProcessingPagamentoPixId(p.id);
+    try {
+      await adminApprovePagamentoPix(p.id, approve);
+      await loadOverview();
+      showToast(
+        approve
+          ? `Pagamento Pix #${p.id.slice(-5)} aprovado e saldo/corrida liberado!`
+          : `Pagamento Pix #${p.id.slice(-5)} cancelado.`
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar pagamento Pix.');
+    } finally {
+      setProcessingPagamentoPixId(null);
+    }
+  };
+
+  const handleUpdateDriverControl = async (
+    driverId: string,
+    patch: { vehicle_type?: 'car' | 'moto' | 'delivery'; service_mode?: DriverServiceMode }
+  ) => {
+    setUpdatingDriverCtrlId(driverId);
+    try {
+      await adminUpdateDriverProfileControl(driverId, patch);
+      await loadOverview();
+      showToast('Configuração operacional do parceiro atualizada!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar modo do motorista.');
+    } finally {
+      setUpdatingDriverCtrlId(null);
+    }
+  };
+
+  const handleLocateDriver = (d: UserProfile) => {
+    if (d.driver?.current_lat && d.driver?.current_lng) {
+      const nextLat = d.driver.current_lat;
+      const nextLng = d.driver.current_lng;
+      setMapCenter([nextLat, nextLng]);
+      setAdminFocusPoint({
+        lat: nextLat,
+        lng: nextLng,
+        nonce: Date.now(),
+        zoom: 16,
+      });
+      showToast(`Localizando ${d.full_name} no mapa ao vivo.`);
+    } else {
+      showToast(`${d.full_name} está sem coordenadas GPS recentes.`);
     }
   };
 
@@ -1512,6 +1607,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="text-[#10B981]">{formatBRL(d.wallet_balance)}</span>
                     </p>
                   </div>
+
+                  {/* Controles rápidos de categoria e modo de atuação */}
+                  <div className="mt-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-2.5 space-y-2">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-extrabold uppercase text-[#475569]">
+                        Categoria:
+                      </span>
+                      <div className="flex gap-1">
+                        {(
+                          [
+                            { id: 'car', label: 'Carro' },
+                            { id: 'moto', label: 'Moto' },
+                            { id: 'delivery', label: 'Entrega' },
+                          ] as const
+                        ).map((vt) => {
+                          const activeVt = (d.driver?.vehicle_type || 'car') === vt.id;
+                          return (
+                            <button
+                              key={vt.id}
+                              type="button"
+                              disabled={updatingDriverCtrlId === d.id}
+                              onClick={() => handleUpdateDriverControl(d.id, { vehicle_type: vt.id })}
+                              className={`rounded-lg px-2 py-1 text-[10px] font-extrabold transition ${
+                                activeVt
+                                  ? 'bg-[#2563EB] text-white shadow-xs'
+                                  : 'bg-white border border-[#E2E8F0] text-[#475569] hover:bg-[#F1F5F9]'
+                              }`}
+                            >
+                              {vt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-extrabold uppercase text-[#475569]">
+                        Atuação:
+                      </span>
+                      <div className="flex gap-1">
+                        {(
+                          [
+                            { id: 'both', label: 'Ambos' },
+                            { id: 'only_passenger', label: 'Só Corridas' },
+                            { id: 'only_delivery', label: 'Só Entregas' },
+                          ] as const
+                        ).map((sm) => {
+                          const activeSm = (d.driver?.service_mode || 'both') === sm.id;
+                          return (
+                            <button
+                              key={sm.id}
+                              type="button"
+                              disabled={updatingDriverCtrlId === d.id}
+                              onClick={() => handleUpdateDriverControl(d.id, { service_mode: sm.id })}
+                              className={`rounded-lg px-2 py-1 text-[10px] font-extrabold transition ${
+                                activeSm
+                                  ? 'bg-[#0F172A] text-white shadow-xs'
+                                  : 'bg-white border border-[#E2E8F0] text-[#475569] hover:bg-[#F1F5F9]'
+                              }`}
+                            >
+                              {sm.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {isDeleting ? (
@@ -1634,9 +1795,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     },
     {
       id: 'payments',
-      label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length + pendingWithdrawals.length})`,
+      label: `Pagamentos & Saldos (${awaitingPixRides.length + pendingDeposits.length + pendingWithdrawals.length + pendingAutoPixCount})`,
       icon: Wallet,
-      badge: awaitingPixRides.length + pendingDeposits.length + pendingWithdrawals.length,
+      badge:
+        awaitingPixRides.length +
+        pendingDeposits.length +
+        pendingWithdrawals.length +
+        pendingAutoPixCount,
     },
     {
       id: 'events',
@@ -1706,15 +1871,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
+            <MelissaTriggerButton
               onClick={() => setMelissaOpen((v) => !v)}
-              className="aurora-accent-flow flex min-h-[42px] items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold text-white shadow-sm active:scale-95 transition"
               title="Assistente Melissa em Tempo Real"
-            >
-              <Bot className="h-4 w-4 shrink-0" />
-              <span>Melissa</span>
-            </button>
+              size="md"
+            />
             <button
               type="button"
               onClick={() => {
@@ -2075,21 +2236,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* Active Section Pill + Quick Drawer Trigger */}
-        <div className="no-print flex items-center justify-between gap-3 rounded-2xl border border-[#E2E8F0] bg-white px-4 py-2.5 shadow-xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <activeNavItem.icon className="h-4 w-4 text-[#2563EB] shrink-0" />
-            <span className="font-display text-sm font-extrabold text-[#0F172A] truncate">
-              {activeNavItem.label}
-            </span>
+        {/* Barra de Navegação Horizontal Rápida (Desktop & Mobile) */}
+        <div className="no-print flex items-center gap-2 rounded-2xl border border-[#E2E8F0] bg-white px-3 py-2 shadow-xs">
+          <div className="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = tab === item.id;
+              return (
+                <button
+                  key={`top-tab-${item.id}`}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold whitespace-nowrap transition-colors duration-200 ${
+                    active
+                      ? 'aurora-accent-flow text-white shadow-xs'
+                      : 'bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-[#F1F5F9] border border-[#E2E8F0] px-3 text-xs font-extrabold text-[#0F172A] hover:bg-[#E2E8F0]"
+            className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-[#F1F5F9] border border-[#E2E8F0] px-3 text-xs font-extrabold text-[#0F172A] hover:bg-[#E2E8F0]"
           >
             <Menu className="h-3.5 w-3.5" />
-            <span>Menu</span>
+            <span className="hidden sm:inline">Menu</span>
           </button>
         </div>
 
@@ -2112,6 +2288,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <LiveMap
                   center={mapCenter}
                   nearbyDrivers={onlineDriversWithGps}
+                  focusPoint={adminFocusPoint}
                   controlsTopClassName="top-4"
                 />
               </div>
@@ -2128,13 +2305,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </span>
                 </div>
 
-                {onlineDrivers.length === 0 ? (
+                {/* Localizar motorista online pelo nome ou placa */}
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#64748B]" />
+                  <input
+                    type="text"
+                    value={driverSearchQuery}
+                    onChange={(e) => setDriverSearchQuery(e.target.value)}
+                    placeholder="Localizar motorista online por nome ou placa..."
+                    className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-xs font-semibold text-[#0F172A] placeholder:text-[#64748B] outline-none focus:border-[#2563EB] focus:bg-white"
+                  />
+                </div>
+
+                {filteredOnlineDrivers.length === 0 ? (
                   <p className="py-6 text-center text-xs text-[#475569]">
-                    Nenhum motorista ou entregador online neste momento.
+                    {driverSearchQuery.trim()
+                      ? 'Nenhum motorista online encontrado com esse nome.'
+                      : 'Nenhum motorista ou entregador online neste momento.'}
                   </p>
                 ) : (
                   <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                    {onlineDrivers.map((d) => (
+                    {filteredOnlineDrivers.map((d) => (
                       <div
                         key={d.id}
                         className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3 flex items-center justify-between gap-2"
@@ -2157,14 +2348,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {d.driver?.current_lat && d.driver?.current_lng && (
                             <button
                               type="button"
-                              onClick={() =>
-                                setMapCenter([
-                                  d.driver!.current_lat!,
-                                  d.driver!.current_lng!,
-                                ])
-                              }
+                              onClick={() => handleLocateDriver(d)}
                               className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-[#E2E8F0] text-[#2563EB] hover:bg-[#EFF6FF]"
-                              title="Focar no mapa"
+                              title="Localizar no mapa"
                             >
                               <MapPin className="h-4 w-4" />
                             </button>
@@ -2557,6 +2743,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 5: PAGAMENTOS, CONTA PIX DO DONO & REPASSES POR MOTORISTA/ENTREGADOR */}
         {tab === 'payments' && (
           <section className="mt-5 space-y-6">
+            {/* Central Unificada pagamentos_pix (Pix Automático Mercado Pago vs Pix Manual) */}
+            <div className="rounded-3xl border border-[#E2E8F0] bg-white p-5 space-y-4 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display text-lg font-extrabold text-[#0F172A] flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-[#10B981]" />
+                    Central Pix Automático (Mercado Pago 24h) &amp; Manual ({pagamentosPix.length})
+                  </h2>
+                  <p className="text-xs text-[#475569]">
+                    Pagamentos via Mercado Pago são aprovados automaticamente via webhook; você também pode aprovar ou cancelar manualmente abaixo.
+                  </p>
+                </div>
+              </div>
+
+              {pagamentosPix.length === 0 ? (
+                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-6 text-center text-xs font-semibold text-[#475569]">
+                  Nenhum registro recente na tabela pagamentos_pix.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {pagamentosPix.slice(0, 30).map((p) => {
+                    const isBusy = processingPagamentoPixId === p.id;
+                    const isAuto = p.metodo_confirmacao === 'mercadopago_auto';
+                    return (
+                      <div
+                        key={p.id}
+                        className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 flex flex-wrap items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-extrabold text-[#0F172A]">
+                              {p.usuario?.full_name || 'Usuário'}
+                            </span>
+                            <span
+                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase ${
+                                isAuto
+                                  ? 'bg-[#D1FAE5] text-[#059669]'
+                                  : 'bg-[#DBEAFE] text-[#1D4ED8]'
+                              }`}
+                            >
+                              {isAuto ? 'Auto Mercado Pago' : 'Manual Admin'}
+                            </span>
+                            <span className="rounded-md bg-white border border-[#E2E8F0] px-1.5 py-0.5 text-[10px] font-bold text-[#475569] uppercase">
+                              {p.tipo}
+                            </span>
+                            <span
+                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase ${
+                                p.status === 'aprovado'
+                                  ? 'bg-[#10B981] text-white'
+                                  : p.status === 'pendente'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              {p.status}
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-mono-num text-[#475569]">
+                            {formatBRL(p.valor)} · {new Date(p.criado_em).toLocaleString('pt-BR')}
+                            {p.mp_payment_id ? ` · MP #${p.mp_payment_id}` : ''}
+                          </p>
+                        </div>
+
+                        {p.status === 'pendente' && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleApprovePagamentoPix(p, false)}
+                              className="min-h-[34px] rounded-xl border border-red-200 bg-white px-3 text-[11px] font-bold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleApprovePagamentoPix(p, true)}
+                              className="min-h-[34px] rounded-xl bg-[#10B981] hover:bg-[#059669] px-3 text-[11px] font-extrabold text-white disabled:opacity-60"
+                            >
+                              {isBusy ? 'Processando...' : 'Aprovar Pix'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Fila de Confirmação Pix Recebido (Libera o Motorista em Tempo Real) */}
             <div className="rounded-3xl border border-[#E2E8F0] bg-white p-5 space-y-4 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4310,6 +4586,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )}
                 </div>
 
+                {/* Modos de Pagamento Pix (Automático Mercado Pago vs Manual Admin) */}
+                <div className="rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-3.5 space-y-2.5">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-[#059669]">
+                    <Zap className="h-4 w-4 shrink-0" />
+                    <span>Gateway Pix Automático &amp; Manual</span>
+                  </div>
+                  <label className="flex items-center justify-between cursor-pointer gap-2 rounded-xl bg-white/90 border border-[#A7F3D0] px-3 py-2">
+                    <div>
+                      <p className="text-xs font-extrabold text-[#0F172A]">
+                        Pix Automático 24h (Mercado Pago)
+                      </p>
+                      <p className="text-[11px] text-[#475569]">
+                        Gera QR Code real e credita via webhook 24h sem depender do Admin.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={platformConfig.mp_auto_pix_enabled !== false}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          mp_auto_pix_enabled: e.target.checked,
+                        }))
+                      }
+                      className="h-5 w-5 accent-[#10B981] shrink-0"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between cursor-pointer gap-2 rounded-xl bg-white/90 border border-[#E2E8F0] px-3 py-2">
+                    <div>
+                      <p className="text-xs font-extrabold text-[#0F172A]">
+                        Pix Manual (Chave do Admin)
+                      </p>
+                      <p className="text-[11px] text-[#475569]">
+                        Mantém opção de envio para sua chave Pix com conferência manual.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={platformConfig.manual_pix_enabled !== false}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          manual_pix_enabled: e.target.checked,
+                        }))
+                      }
+                      className="h-5 w-5 accent-[#2563EB] shrink-0"
+                    />
+                  </label>
+                  <p className="text-[10px] font-semibold text-[#047857]">
+                    Endpoint Webhook Mercado Pago: <span className="font-mono-num font-bold">/api/mp-webhook</span>
+                  </p>
+                </div>
+
                 <label className="flex items-center justify-between rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 py-3 cursor-pointer">
                   <div>
                     <p className="text-xs font-extrabold text-[#0F172A]">Modo Manutenção</p>
@@ -5577,8 +5906,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onlineDriversCount={onlineDrivers.length}
           adminUsers={users}
           adminRides={rides}
-          adminStatsSummary={`Corridas ativas: ${metrics.activeRidesCount}, Depósitos Pix pendentes: ${pendingDeposits.length}, Saques pendentes: ${pendingWithdrawals.length}, Fila facial: ${facialQueue.length}, Motoristas online: ${onlineDrivers.length}`}
+          adminStatsSummary={`Corridas ativas: ${metrics.activeRidesCount}, Depósitos Pix pendentes: ${pendingDeposits.length}, Saques pendentes: ${pendingWithdrawals.length}, Pix Auto pendentes: ${pendingAutoPixCount}, Fila facial: ${facialQueue.length}, Motoristas online: ${onlineDrivers.length}`}
           onClose={() => setMelissaOpen(false)}
+          onLogout={onLogout}
           onOpenFacialQueue={() => {
             setMelissaOpen(false);
             setFacialModalOpen(true);
@@ -5589,6 +5919,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             else if (act === 'open_wallet' || act === 'payments') setTab('payments');
             else if (act === 'drivers') setTab('drivers');
             else if (act === 'infra') setTab('infra');
+          }}
+          onMelissaLocateDriver={(driver) => {
+            setTab('livemap');
+            handleLocateDriver(driver);
+            setMelissaOpen(false);
+          }}
+          onMelissaToggleBlockUser={async (user, block) => {
+            await adminUpdateUserStatus(user.id, block ? 'suspended' : 'active');
+            await loadOverview();
+            showToast(
+              block
+                ? `${user.full_name} bloqueado pela Melissa.`
+                : `${user.full_name} desbloqueado pela Melissa.`
+            );
+          }}
+          onMelissaSwitchAdminTab={(tabName) => {
+            const allowed: AdminTab[] = [
+              'livemap',
+              'drivers',
+              'deliverers',
+              'clients',
+              'rides',
+              'payments',
+              'events',
+              'notifications',
+              'coupons',
+              'pricing',
+              'audit',
+              'infra',
+            ];
+            if (allowed.includes(tabName as AdminTab)) {
+              setTab(tabName as AdminTab);
+              setMelissaOpen(false);
+            }
           }}
         />
       )}

@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowUp,
   Banknote,
   Bell,
   Bike,
-  Bot,
   Car,
   Check,
   CheckCircle2,
@@ -79,7 +78,7 @@ import {
   markNotificationRead,
   markRideArrived,
   reportRideUnpaid,
-  rideMatchesDriverVehicle,
+  rideMatchesDriverProfile,
   startRideWithPin,
   switchDriverActiveVehicle,
   toggleDriverOnlineStatus,
@@ -121,8 +120,7 @@ import type {
 } from '../types/mobility';
 import { AccountSettingsModal, type SettingsSection } from './AccountSettingsModal';
 import { DriverFacialVerificationModal } from './DriverFacialVerificationModal';
-import { GamesHub3D } from './games3d/GamesHub3D';
-import { MelissaAssistantModal } from './MelissaAssistantModal';
+import { MelissaAssistantModal, MelissaTriggerButton } from './MelissaAssistantModal';
 import { AvatarImage } from './AvatarImage';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
@@ -133,6 +131,10 @@ import { RatingModal } from './RatingModal';
 import { Receipt66PayModal } from './Receipt66PayModal';
 import { RideChatModal } from './RideChatModal';
 import { SlideToConfirm } from './SlideToConfirm';
+
+const LazyGamesHub3D = React.lazy(() =>
+  import('./games3d/GamesHub3D').then((m) => ({ default: m.GamesHub3D }))
+);
 
 interface DriverViewProps {
   currentUser: UserProfile;
@@ -398,20 +400,19 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
   const incomingRide = useMemo(() => {
     if (!isOnline || activeRide || currentUser.status !== 'active') return null;
-    const activeVehicleType = currentUser.driver?.vehicle_type;
     return (
       rides.find(
         (r) =>
           r.status === 'searching' &&
           !declinedRideIds.includes(r.id) &&
-          rideMatchesDriverVehicle(r.category, activeVehicleType)
+          rideMatchesDriverProfile(r.category, currentUser.driver)
       ) || null
     );
   }, [
     isOnline,
     activeRide,
     currentUser.status,
-    currentUser.driver?.vehicle_type,
+    currentUser.driver,
     rides,
     declinedRideIds,
   ]);
@@ -936,8 +937,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
 
   const handleAcceptRide = async (rideId: string) => {
     const candidate = rides.find((r) => r.id === rideId);
-    if (candidate && !rideMatchesDriverVehicle(candidate.category, currentUser.driver?.vehicle_type)) {
-      setStatusError('Esta solicitação não corresponde ao veículo ativo selecionado.');
+    if (candidate && !rideMatchesDriverProfile(candidate.category, currentUser.driver)) {
+      setStatusError('Esta solicitação não corresponde ao veículo ou modalidade ativos.');
       return;
     }
     setStatusError(null);
@@ -1400,10 +1401,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
         }}
       />
 
-      {/* NORMAL IDLE TOP BAR — HIDDEN IN IMMERSIVE NAVIGATION OR CLEAN MAP MODE */}
+      {/* NORMAL IDLE TOP BAR — ULTRA CLEAN WITH ONLY ESSENTIAL CONTROLS */}
       {!activeRide && !idleCleanMap && (
-        <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] flex items-center justify-between gap-1.5 sm:gap-2 px-3 sm:px-4 pt-safe py-3">
-          <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="pointer-events-none fixed top-0 left-0 right-0 z-[600] flex items-center justify-between gap-2 px-3 sm:px-4 pt-safe py-3">
+          <div className="pointer-events-auto flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
@@ -1428,37 +1429,19 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 </span>
               )}
             </button>
-            <button
-              type="button"
+            <MelissaTriggerButton
               onClick={() => setMelissaOpen((v) => !v)}
-              className="aurora-accent-flow flex h-11 items-center gap-1 rounded-2xl px-2.5 sm:px-3 text-xs font-extrabold text-white shadow-lg active:scale-95 transition"
-              aria-label="Assistente Melissa"
               title="Assistente Melissa"
-            >
-              <Bot className="h-4 w-4 shrink-0" />
-              <span className="hidden xs:inline">Melissa</span>
-            </button>
+              size="md"
+              className="h-11 w-11"
+            />
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              loadFinancePanel();
-              setFinanceOpen(true);
-            }}
-            className="pointer-events-auto flex min-h-[44px] min-w-0 max-w-[150px] sm:max-w-none items-center gap-1.5 rounded-full bg-white px-3 sm:px-4 text-[#0F172A] shadow-xl border border-[#E2E8F0] active:scale-95 transition"
-          >
-            <Wallet className="h-4 w-4 text-[#10B981] shrink-0" />
-            <span className="font-mono-num text-xs sm:text-sm font-extrabold text-[#10B981] truncate">
-              {formatBRL(currentUser.wallet_balance)}
-            </span>
-          </button>
 
           <button
             type="button"
             disabled={togglingOnline || currentUser.status !== 'active'}
             onClick={toggleOnline}
-            className={`pointer-events-auto flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3.5 sm:px-4 text-xs font-extrabold shadow-lg transition active:scale-95 disabled:opacity-50 ${
+            className={`pointer-events-auto flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-4 text-xs font-extrabold shadow-lg transition active:scale-95 disabled:opacity-50 ${
               isOnline ? 'bg-[#10B981] text-white' : 'aurora-accent-flow text-white'
             }`}
           >
@@ -1963,21 +1946,13 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-4">
-                <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h3 className="font-display text-base font-extrabold text-[#0F172A]">
                     {isOnline ? `${t.online}!` : t.offline}
                   </h3>
                   <p className="mt-0.5 text-xs text-[#475569]">
                     {isOnline ? t.waiting_rides_region : t.tap_connect_hint}
-                  </p>
-                  <p className="mt-1.5 text-xs font-bold text-[#475569] font-mono-num">
-                    {currentUser.driver?.vehicle_type === 'moto'
-                      ? 'Moto'
-                      : currentUser.driver?.vehicle_type === 'delivery'
-                      ? 'Entregador'
-                      : 'Carro'}{' '}
-                    · {currentUser.driver?.vehicle_model} · {currentUser.driver?.vehicle_plate}
                   </p>
                 </div>
                 <button
@@ -1994,256 +1969,112 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 </button>
               </div>
 
-              {/* Active Vehicle Switcher (Strict Filtering: Moto only sees Moto, Carro only sees Carro) */}
-              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-extrabold text-[#0F172A]">
-                    {t.active_vehicle_filter}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettingsInitialSection('vehicle');
-                      setSettingsOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-1 text-[10px] font-extrabold text-[#2563EB]"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {t.vehicles_btn}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-                  {driverVehicles.map((veh) => {
-                    const selected = veh.id === activeVehicleId;
-                    const VehIcon =
-                      veh.vehicle_type === 'moto'
-                        ? Bike
-                        : veh.vehicle_type === 'delivery'
-                        ? Package
-                        : Car;
-                    const vehKind =
-                      veh.vehicle_type === 'moto'
-                        ? 'Moto'
-                        : veh.vehicle_type === 'delivery'
-                        ? 'Entrega'
-                        : 'Carro';
-                    return (
-                      <button
-                        key={veh.id}
-                        type="button"
-                        disabled={Boolean(switchingVehicleId)}
-                        onClick={() => void handleSwitchActiveVehicle(veh.id)}
-                        className={`flex min-h-[42px] shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition ${
-                          selected
-                            ? 'border-[#2563EB] bg-[#2563EB] text-white shadow-xs'
-                            : 'border-[#E2E8F0] bg-white text-[#0F172A]'
-                        }`}
-                      >
-                        <VehIcon className="h-4 w-4 shrink-0" />
-                        <div className="min-w-0 leading-tight">
-                          <span className="block text-[11px] font-extrabold whitespace-nowrap">
-                            {vehKind} · {veh.vehicle_plate}
-                          </span>
-                          <span
-                            className={`block text-[10px] truncate max-w-[130px] ${
-                              selected ? 'text-blue-100' : 'text-[#475569]'
-                            }`}
-                          >
-                            {veh.vehicle_model}
-                          </span>
-                        </div>
-                        {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {relevantEvents.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setEventsOpen(true)}
-                  className="flex min-h-[44px] w-full items-center justify-between rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-3.5 py-2 text-left"
-                >
-                  <span className="flex items-center gap-2 text-xs font-extrabold text-[#2563EB] truncate">
-                    <Sparkles className="h-4 w-4 shrink-0 text-[#2563EB]" />
-                    Evento ativo: {relevantEvents[0].title}
-                    {relevantEvents[0].bonus_amount > 0 &&
-                      ` (+${formatBRL(relevantEvents[0].bonus_amount)})`}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-[#2563EB] shrink-0" />
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  loadFinancePanel();
-                  setFinanceOpen(true);
-                }}
-                className="w-full rounded-2xl bg-[#F4F6F9] px-3.5 py-3 border border-[#E2E8F0] hover:border-[#2563EB] transition text-left space-y-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-xs font-extrabold text-[#0F172A]">
-                    <Wallet className="h-4 w-4 text-[#10B981] shrink-0" />
-                    <span>{t.earnings_center}</span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-[#475569] shrink-0" />
-                </div>
-                <div className="grid grid-cols-2 gap-2 border-t border-[#E2E8F0] pt-2">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-bold text-[#475569]">{t.to_receive_gopay}</p>
-                    <p className="font-mono-num text-xs font-extrabold text-[#10B981] truncate">
-                      {formatBRL(financeSummary.pendingToReceive)}
-                    </p>
-                  </div>
-                  <div className="min-w-0 border-l border-[#E2E8F0] pl-2.5">
-                    <p className="text-[10px] font-bold text-[#475569]">{t.in_cash_label}</p>
-                    <p className="font-mono-num text-xs font-extrabold text-[#0F172A] truncate">
-                      {formatBRL(financeSummary.totalCashCollected)}
-                    </p>
-                  </div>
-                </div>
-              </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => openDriverWallet('withdraw')}
-                  className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] px-3 text-xs font-extrabold text-[#059669] hover:bg-[#D1FAE5] active:scale-[0.98] transition whitespace-nowrap"
-                >
-                  <Wallet className="h-3.5 w-3.5" />
-                  <span>{t.withdraw}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openDriverWallet('transfer')}
-                  className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-[#F1F5F9] border border-[#E2E8F0] px-3 text-xs font-extrabold text-[#0F172A] hover:bg-[#E2E8F0] active:scale-[0.98] transition whitespace-nowrap"
-                >
-                  <ChevronRight className="h-3.5 w-3.5 text-[#2563EB]" />
-                  <span>{t.transfer}</span>
-                </button>
-              </div>
-
-              {/* Navegação Livre no Mapa (Disponível somente fora de corrida ativa) */}
-              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3 space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFreeNavOpen((v) => !v)}
-                    className="flex min-w-0 items-center gap-2 text-left text-xs font-extrabold text-[#0F172A]"
-                  >
-                    <Navigation className="h-4 w-4 shrink-0 text-[#2563EB]" />
-                    <span className="truncate">Navegação Livre (Sem corrida)</span>
-                  </button>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    {freeNavDest && (
-                      <button
-                        type="button"
-                        onClick={clearFreeNav}
-                        className="min-h-[34px] whitespace-nowrap rounded-lg bg-red-50 border border-red-200 px-2.5 py-1 text-[11px] font-bold text-red-700"
-                      >
-                        Limpar rota
-                      </button>
-                    )}
+              {(freeNavOpen || Boolean(freeNavDest)) && (
+                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-xs font-extrabold text-[#0F172A]">
+                      <Navigation className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                      <span>Navegação Livre</span>
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setFreeNavOpen((v) => !v)}
-                      className="min-h-[34px] whitespace-nowrap rounded-lg bg-white border border-[#E2E8F0] px-2.5 py-1 text-[11px] font-bold text-[#2563EB]"
+                      onClick={() => {
+                        clearFreeNav();
+                        setFreeNavOpen(false);
+                      }}
+                      className="rounded-lg bg-white border border-[#E2E8F0] px-2.5 py-1 text-[11px] font-bold text-[#475569] hover:text-[#0F172A]"
                     >
-                      {freeNavOpen ? 'Ocultar' : 'Buscar endereço'}
+                      Fechar
                     </button>
                   </div>
-                </div>
 
-                {freeNavOpen && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5">
-                      <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#475569]" />
-                        <input
-                          type="text"
-                          value={freeNavQuery}
-                          onChange={(e) => setFreeNavQuery(e.target.value)}
-                          placeholder="Buscar rua, bairro ou ponto de apoio..."
-                          className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white pl-8 pr-3 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
-                        />
+                  {freeNavOpen && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative flex-1">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#475569]" />
+                          <input
+                            type="text"
+                            value={freeNavQuery}
+                            onChange={(e) => setFreeNavQuery(e.target.value)}
+                            placeholder="Buscar rua, bairro ou ponto de apoio..."
+                            className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white pl-8 pr-3 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFreeNavPickMode((v) => !v)}
+                          className={`min-h-[40px] shrink-0 whitespace-nowrap rounded-xl px-2.5 text-[11px] font-extrabold transition ${
+                            freeNavPickMode
+                              ? 'aurora-accent-flow text-white'
+                              : 'bg-white text-[#0F172A] border border-[#E2E8F0]'
+                          }`}
+                          title="Toque no mapa para definir destino"
+                        >
+                          {freeNavPickMode ? 'Toque no mapa...' : 'No mapa'}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setFreeNavPickMode((v) => !v)}
-                        className={`min-h-[40px] shrink-0 whitespace-nowrap rounded-xl px-2.5 text-[11px] font-extrabold transition ${
-                          freeNavPickMode
-                            ? 'aurora-accent-flow text-white'
-                            : 'bg-white text-[#0F172A] border border-[#E2E8F0]'
-                        }`}
-                        title="Toque no mapa para definir destino"
-                      >
-                        {freeNavPickMode ? 'Toque no mapa...' : 'No mapa'}
-                      </button>
-                    </div>
 
-                    {freeNavSearching && (
-                      <p className="text-[11px] text-[#475569]">
-                        Buscando endereços...
-                      </p>
-                    )}
+                      {freeNavSearching && (
+                        <p className="text-[11px] text-[#475569]">Buscando endereços...</p>
+                      )}
 
-                    {freeNavSuggestions.length > 0 && (
-                      <div className="max-h-36 overflow-y-auto rounded-xl border border-[#E2E8F0] bg-white divide-y divide-[#E2E8F0]">
-                        {freeNavSuggestions.map((s, idx) => (
-                          <button
-                            key={`${s.lat}-${s.lng}-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              void selectFreeNavDestination({
-                                lat: s.lat,
-                                lng: s.lng,
-                                address: s.address,
-                              });
-                            }}
-                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs text-[#0F172A] hover:bg-[#F4F6F9]"
-                          >
-                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2563EB]" />
-                            <div className="min-w-0 flex-1">
-                              <span className="block truncate font-semibold text-[#0F172A]">
-                                {s.address}
-                              </span>
-                              {s.subtitle && (
-                                <span className="block truncate text-[10px] text-[#475569]">
-                                  {s.subtitle}
+                      {freeNavSuggestions.length > 0 && (
+                        <div className="max-h-36 overflow-y-auto rounded-xl border border-[#E2E8F0] bg-white divide-y divide-[#E2E8F0]">
+                          {freeNavSuggestions.map((s, idx) => (
+                            <button
+                              key={`${s.lat}-${s.lng}-${idx}`}
+                              type="button"
+                              onClick={() => {
+                                void selectFreeNavDestination({
+                                  lat: s.lat,
+                                  lng: s.lng,
+                                  address: s.address,
+                                });
+                              }}
+                              className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs text-[#0F172A] hover:bg-[#F4F6F9]"
+                            >
+                              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2563EB]" />
+                              <div className="min-w-0 flex-1">
+                                <span className="block truncate font-semibold text-[#0F172A]">
+                                  {s.address}
                                 </span>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {freeNavDest && freeNavRouteInfo && (
-                  <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-[#E2E8F0] px-3 py-2 text-[11px]">
-                    <div className="min-w-0">
-                      <p className="font-bold text-[#0F172A] truncate">
-                        {freeNavDest.address}
-                      </p>
-                      <p className="font-mono-num text-[#2563EB] font-bold">
-                        {freeNavRouteInfo.distanceKm} km · ~{freeNavRouteInfo.durationMin} min
-                      </p>
+                                {s.subtitle && (
+                                  <span className="block truncate text-[10px] text-[#475569]">
+                                    {s.subtitle}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <a
-                      href={buildGoogleMapsDirectionsUrl(freeNavDest.lat, freeNavDest.lng)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg aurora-accent-flow px-2.5 py-1.5 text-[11px] font-extrabold text-white"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Maps
-                    </a>
-                  </div>
-                )}
-              </div>
+                  )}
+
+                  {freeNavDest && freeNavRouteInfo && (
+                    <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-[#E2E8F0] px-3 py-2 text-[11px]">
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#0F172A] truncate">
+                          {freeNavDest.address}
+                        </p>
+                        <p className="font-mono-num text-[#2563EB] font-bold">
+                          {freeNavRouteInfo.distanceKm} km · ~{freeNavRouteInfo.durationMin} min
+                        </p>
+                      </div>
+                      <a
+                        href={buildGoogleMapsDirectionsUrl(freeNavDest.lat, freeNavDest.lng)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg aurora-accent-flow px-2.5 py-1.5 text-[11px] font-extrabold text-white"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Maps
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2975,6 +2806,63 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setSettingsInitialSection('vehicle');
+                  setSettingsOpen(true);
+                  setMenuOpen(false);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F172A] hover:bg-[#F4F6F9]"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <Car className="h-5 w-5 text-[#2563EB] shrink-0" />
+                  <span className="truncate">
+                    Veículos & Modalidade ({driverVehicles.length})
+                  </span>
+                </span>
+                <ChevronRight className="h-4 w-4 text-[#475569] shrink-0" />
+              </button>
+
+              {driverVehicles.length > 1 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto px-2 py-1.5">
+                  {driverVehicles.map((veh) => {
+                    const selected = veh.id === activeVehicleId;
+                    return (
+                      <button
+                        key={veh.id}
+                        type="button"
+                        disabled={Boolean(switchingVehicleId)}
+                        onClick={() => void handleSwitchActiveVehicle(veh.id)}
+                        className={`shrink-0 rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold transition ${
+                          selected
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'bg-[#F4F6F9] text-[#0F172A] border-[#E2E8F0]'
+                        }`}
+                      >
+                        {veh.vehicle_model} · {veh.vehicle_plate}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFreeNavOpen(true);
+                  setIdleCleanMap(false);
+                  setMenuOpen(false);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-semibold text-[#0F172A] hover:bg-[#F4F6F9]"
+              >
+                <span className="flex items-center gap-3">
+                  <Navigation className="h-5 w-5 text-[#2563EB]" />
+                  Navegação Livre (Mapa)
+                </span>
+                <ChevronRight className="h-4 w-4 text-[#475569]" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   loadFinancePanel();
                   setFinanceOpen(true);
                   setMenuOpen(false);
@@ -3679,14 +3567,33 @@ export const DriverView: React.FC<DriverViewProps> = ({
             setSettingsInitialSection('menu');
             setSettingsOpen(true);
           }}
+          onLogout={onLogout}
+          onMelissaToggleOnline={async (targetOnline) => {
+            const desired = targetOnline === undefined ? !isOnline : targetOnline;
+            if (desired) {
+              if (currentUser.status !== 'active') {
+                return 'Sua conta ainda não está ativa para ficar online.';
+              }
+              if (!isOnline) {
+                setFacialModalOpen(true);
+                return 'Abri a verificação facial para liberar você online com segurança!';
+              }
+              return 'Você já está online recebendo solicitações!';
+            } else {
+              await performGoOnline(false);
+              return 'Pronto! Você ficou offline e pausou novas chamadas.';
+            }
+          }}
         />
       )}
 
       {gamesOpen && (
-        <GamesHub3D
-          open={gamesOpen}
-          onClose={() => setGamesOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <LazyGamesHub3D
+            open={gamesOpen}
+            onClose={() => setGamesOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   );
