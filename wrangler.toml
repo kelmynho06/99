@@ -13,12 +13,4 @@ wrangler.toml
 
 
 {
-  // ...
-  "vars": {
-    "MP_ACCESS_TOKEN": "APP_USR-6874106225978315-112715-b6d588698b8b9aebb412861745913774-3457816710",
-    "MP_WEBHOOK_SECRET": "af87172741738d39aa400cc9c550fd447315971f989b9c846b38a67985e7f92a",
-    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvbmVtbGtnYW94b2xhanJjbmhhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5NDU5MjE5MSwiZXhwIjoyMTEwMTY4MTkxfQ.UP64WPTDZkvinxdw6ZzwWPtiQxJEJpVx9-XdInouiv4",
-    "SUPABASE_URL": "https://qonemlkgaoxolajrcnha.supabase.co"
-  },
-  // ...
-}
+  
