@@ -1,4 +1,4 @@
-name = "99"
+name = "godriver-mobilidade"
 main = "worker/mercadopago-pix-worker.ts"
 compatibility_date = "2026-04-01"
 
