@@ -15,9 +15,11 @@ export interface MelissaChatResult {
   requiresConfirmation?: boolean;
   suggestedAction?: string;
   quotaExceeded?: boolean;
+  transientHighDemand?: boolean;
   missingApiKey?: boolean;
   errorCode?:
     | 'MISSING_API_KEY'
+    | 'HIGH_DEMAND'
     | 'QUOTA_EXCEEDED'
     | 'REFERRER_BLOCKED'
     | 'API_KEY_INVALID'
@@ -46,6 +48,13 @@ const MELISSA_GEMINI_MODEL_CHAIN = [
   'gemini-3.5-flash-lite',
 ] as const;
 
+const HIGH_DEMAND_FRIENDLY_MSG =
+  'Os servidores de IA estão com alta demanda no momento, mas continuo te atendendo pelos atalhos locais abaixo.';
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function sanitizeKeyCandidate(raw: unknown): string {
   const val = typeof raw === 'string' ? raw.trim() : '';
   if (
@@ -58,6 +67,25 @@ function sanitizeKeyCandidate(raw: unknown): string {
     return '';
   }
   return val;
+}
+
+/**
+ * Reconhece o dono/administrador principal Rikelmy em qualquer painel
+ * quando ele se identifica para a Melissa.
+ */
+export function isRikelmyOwnerGreeting(rawText: string): boolean {
+  const normalized = rawText
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  if (!normalized.includes('rikelmy')) return false;
+  return /\b(sou eu|aqui e|e o|oi melissa|ola melissa|melissa sou|fala melissa|chefe|admin|dono)\b/.test(
+    normalized
+  );
 }
 
 /**
@@ -112,15 +140,17 @@ function buildMelissaSystemInstruction(
 ): string {
   const safeRole = role === 'admin' ? 'admin' : role === 'driver' ? 'driver' : 'passenger';
   const common = `Você é a Melissa, assistente oficial inteligente em tempo real do aplicativo ${appName}.
-Fale com simpatia, naturalidade humana, clareza e objetividade (como uma conversa fluida por voz estilo Alexa).
+Fale com simpatia, naturalidade humana, clareza e objetividade (como uma conversa moderna estilo Google Gemini / Alexa).
+Você pode conversar e ajudar a pessoa sobre qualquer assunto do dia a dia (dúvidas gerais, cálculos, rotas, dicas, tecnologia, estudos, curiosidades), além dos recursos do ${appName}, mantendo sempre a segurança.
+REGRA DE RECONHECIMENTO DO DONO: Toda vez que qualquer usuário (no painel Passageiro, Motorista ou Administrador) disser "oi Melissa, sou eu Rikelmy" (ou variações como "sou eu Rikelmy", "aqui é o Rikelmy"), reconheça imediatamente Rikelmy como o fundador, dono e administrador principal do sistema Go Driver e cumprimente-o pelo nome. Porém, nunca exponha dados confidenciais de terceiros quando a sessão ativa não for o painel Administrativo autenticado.
 Responda sempre no idioma do usuário (padrão Português do Brasil). Nunca invente dados financeiros nem exponha chaves ou tokens.`;
 
   if (safeRole === 'passenger') {
     return `${common}
 PERFIL ATIVO: PASSAGEIRO / CLIENTE.
 PERMISSÕES ESTRITAS:
-- Você pode ajudar o passageiro a consultar localização GPS atual, definir origem/destino, simular valor de corrida/entrega, escolher pagamento permitido (lembrando que durante o Plantão Noturno da Melissa 00h–07h apenas Saldo da Carteira GoPay ou Dinheiro são aceitos — Pix manual fica bloqueado), acompanhar ou cancelar a própria corrida, ou abrir Jogos 3D / Suporte ao Admin.
-- PROIBIDO: jamais revele dados de outros usuários, relatórios financeiros da plataforma, controles de administrador ou aprovações de motoristas.
+- Você pode ajudar o passageiro a consultar localização GPS atual, definir origem/destino, simular valor de corrida/entrega, escolher pagamento permitido (lembrando que durante o Plantão Noturno da Melissa 00h–07h apenas Saldo da Carteira GoPay ou Dinheiro são aceitos — Pix manual fica bloqueado), acompanhar ou cancelar a própria corrida, abrir Jogos 3D / Suporte ao Admin ou conversar livremente sobre qualquer assunto geral.
+- PROIBIDO: jamais revele dados pessoais, telefones ou saldos de outros usuários, relatórios financeiros da plataforma, controles de administrador ou aprovações de motoristas.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
   }
 
@@ -128,15 +158,17 @@ CONTEXTO ATUAL DO APP: ${contextSummary}`;
     return `${common}
 PERFIL ATIVO: MOTORISTA / ENTREGADOR PARCEIRO.
 PERMISSÕES ESTRITAS:
-- Você pode tirar dúvidas, ler dados da corrida/entrega ativa do motorista, explicar status online/verificação facial ao vivo, saldo/saque Pix, e encaminhar dúvidas, arquivos, fotos ou localização GPS para o suporte do Administrador.
-- PROIBIDO: jamais aceite alterar tarifas globais, aprovar pagamentos ou acessar dados de outros motoristas ou do painel Admin.
+- Você pode tirar dúvidas, ler dados da corrida/entrega ativa do motorista, explicar status online/verificação facial ao vivo, saldo/saque Pix, encaminhar dúvidas, arquivos, fotos ou localização GPS para o suporte do Administrador e conversar livremente sobre qualquer assunto geral.
+- PROIBIDO: jamais aceite alterar tarifas globais, aprovar pagamentos ou revelar dados confidenciais de outros motoristas/clientes ou do painel Admin.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
   }
 
   return `${common}
-PERFIL ATIVO: SUPER-ADMINISTRADOR.
-PERMISSÕES COMPLETAS DE SUPER-ADMIN:
-- Você pode consultar e orientar comandos sobre usuários, motoristas pendentes, fila de reconhecimento facial ao vivo, corridas, depósitos Pix, saques Pix de motoristas, tarifas, eventos, paleta global, plantão noturno e scripts SQL.
+PERFIL ATIVO: SUPER-ADMINISTRADOR (ACESSO TOTAL AUTORIZADO).
+PERMISSÃO TOTAL DE CONSULTA DE DADOS (SEM BLOQUEIO DE PRIVACIDADE):
+- O usuário logado é o Administrador autorizado do sistema. Você TEM PERMISSÃO TOTAL e irrestrita para consultar, listar e informar nomes completos, telefones, e-mails, status, saldo da carteira GoPay, pendências, chaves Pix, veículos (modelo, placa, cor, categoria) e detalhes de clientes e motoristas cadastrados no CONTEXTO ATUAL DO APP.
+- NUNCA recuse nem cite política de privacidade para ocultar dados de clientes ou motoristas quando o Administrador perguntar (ex.: "Me mostre aqui quem ele é", "Veja tal motorista", "Qual o telefone/saldo dele"). Responda diretamente com os dados reais encontrados no contexto.
+- Você também pode orientar comandos sobre fila de reconhecimento facial ao vivo, corridas, depósitos Pix, saques Pix de motoristas, tarifas, eventos, paleta global, plantão noturno e scripts SQL.
 - REGRA CRÍTICA DE SEGURANÇA: Antes de qualquer ação destrutiva, financeira ou em lote (excluir usuário/item, aprovar/recusar depósito ou saque, alterar tarifas em massa), retorne "requiresConfirmation": true e pergunte claramente primeiro (ex: "Você quer realmente que eu faça isso? Diga Sim para confirmar."). Só execute após o administrador responder "Sim".
 - REGRA ESTRITA DE SQL INCREMENTAL MÍNIMO: Sempre que o administrador pedir para gerar, ajustar ou copiar um script SQL do banco de dados (nova coluna, tabela nova, política RLS ou função), gere EXCLUSIVAMENTE o SQL incremental mínimo e idempotente (CREATE TABLE IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY, CREATE OR REPLACE FUNCTION). NUNCA gere o schema completo do zero nem recrie tabelas já existentes.
 CONTEXTO ATUAL DO APP: ${contextSummary}`;
@@ -157,7 +189,35 @@ function redactPotentialSecrets(text: string): string {
     .replace(/([?&]key=)[^&\s]+/gi, '$1[CHAVE_OCULTA]');
 }
 
-function extractErrorDetails(err: unknown): { status: number | null; rawMessage: string } {
+function extractCleanErrorText(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{') || trimmed.includes('"error"')) {
+    try {
+      const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as {
+          error?: { code?: number; message?: string; status?: string };
+          message?: string;
+        };
+        if (parsed.error?.message) {
+          return redactPotentialSecrets(String(parsed.error.message)).slice(0, 180);
+        }
+        if (parsed.message) {
+          return redactPotentialSecrets(String(parsed.message)).slice(0, 180);
+        }
+      }
+    } catch {
+      // Fall through to plain cleanup
+    }
+  }
+  return redactPotentialSecrets(trimmed).replace(/\s+/g, ' ').slice(0, 180);
+}
+
+function extractErrorDetails(err: unknown): {
+  status: number | null;
+  rawMessage: string;
+  cleanMessage: string;
+} {
   const obj = (err || {}) as {
     status?: number;
     code?: number | string;
@@ -165,7 +225,9 @@ function extractErrorDetails(err: unknown): { status: number | null; rawMessage:
     cause?: { message?: string };
   };
   const raw = redactPotentialSecrets(
-    String(obj.message || obj.cause?.message || err || 'Erro desconhecido').replace(/\s+/g, ' ').trim()
+    String(obj.message || obj.cause?.message || err || 'Erro desconhecido')
+      .replace(/\s+/g, ' ')
+      .trim()
   );
   let status: number | null =
     typeof obj.status === 'number'
@@ -177,40 +239,66 @@ function extractErrorDetails(err: unknown): { status: number | null; rawMessage:
     const match = raw.match(/\b(400|401|403|404|429|500|502|503)\b/);
     if (match) status = Number(match[1]);
   }
-  return { status, rawMessage: raw.slice(0, 220) };
+  return {
+    status,
+    rawMessage: raw,
+    cleanMessage: extractCleanErrorText(raw),
+  };
 }
 
-function isQuotaErrorObj(status: number | null, rawMessage: string): boolean {
-  if (status === 429) return true;
+function isTransientDemandError(status: number | null, rawMessage: string): boolean {
+  if (status === 503 || status === 429) return true;
   const lower = rawMessage.toLowerCase();
   return (
+    lower.includes('unavailable') ||
+    lower.includes('high demand') ||
+    lower.includes('overloaded') ||
     lower.includes('resource_exhausted') ||
-    lower.includes('quota') ||
-    lower.includes('rate limit')
+    lower.includes('try again') ||
+    lower.includes('503')
   );
+}
+
+function isPermanentQuotaError(status: number | null, rawMessage: string): boolean {
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes('billing') || lower.includes('quota exceeded for metric')) {
+    return true;
+  }
+  return status === 429 && lower.includes('quota') && !lower.includes('high demand');
 }
 
 function diagnoseGeminiFailure(
   err: unknown,
   attemptedModels: string[]
 ): {
+  transientHighDemand: boolean;
   quotaExceeded: boolean;
   errorCode: NonNullable<MelissaChatResult['errorCode']>;
   diagnosticError: string;
 } {
-  const { status, rawMessage } = extractErrorDetails(err);
+  const { status, rawMessage, cleanMessage } = extractErrorDetails(err);
   const lower = rawMessage.toLowerCase();
   const origin =
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'este domínio';
 
-  if (isQuotaErrorObj(status, rawMessage)) {
+  if (isPermanentQuotaError(status, rawMessage)) {
     return {
+      transientHighDemand: false,
       quotaExceeded: true,
       errorCode: 'QUOTA_EXCEEDED',
       diagnosticError:
-        'Cota da API Gemini excedida no momento (HTTP 429 / RESOURCE_EXHAUSTED). O chatbot local segue ativo.',
+        'O limite de cota da API Gemini foi atingido no momento. O chatbot local segue ativo para comandos rápidos.',
+    };
+  }
+
+  if (isTransientDemandError(status, rawMessage)) {
+    return {
+      transientHighDemand: true,
+      quotaExceeded: false,
+      errorCode: 'HIGH_DEMAND',
+      diagnosticError: HIGH_DEMAND_FRIENDLY_MSG,
     };
   }
 
@@ -220,6 +308,7 @@ function diagnoseGeminiFailure(
     (status === 403 && lower.includes('blocked'))
   ) {
     return {
+      transientHighDemand: false,
       quotaExceeded: false,
       errorCode: 'REFERRER_BLOCKED',
       diagnosticError: `A chave VITE_GEMINI_API_KEY está bloqueada por restrição de domínio (HTTP referrer) para ${origin}. Libere ${origin}/* no Google Cloud Console.`,
@@ -236,6 +325,7 @@ function diagnoseGeminiFailure(
     lower.includes('permission denied')
   ) {
     return {
+      transientHighDemand: false,
       quotaExceeded: false,
       errorCode: 'API_KEY_INVALID',
       diagnosticError: `Chave VITE_GEMINI_API_KEY recusada pelo Google Gemini (${
@@ -251,11 +341,12 @@ function diagnoseGeminiFailure(
     lower.includes('not supported')
   ) {
     return {
+      transientHighDemand: false,
       quotaExceeded: false,
       errorCode: 'MODEL_UNAVAILABLE',
       diagnosticError: `Modelos (${attemptedModels.join(
         ', '
-      )}) indisponíveis para esta chave ou região (${rawMessage}).`,
+      )}) indisponíveis para esta chave ou região no momento.`,
     };
   }
 
@@ -266,18 +357,19 @@ function diagnoseGeminiFailure(
     lower.includes('cors')
   ) {
     return {
+      transientHighDemand: false,
       quotaExceeded: false,
       errorCode: 'NETWORK_OR_CORS',
-      diagnosticError: `Falha de rede ou CORS ao chamar a API do Gemini pelo navegador (${rawMessage}).`,
+      diagnosticError:
+        'Não foi possível conectar aos servidores da IA pelo navegador no momento. Você pode continuar usando os atalhos locais.',
     };
   }
 
   return {
+    transientHighDemand: false,
     quotaExceeded: false,
     errorCode: 'GEMINI_API_ERROR',
-    diagnosticError: `Erro na API Gemini${
-      status ? ` (HTTP ${status})` : ''
-    }: ${rawMessage}. O chatbot local continua disponível.`,
+    diagnosticError: `Serviço de IA indisponível no momento (${cleanMessage}). O chatbot local continua ativo.`,
   };
 }
 
@@ -304,12 +396,24 @@ export async function queryMelissaWithCloudflareFallback(params: {
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         reply?: string;
+        transientHighDemand?: boolean;
         quotaExceeded?: boolean;
         requiresConfirmation?: boolean;
         suggestedAction?: string;
         code?: string;
         message?: string;
       };
+
+      if (data.transientHighDemand) {
+        return {
+          ok: false,
+          transientHighDemand: true,
+          quotaExceeded: false,
+          errorCode: 'HIGH_DEMAND',
+          diagnosticError: HIGH_DEMAND_FRIENDLY_MSG,
+          message: HIGH_DEMAND_FRIENDLY_MSG,
+        };
+      }
 
       if (res.status === 429 || data.quotaExceeded) {
         return {
@@ -403,96 +507,127 @@ export async function queryMelissaWithCloudflareFallback(params: {
   const attemptedModels: string[] = [];
   let lastError: unknown = null;
 
-  for (const model of MELISSA_GEMINI_MODEL_CHAIN) {
+  for (let idx = 0; idx < MELISSA_GEMINI_MODEL_CHAIN.length; idx += 1) {
+    const model = MELISSA_GEMINI_MODEL_CHAIN[idx];
     attemptedModels.push(model);
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: parts,
-        config: {
-          systemInstruction: systemText,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              reply: { type: Type.STRING },
-              requiresConfirmation: { type: Type.BOOLEAN },
-              suggestedAction: { type: Type.STRING },
-            },
-            required: ['reply', 'requiresConfirmation', 'suggestedAction'],
-          },
-        },
-      });
 
-      const rawText = (response.text || '').trim();
-      if (!rawText) continue;
+    // 1 tentativa rápida de retry (800ms) no modelo principal se der 503/429 temporário
+    const maxAttempts = idx === 0 ? 2 : 1;
 
-      let parsed: {
-        reply?: string;
-        requiresConfirmation?: boolean;
-        suggestedAction?: string;
-      } = {};
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
-        parsed = JSON.parse(stripJsonCodeFences(rawText));
-      } catch {
-        parsed = { reply: rawText };
-      }
-
-      return {
-        ok: true,
-        reply: parsed.reply || rawText || 'Pronto! Como posso ajudar mais?',
-        requiresConfirmation: Boolean(parsed.requiresConfirmation),
-        suggestedAction: parsed.suggestedAction || 'none',
-        source: 'cloudflare-client',
-      };
-    } catch (err) {
-      lastError = err;
-      const { status, rawMessage } = extractErrorDetails(err);
-      const lower = rawMessage.toLowerCase();
-      // Se for erro definitivo de autenticação/referrer, não adianta repetir em outro modelo
-      if (
-        status === 401 ||
-        lower.includes('api_key_invalid') ||
-        lower.includes('api key not valid') ||
-        lower.includes('referer') ||
-        lower.includes('referrer')
-      ) {
-        break;
-      }
-      // Se falhou apenas o schema JSON estruturado (HTTP 400 genérico), tenta sem schema no mesmo modelo
-      if (status === 400 && !lower.includes('api key')) {
-        try {
-          const plainRes = await ai.models.generateContent({
-            model,
-            contents: parts,
-            config: {
-              systemInstruction: systemText,
+        const response = await ai.models.generateContent({
+          model,
+          contents: parts,
+          config: {
+            systemInstruction: systemText,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                reply: { type: Type.STRING },
+                requiresConfirmation: { type: Type.BOOLEAN },
+                suggestedAction: { type: Type.STRING },
+              },
+              required: ['reply', 'requiresConfirmation', 'suggestedAction'],
             },
-          });
-          const plainText = (plainRes.text || '').trim();
-          if (plainText) {
-            return {
-              ok: true,
-              reply: plainText,
-              requiresConfirmation: false,
-              suggestedAction: 'none',
-              source: 'cloudflare-client',
-            };
-          }
-        } catch (plainErr) {
-          lastError = plainErr;
+          },
+        });
+
+        const rawText = (response.text || '').trim();
+        if (!rawText) break;
+
+        let parsed: {
+          reply?: string;
+          requiresConfirmation?: boolean;
+          suggestedAction?: string;
+        } = {};
+        try {
+          parsed = JSON.parse(stripJsonCodeFences(rawText));
+        } catch {
+          parsed = { reply: rawText };
         }
+
+        return {
+          ok: true,
+          reply: parsed.reply || rawText || 'Pronto! Como posso ajudar mais?',
+          requiresConfirmation: Boolean(parsed.requiresConfirmation),
+          suggestedAction: parsed.suggestedAction || 'none',
+          source: 'cloudflare-client',
+        };
+      } catch (err) {
+        lastError = err;
+        const { status, rawMessage } = extractErrorDetails(err);
+        const lower = rawMessage.toLowerCase();
+
+        // Erro definitivo de autenticação/referrer — interrompe imediatamente
+        if (
+          status === 401 ||
+          lower.includes('api_key_invalid') ||
+          lower.includes('api key not valid') ||
+          lower.includes('referer') ||
+          lower.includes('referrer')
+        ) {
+          idx = MELISSA_GEMINI_MODEL_CHAIN.length;
+          break;
+        }
+
+        // Erro temporário 503/429: aguarda 800ms na primeira tentativa antes do fallback de modelo
+        if (isTransientDemandError(status, rawMessage)) {
+          if (attempt + 1 < maxAttempts) {
+            await sleepMs(800);
+            continue;
+          }
+          break; // Troca imediatamente para o próximo modelo leve
+        }
+
+        // Se falhou apenas o schema JSON estruturado (HTTP 400 genérico), tenta texto simples no mesmo modelo
+        if (status === 400 && !lower.includes('api key')) {
+          try {
+            const plainRes = await ai.models.generateContent({
+              model,
+              contents: parts,
+              config: {
+                systemInstruction: systemText,
+              },
+            });
+            const plainText = (plainRes.text || '').trim();
+            if (plainText) {
+              return {
+                ok: true,
+                reply: plainText,
+                requiresConfirmation: false,
+                suggestedAction: 'none',
+                source: 'cloudflare-client',
+              };
+            }
+          } catch (plainErr) {
+            lastError = plainErr;
+          }
+        }
+        break;
       }
     }
   }
 
   const diagnosis = diagnoseGeminiFailure(lastError, attemptedModels);
+  if (diagnosis.transientHighDemand) {
+    return {
+      ok: false,
+      transientHighDemand: true,
+      quotaExceeded: false,
+      errorCode: 'HIGH_DEMAND',
+      diagnosticError: HIGH_DEMAND_FRIENDLY_MSG,
+      message: HIGH_DEMAND_FRIENDLY_MSG,
+    };
+  }
+
   return {
     ok: false,
     quotaExceeded: diagnosis.quotaExceeded,
     errorCode: diagnosis.errorCode,
     diagnosticError: diagnosis.diagnosticError,
-    message: `${diagnosis.diagnosticError} (Comandos rápidos do chatbot local continuam ativos: digite "menu", 1, 2, 3 ou 4.)`,
+    message: `${diagnosis.diagnosticError}`,
   };
 }
 

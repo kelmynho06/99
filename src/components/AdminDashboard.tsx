@@ -5575,6 +5575,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           currentUser={currentUser}
           platformConfig={platformConfig}
           onlineDriversCount={onlineDrivers.length}
+          adminUsers={users}
+          adminRides={rides}
           adminStatsSummary={`Corridas ativas: ${metrics.activeRidesCount}, Depósitos Pix pendentes: ${pendingDeposits.length}, Saques pendentes: ${pendingWithdrawals.length}, Fila facial: ${facialQueue.length}, Motoristas online: ${onlineDrivers.length}`}
           onClose={() => setMelissaOpen(false)}
           onOpenFacialQueue={() => {
