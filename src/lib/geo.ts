@@ -46,6 +46,7 @@ export interface AddressSuggestion {
   categoryLabel: string;
   lat: number;
   lng: number;
+  isAiSuggestion?: boolean;
 }
 
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -968,6 +969,147 @@ export async function searchAddresses(
   finalPool.sort((a, b) => b.score - a.score || a.distKm - b.distKm);
 
   return finalPool.slice(0, 18).map((item) => item.entry);
+}
+
+interface MelissaGeocodeRawItem {
+  name?: string;
+  street?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  categoryLabel?: string;
+  lat?: number | null;
+  lng?: number | null;
+}
+
+export async function searchAddressesWithMelissaAI(
+  query: string,
+  nearLat?: number,
+  nearLng?: number,
+  cityHint?: string,
+  signal?: AbortSignal
+): Promise<AddressSuggestion[]> {
+  const cleanQuery = query.trim();
+  if (cleanQuery.length < 2) return [];
+
+  const hasLocalCoords =
+    typeof nearLat === 'number' &&
+    typeof nearLng === 'number' &&
+    Number.isFinite(nearLat) &&
+    Number.isFinite(nearLng) &&
+    !(Math.abs(nearLat) < 0.01 && Math.abs(nearLng) < 0.01);
+
+  const localCity =
+    cityHint?.trim() ||
+    (hasLocalCoords ? await resolveCachedLocalCity(nearLat, nearLng).catch(() => '') : '');
+
+  try {
+    const res = await fetch('/api/melissa/geocode', {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: cleanQuery,
+        lat: hasLocalCoords ? nearLat : undefined,
+        lng: hasLocalCoords ? nearLng : undefined,
+        city: localCity || undefined,
+      }),
+    });
+    if (!res.ok) return [];
+
+    const data = (await res.json()) as { ok?: boolean; results?: MelissaGeocodeRawItem[] };
+    const rawList = Array.isArray(data.results) ? data.results : [];
+    if (rawList.length === 0) return [];
+
+    const resolved: AddressSuggestion[] = [];
+    for (const item of rawList) {
+      if (signal?.aborted) break;
+      const name = String(item.name || '').trim();
+      if (!name) continue;
+
+      const street = String(item.street || '').trim();
+      const hood = String(item.neighborhood || '').trim();
+      const city = String(item.city || localCity || '').trim();
+      const state = String(item.state || '').trim();
+
+      let lat = typeof item.lat === 'number' && Number.isFinite(item.lat) ? item.lat : NaN;
+      let lng = typeof item.lng === 'number' && Number.isFinite(item.lng) ? item.lng : NaN;
+
+      // Refine coordinates via Nominatim street search if missing or out of local bounds
+      const needsRefine =
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01) ||
+        (hasLocalCoords && haversineKm(nearLat, nearLng, lat, lng) > 250);
+
+      if (needsRefine && (street || name)) {
+        try {
+          const lookupText = [street || name, hood, city, state, 'Brasil']
+            .filter(Boolean)
+            .join(', ');
+          const params = new URLSearchParams({
+            q: lookupText,
+            format: 'jsonv2',
+            limit: '1',
+            countrycodes: 'br',
+          });
+          if (hasLocalCoords) {
+            const delta = 0.6;
+            params.set(
+              'viewbox',
+              `${nearLng - delta},${nearLat + delta},${nearLng + delta},${nearLat - delta}`
+            );
+          }
+          const nomRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+            { signal, headers: { Accept: 'application/json' } }
+          );
+          if (nomRes.ok) {
+            const nomJson = (await nomRes.json()) as NominatimResult[];
+            if (nomJson[0]) {
+              const nLat = parseFloat(nomJson[0].lat);
+              const nLng = parseFloat(nomJson[0].lon);
+              if (Number.isFinite(nLat) && Number.isFinite(nLng)) {
+                lat = nLat;
+                lng = nLng;
+              }
+            }
+          }
+        } catch {
+          // Keep AI coordinates or fallback
+        }
+      }
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        if (hasLocalCoords) {
+          lat = nearLat;
+          lng = nearLng;
+        } else {
+          continue;
+        }
+      }
+
+      const cityState = city ? (state ? `${city} - ${state}` : city) : state;
+      const address = [name, street, hood, cityState].filter(Boolean).join(' · ');
+      const distTag = hasLocalCoords
+        ? `${haversineKm(nearLat, nearLng, lat, lng).toFixed(1)} km`
+        : '';
+      const subtitle = [street, hood, cityState, distTag].filter(Boolean).join(' · ');
+
+      resolved.push({
+        address,
+        subtitle: subtitle || address,
+        categoryLabel: item.categoryLabel || 'Melissa IA',
+        lat,
+        lng,
+        isAiSuggestion: true,
+      });
+    }
+
+    return resolved;
+  } catch {
+    return [];
+  }
 }
 
 const nearbyPickupCandidatesCache = new Map<string, AddressSuggestion[]>();

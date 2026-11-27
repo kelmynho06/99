@@ -60,8 +60,8 @@ export async function initLocalNotifications(): Promise<void> {
       if (Capacitor.getPlatform() === 'android') {
         await LocalNotifications.createChannel({
           id: VOICE_ALERT_CHANNEL_ID,
-          name: 'Go Driver · Assistente Luana',
-          description: 'Alertas discretos em segundo plano enquanto a assistente Luana fala',
+          name: 'Go Driver · Assistente Melissa',
+          description: 'Alertas discretos em segundo plano enquanto a assistente Melissa fala',
           importance: 4,
           visibility: 1,
           vibration: true,
@@ -90,7 +90,7 @@ export async function triggerLocalNotification(input: {
   const { title, body, dedupeKey, vibrate = true } = input;
 
   if (!prefs.notifications_enabled) return;
-  // Evita pop-ups chatos enquanto o usuário já está com o aplicativo aberto na frente: a assistente Luana fala diretamente.
+  // Evita pop-ups chatos enquanto o usuário já está com o aplicativo aberto na frente: a assistente Melissa fala diretamente.
   if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
   if (shouldSkipDuplicateNotification(dedupeKey)) return;
 

@@ -5,6 +5,7 @@ import {
   Banknote,
   Bell,
   Bike,
+  Bot,
   Car,
   Check,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
   Eye,
   EyeOff,
   Flag,
+  Gamepad2,
   Headphones,
   History,
   KeyRound,
@@ -118,6 +120,9 @@ import type {
   WeatherInfo,
 } from '../types/mobility';
 import { AccountSettingsModal, type SettingsSection } from './AccountSettingsModal';
+import { DriverFacialVerificationModal } from './DriverFacialVerificationModal';
+import { GamesHub3D } from './games3d/GamesHub3D';
+import { MelissaAssistantModal } from './MelissaAssistantModal';
 import { AvatarImage } from './AvatarImage';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
@@ -728,6 +733,14 @@ export const DriverView: React.FC<DriverViewProps> = ({
     [notifications]
   );
 
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    setNotifications((prev) => prev.map((n) => (n.is_read ? n : { ...n, is_read: true })));
+    void markAllNotificationsRead(unreadIds, currentUser.id);
+  }, [notificationsOpen, notifications, currentUser.id]);
+
   // Free-Map Navigation ONLY when !activeRide — auto-clears completely as soon as a ride starts
   useEffect(() => {
     if (activeRide) {
@@ -827,25 +840,41 @@ export const DriverView: React.FC<DriverViewProps> = ({
     fetchWalletTransactions(currentUser.id).then(setTransactions).catch(() => {});
   }, [currentUser.id]);
 
+  const [melissaOpen, setMelissaOpen] = useState(false);
+  const [gamesOpen, setGamesOpen] = useState(false);
+  const [facialModalOpen, setFacialModalOpen] = useState(false);
+
+  const performGoOnline = useCallback(
+    async (targetOnline: boolean) => {
+      unlockAudioContext();
+      setStatusError(null);
+      setTogglingOnline(true);
+      try {
+        const updated = await toggleDriverOnlineStatus(
+          currentUser.id,
+          targetOnline,
+          driverCoords[0],
+          driverCoords[1]
+        );
+        onUserUpdated(updated);
+      } catch (err) {
+        setStatusError(
+          err instanceof Error ? err.message : 'Não foi possível alterar status online.'
+        );
+      } finally {
+        setTogglingOnline(false);
+      }
+    },
+    [currentUser.id, driverCoords, onUserUpdated]
+  );
+
   const toggleOnline = async () => {
     unlockAudioContext();
-    setStatusError(null);
-    setTogglingOnline(true);
-    try {
-      const updated = await toggleDriverOnlineStatus(
-        currentUser.id,
-        !isOnline,
-        driverCoords[0],
-        driverCoords[1]
-      );
-      onUserUpdated(updated);
-    } catch (err) {
-      setStatusError(
-        err instanceof Error ? err.message : 'Não foi possível alterar status online.'
-      );
-    } finally {
-      setTogglingOnline(false);
+    if (!isOnline && currentUser.status === 'active') {
+      setFacialModalOpen(true);
+      return;
     }
+    await performGoOnline(!isOnline);
   };
 
   const nudgeDriverTowardTarget = (targetLat: number, targetLng: number) => {
@@ -1399,6 +1428,16 @@ export const DriverView: React.FC<DriverViewProps> = ({
                 </span>
               )}
             </button>
+            <button
+              type="button"
+              onClick={() => setMelissaOpen((v) => !v)}
+              className="aurora-accent-flow flex h-11 items-center gap-1 rounded-2xl px-2.5 sm:px-3 text-xs font-extrabold text-white shadow-lg active:scale-95 transition"
+              aria-label="Assistente Melissa"
+              title="Assistente Melissa"
+            >
+              <Bot className="h-4 w-4 shrink-0" />
+              <span className="hidden xs:inline">Melissa</span>
+            </button>
           </div>
 
           <button
@@ -1911,7 +1950,10 @@ export const DriverView: React.FC<DriverViewProps> = ({
                   )}
                   <button
                     type="button"
-                    onClick={() => setIdleCleanMap(true)}
+                    onClick={() => {
+                      clearFreeNav();
+                      setIdleCleanMap(true);
+                    }}
                     className="inline-flex items-center gap-1 rounded-full bg-[#F1F5F9] px-2.5 py-1 text-[10px] font-bold text-[#0F172A] border border-[#E2E8F0] hover:bg-[#E2E8F0]"
                     title="Ocultar painel e ver mapa 100% livre"
                   >
@@ -3001,6 +3043,21 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setGamesOpen(true);
+                  setMenuOpen(false);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-3 text-sm font-extrabold text-[#2563EB] bg-[#EFF6FF] hover:bg-[#DBEAFE]/60"
+              >
+                <span className="flex items-center gap-3">
+                  <Gamepad2 className="h-5 w-5 text-[#2563EB]" />
+                  {t.games_3d_hub || 'Central de 10 Jogos 3D'}
+                </span>
+                <ChevronRight className="h-4 w-4 text-[#2563EB]" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setSupportChatOpen(true);
                   setMenuOpen(false);
                 }}
@@ -3110,52 +3167,20 @@ export const DriverView: React.FC<DriverViewProps> = ({
               })}
             </div>
 
-            {/* Period Earnings & Goal Progress Bar */}
-            {(() => {
-              const goalTarget =
-                financePeriod === 'day'
-                  ? 200
-                  : financePeriod === 'week'
-                  ? 1200
-                  : financePeriod === 'month'
-                  ? 4500
-                  : 0;
-              const pct =
-                goalTarget > 0
-                  ? Math.min(100, Math.round((financeSummary.grossTotal / goalTarget) * 100))
-                  : 100;
-              return (
-                <div className="mt-3 rounded-2xl bg-[#F4F6F9] p-3.5 border border-[#E2E8F0] space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div>
-                      <span className="text-[#475569] font-semibold">Produção no período: </span>
-                      <strong className="font-mono-num text-base font-extrabold text-[#10B981]">
-                        {formatBRL(financeSummary.grossTotal)}
-                      </strong>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] font-bold text-[#475569]">
-                      <span>{financeSummary.ridesCount} corridas</span>
-                      <span>·</span>
-                      <span>{financeSummary.deliveriesCount} entregas</span>
-                    </div>
-                  </div>
-                  {goalTarget > 0 && (
-                    <div className="space-y-1">
-                      <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden">
-                        <div
-                          className="h-full rounded-full aurora-accent-flow transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[10px] font-bold text-[#475569] font-mono-num">
-                        <span>Meta sugerida: {formatBRL(goalTarget)}</span>
-                        <span className="text-[#2563EB]">{pct}% atingido</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Period Earnings Summary (Metas moved to Configurações -> Minhas Metas) */}
+            <div className="mt-3 rounded-2xl bg-[#F4F6F9] p-3.5 border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div>
+                <span className="text-[#475569] font-semibold">Produção no período: </span>
+                <strong className="font-mono-num text-base font-extrabold text-[#10B981]">
+                  {formatBRL(financeSummary.grossTotal)}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] font-bold text-[#475569]">
+                <span>{financeSummary.ridesCount} corridas</span>
+                <span>·</span>
+                <span>{financeSummary.deliveriesCount} entregas</span>
+              </div>
+            </div>
 
             {/* 4 Financial Summary Cards */}
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -3616,6 +3641,51 @@ export const DriverView: React.FC<DriverViewProps> = ({
             setReceiptTx(null);
             setReceipt66Ride(null);
           }}
+        />
+      )}
+      {facialModalOpen && (
+        <DriverFacialVerificationModal
+          open={facialModalOpen}
+          driver={currentUser}
+          onClose={() => setFacialModalOpen(false)}
+          onApprovedOnline={() => {
+            setFacialModalOpen(false);
+            void performGoOnline(true);
+          }}
+        />
+      )}
+
+      {melissaOpen && (
+        <MelissaAssistantModal
+          open={melissaOpen}
+          currentUser={currentUser}
+          platformConfig={platformConfig}
+          activeRide={activeRide}
+          onClose={() => setMelissaOpen(false)}
+          onOpenGames={() => {
+            setMelissaOpen(false);
+            setGamesOpen(true);
+          }}
+          onOpenWallet={() => {
+            setMelissaOpen(false);
+            openDriverWallet('withdraw');
+          }}
+          onOpenSupport={() => {
+            setMelissaOpen(false);
+            setSupportChatOpen(true);
+          }}
+          onOpenSettings={() => {
+            setMelissaOpen(false);
+            setSettingsInitialSection('menu');
+            setSettingsOpen(true);
+          }}
+        />
+      )}
+
+      {gamesOpen && (
+        <GamesHub3D
+          open={gamesOpen}
+          onClose={() => setGamesOpen(false)}
         />
       )}
     </div>

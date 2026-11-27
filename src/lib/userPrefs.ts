@@ -33,6 +33,12 @@ export const DEFAULT_USER_PREFS: UserPreferences = {
   map_layer: 'urban',
   hud_compass_enabled: true,
   floating_bubble_enabled: true,
+  assistant_voice_id: 'melissa-maps',
+  assistant_voice_name: '',
+  assistant_use_gemini_tts: true,
+  driver_goal_day: 200,
+  driver_goal_week: 1000,
+  driver_goal_month: 4000,
 };
 
 export function getUserPreferences(): UserPreferences {
@@ -52,6 +58,12 @@ export function getUserPreferences(): UserPreferences {
       map_layer: 'urban' as MapLayerMode,
       hud_compass_enabled: parsed.hud_compass_enabled ?? true,
       floating_bubble_enabled: parsed.floating_bubble_enabled ?? true,
+      assistant_voice_id: parsed.assistant_voice_id || 'melissa-maps',
+      assistant_voice_name: parsed.assistant_voice_name || '',
+      assistant_use_gemini_tts: parsed.assistant_use_gemini_tts ?? true,
+      driver_goal_day: Number(parsed.driver_goal_day) > 0 ? Number(parsed.driver_goal_day) : 200,
+      driver_goal_week: Number(parsed.driver_goal_week) > 0 ? Number(parsed.driver_goal_week) : 1000,
+      driver_goal_month: Number(parsed.driver_goal_month) > 0 ? Number(parsed.driver_goal_month) : 4000,
     };
   } catch {
     return DEFAULT_USER_PREFS;

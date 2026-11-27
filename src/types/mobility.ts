@@ -29,6 +29,14 @@ export type ThemeMode = 'light' | 'dark' | 'auto';
 
 export type PeriodFilter = 'day' | 'week' | 'month' | 'all';
 
+export type PixKeyType = 'cpf_cnpj' | 'email' | 'phone' | 'random';
+
+export type AssistantVoiceId =
+  | 'melissa-maps'
+  | 'melissa-suave'
+  | 'melissa-agil'
+  | 'melissa-executiva';
+
 export interface SavedAddress {
   label: string;
   address: string;
@@ -49,6 +57,8 @@ export interface PlatformConfig {
   app_logo_url?: string | null;
   primary_color?: string | null;
   secondary_color?: string | null;
+  theme_preset?: string | null;
+  assistant_voice_default?: AssistantVoiceId | string | null;
   vehicle_img_moto?: string | null;
   vehicle_img_pop?: string | null;
   vehicle_img_delivery_moto?: string | null;
@@ -71,6 +81,10 @@ export interface PlatformConfig {
   deposit_window_enabled?: boolean;
   deposit_start_time?: string;
   deposit_end_time?: string;
+  night_duty_enabled?: boolean;
+  night_duty_start?: string;
+  night_duty_end?: string;
+  night_duty_auto_approve?: boolean;
 }
 
 export interface PlatformEvent {
@@ -90,6 +104,11 @@ export interface DirectMessage {
   sender_name: string;
   sender_role: UserRole;
   content: string;
+  attachment_url?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  gps_lat?: number | null;
+  gps_lng?: number | null;
   created_at: string;
 }
 
@@ -117,6 +136,7 @@ export interface DriverDetails {
   vehicle_plate: string;
   vehicle_color: string;
   pix_key: string;
+  pix_key_type?: PixKeyType;
   is_online: boolean;
   current_lat: number | null;
   current_lng: number | null;
@@ -127,6 +147,21 @@ export interface DriverDetails {
   updated_at: string;
   vehicles?: DriverVehicle[];
   active_vehicle_id?: string | null;
+}
+
+export type FacialVerificationStatus = 'pending' | 'approved' | 'rejected';
+
+export interface DriverFacialVerification {
+  id: string;
+  driver_id: string;
+  selfie_data_url: string;
+  status: FacialVerificationStatus;
+  queue_position?: number;
+  reviewed_by?: string | null;
+  rejection_reason?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+  driver?: UserProfile;
 }
 
 export interface UserProfile {
@@ -286,6 +321,7 @@ export interface WalletWithdrawal {
   user_id: string;
   amount: number;
   pix_key: string;
+  pix_key_type?: PixKeyType | string | null;
   status: WalletWithdrawalStatus;
   note?: string | null;
   created_at: string;
@@ -340,6 +376,12 @@ export interface UserPreferences {
   map_layer: MapLayerMode;
   hud_compass_enabled: boolean;
   floating_bubble_enabled?: boolean;
+  assistant_voice_id?: AssistantVoiceId;
+  assistant_voice_name?: string;
+  assistant_use_gemini_tts?: boolean;
+  driver_goal_day?: number;
+  driver_goal_week?: number;
+  driver_goal_month?: number;
 }
 
 export type PermissionGrantState = 'granted' | 'denied' | 'prompt' | 'unknown';

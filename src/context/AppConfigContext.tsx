@@ -3,12 +3,15 @@ import { Capacitor } from '@capacitor/core';
 import { DEFAULT_BRAND_LOGO } from '../lib/brandAssets';
 import { fetchAppBrandConfig, PLATFORM_BRAND_CACHE_KEY } from '../lib/mobilityApi';
 import { supabase } from '../lib/supabase';
+import { applyGlobalThemePreset } from '../lib/themePresets';
 
 export interface AppConfig {
   app_name: string;
   logo_url: string | null;
   primary_color: string;
   secondary_color: string;
+  theme_preset?: string | null;
+  assistant_voice_default?: string | null;
   pwa_app_name?: string | null;
   pwa_icon_url?: string | null;
   apk_app_name?: string | null;
@@ -27,6 +30,8 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   logo_url: null,
   primary_color: '#2563EB',
   secondary_color: '#0F172A',
+  theme_preset: 'electric_blue',
+  assistant_voice_default: 'melissa-maps',
   pwa_app_name: null,
   pwa_icon_url: null,
   apk_app_name: null,
@@ -104,6 +109,11 @@ function readInitialCachedConfig(): AppConfig {
       logo_url: normalizedLogo,
       primary_color: upgradeLegacyPrimaryColor(parsed.primary_color),
       secondary_color: upgradeLegacySecondaryColor(parsed.secondary_color),
+      theme_preset: typeof parsed.theme_preset === 'string' ? parsed.theme_preset : 'electric_blue',
+      assistant_voice_default:
+        typeof parsed.assistant_voice_default === 'string'
+          ? parsed.assistant_voice_default
+          : 'melissa-maps',
       pwa_app_name: typeof parsed.pwa_app_name === 'string' ? parsed.pwa_app_name.trim() || null : null,
       pwa_icon_url: upgradeLegacyLogoUrl(parsed.pwa_icon_url),
       apk_app_name: typeof parsed.apk_app_name === 'string' ? parsed.apk_app_name.trim() || null : null,
@@ -151,11 +161,7 @@ function syncHeadMetadata(cfg: AppConfig) {
     themeMeta.setAttribute('content', cfg.primary_color);
   }
 
-  document.documentElement.style.setProperty('--brand-primary', cfg.primary_color || '#2563EB');
-  document.documentElement.style.setProperty(
-    '--brand-secondary',
-    cfg.secondary_color || '#0F172A'
-  );
+  applyGlobalThemePreset(cfg.theme_preset, cfg.primary_color, cfg.secondary_color);
 
   const resolvedIcon =
     (isNative ? cfg.apk_icon_url : cfg.pwa_icon_url) || cfg.logo_url || DEFAULT_BRAND_LOGO;
@@ -242,6 +248,12 @@ export const AppConfigProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         logo_url: partial.logo_url !== undefined ? partial.logo_url : prev.logo_url,
         primary_color: partial.primary_color ?? prev.primary_color,
         secondary_color: partial.secondary_color ?? prev.secondary_color,
+        theme_preset:
+          partial.theme_preset !== undefined ? partial.theme_preset : prev.theme_preset,
+        assistant_voice_default:
+          partial.assistant_voice_default !== undefined
+            ? partial.assistant_voice_default
+            : prev.assistant_voice_default,
         pwa_app_name: partial.pwa_app_name !== undefined ? partial.pwa_app_name : prev.pwa_app_name,
         pwa_icon_url: partial.pwa_icon_url !== undefined ? partial.pwa_icon_url : prev.pwa_icon_url,
         apk_app_name: partial.apk_app_name !== undefined ? partial.apk_app_name : prev.apk_app_name,

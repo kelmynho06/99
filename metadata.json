@@ -1,6 +1,6 @@
 {
   "name": "66 Mobilidade",
   "description": "Aplicativo de mobilidade urbana e entregas rápidas com mapa interativo em tempo real, perfis de passageiro, motorista e painel administrativo.",
-  "requestFramePermissions": ["geolocation", "camera"],
+  "requestFramePermissions": ["geolocation", "camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -5,6 +5,7 @@ import {
   Bell,
   BellRing,
   Bike,
+  Bot,
   Car,
   Check,
   CheckCircle2,
@@ -21,14 +22,17 @@ import {
   MapPin,
   Menu,
   MessageSquare,
+  Moon,
   Music,
   Package,
+  Palette,
   Plus,
   Power,
   Printer,
   QrCode,
   Radio,
   RefreshCw,
+  ScanFace,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -57,12 +61,14 @@ import {
   adminDeletePlatformEvent,
   adminDeleteUserAccount,
   adminFetchCouponsOverview,
+  adminFetchFacialQueue,
   adminFetchSentNotifications,
   adminGrantCouponToUsers,
   adminPayDriverPix,
   adminProcessWalletWithdrawal,
   adminRejectWalletDeposit,
   adminReviewDriver,
+  adminReviewFacialVerification,
   adminSavePlatformConfig,
   adminSavePricing,
   adminSendNotification,
@@ -82,8 +88,14 @@ import {
 } from '../lib/mobilityApi';
 import { CURRENT_APP_VERSION } from '../lib/otaUpdate';
 import { isDateInPeriod } from '../lib/periodFilter';
-import { speakPtBr, stopSpeech, syncPlatformSounds } from '../lib/sound';
+import {
+  ASSISTANT_VOICE_PRESETS,
+  speakPtBr,
+  stopSpeech,
+  syncPlatformSounds,
+} from '../lib/sound';
 import { supabase } from '../lib/supabase';
+import { THEME_PRESETS } from '../lib/themePresets';
 import {
   getUserPreferences,
   saveUserPreferences,
@@ -91,8 +103,10 @@ import {
 } from '../lib/userPrefs';
 import type {
   AppNotification,
+  AssistantVoiceId,
   AuditLogEntry,
   Coupon,
+  DriverFacialVerification,
   NotificationCategory,
   NotificationTargetScope,
   PeriodFilter,
@@ -112,7 +126,9 @@ import { AvatarImage } from './AvatarImage';
 import { DirectChatModal } from './DirectChatModal';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
-import migrationSqlRaw from '../../supabase/migration_incremental_latest.sql?raw';
+import { MelissaAssistantModal } from './MelissaAssistantModal';
+import migrationDeltaSqlRaw from '../../supabase/migration_incremental_delta.sql?raw';
+import schemaCompleteSqlRaw from '../../supabase/schema_completo.sql?raw';
 
 interface AdminDashboardProps {
   currentUser: UserProfile;
@@ -154,8 +170,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [platformEvents, setPlatformEvents] = useState<PlatformEvent[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
-  const [migrationSql] = useState<string>(migrationSqlRaw);
+  const [sqlViewMode, setSqlViewMode] = useState<'delta' | 'complete'>('delta');
+  const [deltaSqlText, setDeltaSqlText] = useState<string>(migrationDeltaSqlRaw);
+  const [completeSqlText, setCompleteSqlText] = useState<string>(schemaCompleteSqlRaw);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  const [melissaOpen, setMelissaOpen] = useState(false);
+  const [facialQueue, setFacialQueue] = useState<DriverFacialVerification[]>([]);
+  const [facialModalOpen, setFacialModalOpen] = useState(false);
+  const [facialBusyId, setFacialBusyId] = useState<string | null>(null);
+  const [facialRejectReason, setFacialRejectReason] = useState('');
 
   const [driverFilter, setDriverFilter] = useState<'all' | 'pending' | 'active' | 'rejected' | 'suspended'>('all');
   const [delivererFilter, setDelivererFilter] = useState<'all' | 'pending' | 'active' | 'rejected' | 'suspended'>('all');
@@ -249,12 +273,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const loadOverview = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [data, events, logs, notifs, couponsRes] = await Promise.all([
+      const [data, events, logs, notifs, couponsRes, facialRes] = await Promise.all([
         fetchAdminOverview(),
         fetchPlatformEvents(),
         fetchAuditLogsFromSupabase(300).catch(() => []),
         adminFetchSentNotifications().catch(() => []),
         adminFetchCouponsOverview().catch(() => ({ coupons: [], grants: [] })),
+        adminFetchFacialQueue().catch(() => []),
       ]);
       setPlatformConfig(data.platformConfig);
       syncPlatformSounds(data.platformConfig);
@@ -269,6 +294,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setSentNotifications(notifs);
       setCoupons(couponsRes.coupons);
       setCouponGrants(couponsRes.grants);
+      setFacialQueue(facialRes);
 
       const firstOnlineWithGps = data.users.find(
         (u) => u.role === 'driver' && u.driver?.is_online && u.driver.current_lat && u.driver.current_lng
@@ -393,12 +419,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           );
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'driver_facial_verifications' },
+        (payload) => {
+          adminFetchFacialQueue()
+            .then((queue) => setFacialQueue(queue))
+            .catch(() => {});
+          const row = payload.new as Record<string, unknown> | undefined;
+          if (payload.eventType === 'INSERT' && row && row.status === 'pending') {
+            const vid = String(row.id || '');
+            if (vid && !announcedAlertIdsRef.current.has(`facial:${vid}`)) {
+              announcedAlertIdsRef.current.add(`facial:${vid}`);
+              speakPtBr(
+                'Administrador, está tendo um reconhecimento facial ao vivo aqui, precisa de você para fazer a verificação.',
+                true
+              );
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [loadOverview]);
+
+  useEffect(() => {
+    fetch('/api/migration-delta-sql')
+      .then((r) => (r.ok ? r.text() : ''))
+      .then((txt) => {
+        if (txt.trim()) setDeltaSqlText(txt);
+      })
+      .catch(() => {});
+    fetch('/api/schema-complete-sql')
+      .then((r) => (r.ok ? r.text() : ''))
+      .then((txt) => {
+        if (txt.trim()) setCompleteSqlText(txt);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!inspectDriver?.driver) {
@@ -565,10 +626,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     }
 
+    for (const fq of facialQueue) {
+      const k = `facial:${fq.id}`;
+      if (!announcedAlertIdsRef.current.has(k)) {
+        announcedAlertIdsRef.current.add(k);
+        const drvName = fq.driver?.full_name?.split(' ')[0] || 'um motorista';
+        queueMessages.push(
+          `Administrador, está tendo um reconhecimento facial ao vivo de ${drvName} aqui, precisa de você para fazer a verificação.`
+        );
+      }
+    }
+
     if (queueMessages.length > 0 && adminPrefs.voice_enabled) {
       speakPtBr(queueMessages.slice(0, 3).join(' '), true);
     }
-  }, [awaitingPixRides, pendingDeposits, pendingWithdrawals, supportAlerts, adminPrefs.voice_enabled]);
+  }, [awaitingPixRides, pendingDeposits, pendingWithdrawals, supportAlerts, facialQueue, adminPrefs.voice_enabled]);
 
   // Voice escalation & periodic wait-time monitor: warns specifically when an item reaches >= 5 minutes
   useEffect(() => {
@@ -752,6 +824,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         logo_url: platformConfig.app_logo_url ?? null,
         primary_color: platformConfig.primary_color || '#2563EB',
         secondary_color: platformConfig.secondary_color || '#0F172A',
+        theme_preset: platformConfig.theme_preset || 'electric_blue',
+        assistant_voice_default: platformConfig.assistant_voice_default || 'melissa-maps',
         pwa_app_name: platformConfig.pwa_app_name?.trim() || null,
         pwa_icon_url: platformConfig.pwa_icon_url ?? null,
         apk_app_name: platformConfig.apk_app_name?.trim() || null,
@@ -1263,11 +1337,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const activeSqlText = sqlViewMode === 'delta' ? deltaSqlText : completeSqlText;
+
   const copySql = async () => {
-    if (!migrationSql) return;
-    await navigator.clipboard.writeText(migrationSql);
+    if (!activeSqlText) return;
+    await navigator.clipboard.writeText(activeSqlText);
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 2000);
+  };
+
+  const downloadSql = () => {
+    if (!activeSqlText) return;
+    const blob = new Blob([activeSqlText], { type: 'text/sql;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download =
+      sqlViewMode === 'delta'
+        ? 'migration_incremental_delta.sql'
+        : 'schema_completo_godriver.sql';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleReviewFacial = async (
+    item: DriverFacialVerification,
+    approve: boolean
+  ) => {
+    setFacialBusyId(item.id);
+    try {
+      await adminReviewFacialVerification(
+        item.id,
+        item.driver_id,
+        approve,
+        approve ? undefined : facialRejectReason || 'Foto facial não conferida ao vivo.'
+      );
+      setFacialRejectReason('');
+      const updatedQueue = await adminFetchFacialQueue();
+      setFacialQueue(updatedQueue);
+      await loadOverview();
+      showToast(
+        approve
+          ? `Facial de ${item.driver?.full_name || 'motorista'} aprovada! Motorista liberado online.`
+          : `Verificação facial de ${item.driver?.full_name || 'motorista'} recusada.`
+      );
+      if (updatedQueue.length === 0) {
+        setFacialModalOpen(false);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao processar verificação facial.');
+    } finally {
+      setFacialBusyId(null);
+    }
   };
 
   const renderDriverGrid = (
@@ -1589,6 +1710,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              onClick={() => setMelissaOpen((v) => !v)}
+              className="aurora-accent-flow flex min-h-[42px] items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold text-white shadow-sm active:scale-95 transition"
+              title="Assistente Melissa em Tempo Real"
+            >
+              <Bot className="h-4 w-4 shrink-0" />
+              <span>Melissa</span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 const nextAllOn = !(adminPrefs.voice_enabled || adminPrefs.sounds_enabled);
                 const next = saveUserPreferences({
@@ -1598,7 +1728,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 });
                 setAdminPrefs(next);
                 if (!nextAllOn) stopSpeech();
-                else speakPtBr('Oi, administrador! Aqui é a Luana, já estou ativada e acompanhando tudo com você.', true);
+                else speakPtBr('Oi, administrador! Aqui é a Melissa, já estou ativada e acompanhando tudo com você.', true);
               }}
               className={`flex min-h-[42px] items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold transition ${
                 adminPrefs.voice_enabled || adminPrefs.sounds_enabled
@@ -1807,6 +1937,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </p>
           </div>
         </div>
+
+        {facialQueue.length > 0 && (
+          <div className="no-print mb-4 rounded-3xl border-2 border-[#2563EB] bg-white p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#2563EB] text-white animate-pulse">
+                <ScanFace className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-wider text-[#2563EB]">
+                  Fila ao Vivo · Reconhecimento Facial ({facialQueue.length})
+                </p>
+                <p className="text-xs font-semibold text-[#0F172A]">
+                  Próximo da fila: <strong>{facialQueue[0]?.driver?.full_name || 'Motorista'}</strong> aguardando verificação ao vivo para conectar.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFacialModalOpen(true)}
+              className="aurora-accent-flow min-h-[44px] shrink-0 rounded-xl px-4 text-xs font-extrabold text-white shadow-sm"
+            >
+              Verificar Agora ({facialQueue.length})
+            </button>
+          </div>
+        )}
 
         {(awaitingPixRides.length > 0 ||
           pendingDeposits.length > 0 ||
@@ -2615,6 +2770,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                           <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-[#E2E8F0] px-3 py-2 text-xs">
                             <span className="font-mono-num font-bold text-[#0F172A] truncate">
+                              {w.pix_key_type && (
+                                <span className="mr-1.5 inline-block rounded bg-[#EFF6FF] border border-[#BFDBFE] px-1.5 py-0.5 text-[10px] font-extrabold text-[#2563EB] uppercase">
+                                  {w.pix_key_type === 'cpf_cnpj'
+                                    ? 'CPF/CNPJ'
+                                    : w.pix_key_type === 'phone'
+                                    ? 'Celular'
+                                    : w.pix_key_type === 'email'
+                                    ? 'E-mail'
+                                    : 'Aleatória'}
+                                </span>
+                              )}
                               Pix: {w.pix_key}
                             </span>
                             <button
@@ -3884,6 +4050,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
 
+                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-xs font-extrabold text-[#0F172A]">
+                      <Palette className="h-4 w-4 text-[#2563EB]" />
+                      Paleta de Cores Global (14 Temas Prontos)
+                    </span>
+                    <span className="text-[10px] font-bold text-[#475569]">
+                      Aplicado em todo o app
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {THEME_PRESETS.map((preset) => {
+                      const active = (platformConfig.theme_preset || 'electric_blue') === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setPlatformConfig((prev) => ({
+                              ...prev,
+                              theme_preset: preset.id,
+                              primary_color: preset.primary,
+                              secondary_color: preset.secondary,
+                            }));
+                            applyLocalConfig({
+                              theme_preset: preset.id,
+                              primary_color: preset.primary,
+                              secondary_color: preset.secondary,
+                            });
+                          }}
+                          className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-[11px] font-bold transition ${
+                            active
+                              ? 'border-[#2563EB] bg-white text-[#0F172A] ring-2 ring-[#2563EB]/25'
+                              : 'border-[#E2E8F0] bg-white/80 text-[#475569]'
+                          }`}
+                        >
+                          <span
+                            className="h-4 w-4 rounded-full shrink-0 border border-black/10"
+                            style={{ backgroundColor: preset.primary }}
+                          />
+                          <span className="truncate">{preset.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-[#0F172A] mb-1">
@@ -3893,23 +4106,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <input
                         type="color"
                         value={platformConfig.primary_color || '#2563EB'}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = e.target.value;
                           setPlatformConfig((prev) => ({
                             ...prev,
-                            primary_color: e.target.value,
-                          }))
-                        }
+                            primary_color: val,
+                          }));
+                          applyLocalConfig({ primary_color: val });
+                        }}
                         className="h-8 w-9 cursor-pointer rounded-lg border-0 bg-transparent p-0"
                       />
                       <input
                         type="text"
                         value={platformConfig.primary_color || '#2563EB'}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = e.target.value;
                           setPlatformConfig((prev) => ({
                             ...prev,
-                            primary_color: e.target.value,
-                          }))
-                        }
+                            primary_color: val,
+                          }));
+                          if (/^#[0-9A-Fa-f]{6}$/.test(val.trim())) {
+                            applyLocalConfig({ primary_color: val.trim() });
+                          }
+                        }}
                         className="w-full bg-transparent font-mono-num text-xs font-bold text-[#0F172A] outline-none uppercase"
                       />
                     </div>
@@ -3922,27 +4141,137 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <input
                         type="color"
                         value={platformConfig.secondary_color || '#0F172A'}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = e.target.value;
                           setPlatformConfig((prev) => ({
                             ...prev,
-                            secondary_color: e.target.value,
-                          }))
-                        }
+                            secondary_color: val,
+                          }));
+                          applyLocalConfig({ secondary_color: val });
+                        }}
                         className="h-8 w-9 cursor-pointer rounded-lg border-0 bg-transparent p-0"
                       />
                       <input
                         type="text"
                         value={platformConfig.secondary_color || '#0F172A'}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = e.target.value;
                           setPlatformConfig((prev) => ({
                             ...prev,
-                            secondary_color: e.target.value,
-                          }))
-                        }
+                            secondary_color: val,
+                          }));
+                          if (/^#[0-9A-Fa-f]{6}$/.test(val.trim())) {
+                            applyLocalConfig({ secondary_color: val.trim() });
+                          }
+                        }}
                         className="w-full bg-transparent font-mono-num text-xs font-bold text-[#0F172A] outline-none uppercase"
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Melissa Default Voice Selector */}
+                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-2">
+                  <label className="block text-xs font-extrabold text-[#0F172A]">
+                    Voz Padrão da Assistente Melissa
+                  </label>
+                  <select
+                    value={platformConfig.assistant_voice_default || 'melissa-maps'}
+                    onChange={(e) =>
+                      setPlatformConfig((prev) => ({
+                        ...prev,
+                        assistant_voice_default: e.target.value as AssistantVoiceId,
+                      }))
+                    }
+                    className="min-h-[42px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  >
+                    {ASSISTANT_VOICE_PRESETS.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.label} — {v.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Plantão Noturno Autônomo da Melissa */}
+                <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 space-y-3">
+                  <label className="flex items-center justify-between cursor-pointer gap-2">
+                    <div>
+                      <p className="text-xs font-extrabold text-[#0F172A] flex items-center gap-1.5">
+                        <Moon className="h-4 w-4 text-[#2563EB]" />
+                        Plantão Noturno Autônomo da Melissa
+                      </p>
+                      <p className="text-[11px] text-[#475569]">
+                        Pausa Pix manual na madrugada (00:00–07:00), mantendo GoPay &amp; Dinheiro 100% ativos.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={platformConfig.night_duty_enabled !== false}
+                      onChange={(e) =>
+                        setPlatformConfig((prev) => ({
+                          ...prev,
+                          night_duty_enabled: e.target.checked,
+                        }))
+                      }
+                      className="h-5 w-5 accent-[#2563EB] shrink-0"
+                    />
+                  </label>
+
+                  {platformConfig.night_duty_enabled !== false && (
+                    <div className="space-y-2.5 pt-1">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-[#0F172A] mb-1">
+                            Início do Plantão
+                          </label>
+                          <input
+                            type="time"
+                            value={platformConfig.night_duty_start || '00:00'}
+                            onChange={(e) =>
+                              setPlatformConfig((prev) => ({
+                                ...prev,
+                                night_duty_start: e.target.value,
+                              }))
+                            }
+                            className="min-h-[42px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 font-mono-num text-xs font-extrabold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-[#0F172A] mb-1">
+                            Fim do Plantão
+                          </label>
+                          <input
+                            type="time"
+                            value={platformConfig.night_duty_end || '07:00'}
+                            onChange={(e) =>
+                              setPlatformConfig((prev) => ({
+                                ...prev,
+                                night_duty_end: e.target.value,
+                              }))
+                            }
+                            className="min-h-[42px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 font-mono-num text-xs font-extrabold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center justify-between cursor-pointer gap-2 rounded-xl bg-white/80 border border-[#BFDBFE] px-3 py-2">
+                        <span className="text-[11px] font-bold text-[#0F172A]">
+                          Melissa responde &amp; aprova rotinas autônomas no plantão
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={platformConfig.night_duty_auto_approve !== false}
+                          onChange={(e) =>
+                            setPlatformConfig((prev) => ({
+                              ...prev,
+                              night_duty_auto_approve: e.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 accent-[#2563EB] shrink-0"
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-3.5 space-y-3">
@@ -4237,7 +4566,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onClick={() => {
                             syncPlatformSounds(platformConfig);
                             speakPtBr(
-                              `Aqui é a Luana! Prévia de ${snd.label.replace(/^\d+\.\s*/, '')}.`,
+                              `Aqui é a Melissa! Prévia de ${snd.label.replace(/^\d+\.\s*/, '')}.`,
                               true
                             );
                           }}
@@ -4669,27 +4998,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </p>
             </div>
 
-            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-xs">
-              <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="font-display text-base font-extrabold text-[#0F172A]">
-                    SQL Incremental — Apenas Alterações e Tabelas Novas
+                    Central de SQL Supabase (Incremental vs Completo)
                   </h3>
                   <p className="text-xs text-[#475569]">
-                    Contém somente o que foi adicionado/alterado (Seções 1–11: <span className="font-mono-num">pay66_key</span>, <span className="font-mono-num">update_my_pay66_key</span>, <span className="font-mono-num">deposit_window_enabled/start_time/end_time</span>, <span className="font-mono-num">reserved_balance</span>, <span className="font-mono-num">process_66pay_ride_transfer</span>, <span className="font-mono-num">user_wallets</span>, <span className="font-mono-num">app_notifications</span>, <span className="font-mono-num">coupons</span>, <span className="font-mono-num">user_coupons</span>, multi-veículos <span className="font-mono-num">vehicles/active_vehicle_id</span>, bucket <span className="font-mono-num">public-assets</span> para APK e campos <span className="font-mono-num">pwa_app_name/pwa_icon_url/apk_app_name/apk_icon_url</span>), sem apagar saldos ou recriar tabelas antigas.
+                    Escolha entre aplicar apenas as novas alterações (Incremental Delta) ou restaurar todas as tabelas do zero (SQL Completo).
                   </p>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadSql}
+                    className="flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] hover:bg-[#E2E8F0] px-3.5 text-xs font-bold text-[#0F172A] transition"
+                  >
+                    <DownloadCloud className="h-4 w-4 text-[#2563EB]" />
+                    Baixar .sql
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copySql}
+                    className="flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] px-4 text-xs font-bold text-white transition"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {copiedSql ? 'Copiado!' : 'Copiar SQL'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-2xl bg-[#F4F6F9] p-1.5 border border-[#E2E8F0]">
                 <button
                   type="button"
-                  onClick={copySql}
-                  className="flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] px-4 text-xs font-bold text-white transition"
+                  onClick={() => setSqlViewMode('delta')}
+                  className={`min-h-[44px] rounded-xl px-3 text-left transition ${
+                    sqlViewMode === 'delta'
+                      ? 'bg-[#2563EB] text-white shadow-xs'
+                      : 'text-[#0F172A] hover:bg-white'
+                  }`}
                 >
-                  <Copy className="h-4 w-4" />
-                  {copiedSql ? 'Copiado!' : 'Copiar SQL'}
+                  <p className="text-xs font-extrabold">
+                    SQL Incremental Mínimo (Somente Alterações)
+                  </p>
+                  <p className={`text-[10px] ${sqlViewMode === 'delta' ? 'text-white/85' : 'text-[#475569]'}`}>
+                    Notificações lidas (lida/read_at), RLS e RPC sem recriar tabelas existentes
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSqlViewMode('complete')}
+                  className={`min-h-[44px] rounded-xl px-3 text-left transition ${
+                    sqlViewMode === 'complete'
+                      ? 'bg-[#2563EB] text-white shadow-xs'
+                      : 'text-[#0F172A] hover:bg-white'
+                  }`}
+                >
+                  <p className="text-xs font-extrabold">
+                    SQL Completo (Todas as Tabelas)
+                  </p>
+                  <p className={`text-[10px] ${sqlViewMode === 'complete' ? 'text-white/85' : 'text-[#475569]'}`}>
+                    Restauração total do banco do zero (schema + todas as migrações 1–12)
+                  </p>
                 </button>
               </div>
+
               <pre className="max-h-96 overflow-auto rounded-xl bg-[#0F172A] p-4 text-[11px] font-mono text-slate-100 leading-relaxed">
-                {migrationSql || 'Veja o arquivo supabase/migration_incremental_latest.sql no repositório.'}
+                {activeSqlText || 'Carregando SQL...'}
               </pre>
             </div>
           </section>
@@ -5109,6 +5484,135 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             showToast('Recibo quitado e repasse Pix registrado!');
           }}
           onClose={() => setReceiptModalDriver(null)}
+        />
+      )}
+      {facialModalOpen && (
+        <div className="fixed inset-0 z-[1200] flex flex-col bg-white h-[100dvh] w-screen overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4 shrink-0">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+                <ScanFace className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="font-display text-lg font-extrabold text-[#0F172A]">
+                  Fila ao Vivo · Reconhecimento Facial ({facialQueue.length})
+                </h3>
+                <p className="text-xs text-[#475569]">
+                  Verificação 1 por vez antes do motorista ficar online
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFacialModalOpen(false)}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-5 max-w-2xl w-full mx-auto space-y-4">
+            {facialQueue.length === 0 ? (
+              <div className="rounded-3xl border border-[#E2E8F0] bg-[#F4F6F9] p-8 text-center space-y-2">
+                <CheckCircle2 className="h-10 w-10 text-[#10B981] mx-auto" />
+                <p className="font-display text-base font-extrabold text-[#0F172A]">
+                  Fila de Reconhecimento Facial zerada!
+                </p>
+                <p className="text-xs text-[#475569]">
+                  Nenhum motorista aguardando verificação ao vivo no momento.
+                </p>
+              </div>
+            ) : (
+              (() => {
+                const currentItem = facialQueue[0];
+                const isBusy = facialBusyId === currentItem.id;
+                return (
+                  <div className="rounded-3xl border-2 border-[#2563EB] bg-white p-5 shadow-lg space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="rounded-full bg-[#EFF6FF] border border-[#BFDBFE] px-3 py-1 text-xs font-extrabold text-[#2563EB]">
+                        1 de {facialQueue.length} na fila
+                      </span>
+                      <span className="text-xs font-mono-num text-[#475569]">
+                        {new Date(currentItem.created_at).toLocaleTimeString('pt-BR')}
+                      </span>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-black aspect-square max-h-80 mx-auto flex items-center justify-center">
+                      <img
+                        src={currentItem.selfie_data_url}
+                        alt="Selfie ao vivo do motorista"
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+
+                    <div className="rounded-2xl bg-[#F4F6F9] border border-[#E2E8F0] p-3.5 space-y-1 text-xs">
+                      <p className="font-display text-base font-extrabold text-[#0F172A]">
+                        {currentItem.driver?.full_name || 'Motorista Parceiro'}
+                      </p>
+                      <p className="text-[#475569]">
+                        {currentItem.driver?.phone || 'Sem telefone'} · {currentItem.driver?.email || ''}
+                      </p>
+                      {currentItem.driver?.driver && (
+                        <p className="font-mono-num font-bold text-[#2563EB]">
+                          {currentItem.driver.driver.vehicle_model} · Placa{' '}
+                          {currentItem.driver.driver.vehicle_plate} ({currentItem.driver.driver.vehicle_color})
+                        </p>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={facialRejectReason}
+                      onChange={(e) => setFacialRejectReason(e.target.value)}
+                      placeholder="Motivo caso reprove (ex: rosto encoberto, ambiente escuro)"
+                      className="min-h-[44px] w-full rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-3.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+
+                    <div className="flex flex-wrap gap-2.5">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleReviewFacial(currentItem, false)}
+                        className="min-h-[48px] rounded-2xl border border-red-200 bg-red-50 px-4 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                      >
+                        Reprovar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleReviewFacial(currentItem, true)}
+                        className="min-h-[48px] flex-1 rounded-2xl bg-[#10B981] hover:bg-[#059669] px-5 text-sm font-extrabold text-white shadow-sm disabled:opacity-50"
+                      >
+                        {isBusy ? 'Liberando...' : 'Aprovar & Liberar Online'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
+          </div>
+        </div>
+      )}
+
+      {melissaOpen && (
+        <MelissaAssistantModal
+          open={melissaOpen}
+          currentUser={currentUser}
+          platformConfig={platformConfig}
+          onlineDriversCount={onlineDrivers.length}
+          adminStatsSummary={`Corridas ativas: ${metrics.activeRidesCount}, Depósitos Pix pendentes: ${pendingDeposits.length}, Saques pendentes: ${pendingWithdrawals.length}, Fila facial: ${facialQueue.length}, Motoristas online: ${onlineDrivers.length}`}
+          onClose={() => setMelissaOpen(false)}
+          onOpenFacialQueue={() => {
+            setMelissaOpen(false);
+            setFacialModalOpen(true);
+          }}
+          onTriggerAdminAction={(act) => {
+            setMelissaOpen(false);
+            if (act === 'open_facial') setFacialModalOpen(true);
+            else if (act === 'open_wallet' || act === 'payments') setTab('payments');
+            else if (act === 'drivers') setTab('drivers');
+            else if (act === 'infra') setTab('infra');
+          }}
         />
       )}
     </div>

@@ -195,6 +195,18 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                   <span>{apkFeedback}</span>
                 </p>
               )}
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900 space-y-1">
+                <p className="font-extrabold">Se o Android exibir aviso de segurança / Play Protect:</p>
+                <p>
+                  1. Toque em <strong>Configurações</strong> e ative{' '}
+                  <strong>Permitir desta fonte</strong>.
+                </p>
+                <p>
+                  2. Se aparecer o alerta do Play Protect, toque em <strong>Mais detalhes</strong>{' '}
+                  → <strong>Instalar mesmo assim</strong> para concluir normalmente.
+                </p>
+              </div>
             </div>
 
             {/* 2. PWA & iOS Tutorial */}

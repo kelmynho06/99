@@ -5,12 +5,15 @@ import type {
   Coupon,
   DirectMessage,
   DriverDetails,
+  DriverFacialVerification,
   DriverVehicle,
+  FacialVerificationStatus,
   GeoPoint,
   NotificationCategory,
   NotificationTargetScope,
   PaymentMethod,
   PaymentStatus,
+  PixKeyType,
   PlatformConfig,
   PlatformEvent,
   PricingSetting,
@@ -44,6 +47,8 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   app_logo_url: null,
   primary_color: '#2563EB',
   secondary_color: '#0F172A',
+  theme_preset: 'electric_blue',
+  assistant_voice_default: 'melissa-maps',
   vehicle_img_moto: null,
   vehicle_img_pop: null,
   vehicle_img_delivery_moto: null,
@@ -55,7 +60,7 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   sound_completed_url: null,
   sound_chat_url: null,
   sound_cancel_url: null,
-  ota_latest_version: '1.2.4',
+  ota_latest_version: '1.2.5',
   ota_apk_url: null,
   ota_web_url: null,
   ota_release_notes: null,
@@ -66,6 +71,10 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   deposit_window_enabled: true,
   deposit_start_time: '07:00',
   deposit_end_time: '23:30',
+  night_duty_enabled: true,
+  night_duty_start: '00:00',
+  night_duty_end: '07:00',
+  night_duty_auto_approve: true,
 };
 
 function normalizeHHMM(raw: string | null | undefined, fallback: string): string {
@@ -99,6 +108,37 @@ export function getDepositWindowStatus(
       : curMin >= startMin || curMin <= endMin;
 
   return { isOpen, enabled: true, startTime, endTime };
+}
+
+export function getNightDutyWindowStatus(
+  config?: PlatformConfig | null,
+  now: Date = new Date()
+): {
+  isActive: boolean;
+  enabled: boolean;
+  autoApprove: boolean;
+  startTime: string;
+  endTime: string;
+} {
+  const enabled = config?.night_duty_enabled !== false;
+  const autoApprove = config?.night_duty_auto_approve !== false;
+  const startTime = normalizeHHMM(config?.night_duty_start, '00:00');
+  const endTime = normalizeHHMM(config?.night_duty_end, '07:00');
+  if (!enabled) {
+    return { isActive: false, enabled: false, autoApprove, startTime, endTime };
+  }
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  const curMin = now.getHours() * 60 + now.getMinutes();
+
+  const isActive =
+    startMin <= endMin
+      ? curMin >= startMin && curMin < endMin
+      : curMin >= startMin || curMin < endMin;
+
+  return { isActive, enabled: true, autoApprove, startTime, endTime };
 }
 
 export const DEFAULT_PRICING_LIST: PricingSetting[] = [
@@ -290,6 +330,7 @@ function mapDbDriver(row: Record<string, unknown> | null | undefined): DriverDet
     vehicle_plate: String(row.vehicle_plate || ''),
     vehicle_color: String(row.vehicle_color || ''),
     pix_key: String(row.pix_key || ''),
+    pix_key_type: (row.pix_key_type as PixKeyType | undefined) || 'cpf_cnpj',
     is_online: Boolean(row.is_online),
     current_lat: typeof row.current_lat === 'number' ? row.current_lat : null,
     current_lng: typeof row.current_lng === 'number' ? row.current_lng : null,
@@ -1100,6 +1141,12 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     secondary_color: resolveNormalizedSecondaryColor(
       appCfg?.secondary_color || data.secondary_color || cached.secondary_color
     ),
+    theme_preset:
+      (data.theme_preset as string | null | undefined) ?? cached.theme_preset ?? 'electric_blue',
+    assistant_voice_default:
+      (data.assistant_voice_default as string | null | undefined) ??
+      cached.assistant_voice_default ??
+      'melissa-maps',
     vehicle_img_moto:
       (data.vehicle_img_moto as string | null | undefined) ?? cached.vehicle_img_moto ?? null,
     vehicle_img_pop:
@@ -1127,7 +1174,7 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
     sound_cancel_url:
       (data.sound_cancel_url as string | null | undefined) ?? cached.sound_cancel_url ?? null,
     ota_latest_version:
-      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.4',
+      (data.ota_latest_version as string | null | undefined) ?? cached.ota_latest_version ?? '1.2.5',
     ota_apk_url:
       (data.ota_apk_url as string | null | undefined) ?? cached.ota_apk_url ?? null,
     ota_web_url:
@@ -1152,6 +1199,22 @@ export async function fetchPlatformConfig(): Promise<PlatformConfig> {
       (data.deposit_end_time as string | null | undefined) ?? cached.deposit_end_time,
       '23:30'
     ),
+    night_duty_enabled:
+      data.night_duty_enabled === undefined
+        ? cached.night_duty_enabled ?? true
+        : Boolean(data.night_duty_enabled),
+    night_duty_start: normalizeHHMM(
+      (data.night_duty_start as string | null | undefined) ?? cached.night_duty_start,
+      '00:00'
+    ),
+    night_duty_end: normalizeHHMM(
+      (data.night_duty_end as string | null | undefined) ?? cached.night_duty_end,
+      '07:00'
+    ),
+    night_duty_auto_approve:
+      data.night_duty_auto_approve === undefined
+        ? cached.night_duty_auto_approve ?? true
+        : Boolean(data.night_duty_auto_approve),
   };
 }
 
@@ -2274,6 +2337,7 @@ export async function updateUserProfileSettings(
     vehicle_plate?: string;
     vehicle_color?: string;
     pix_key?: string;
+    pix_key_type?: PixKeyType;
   }
 ): Promise<UserProfile> {
   let storedAvatar = patch.avatar_url !== undefined ? patch.avatar_url : currentUser.avatar_url;
@@ -2330,6 +2394,7 @@ export async function updateUserProfileSettings(
       vehicle_plate: nextPlate,
       vehicle_color: nextColor,
       pix_key: (patch.pix_key ?? currentUser.driver.pix_key).trim(),
+      pix_key_type: patch.pix_key_type ?? currentUser.driver.pix_key_type ?? 'cpf_cnpj',
       vehicles: updatedVehicles,
       active_vehicle_id: activeVehicleId,
       updated_at: new Date().toISOString(),
@@ -2341,6 +2406,7 @@ export async function updateUserProfileSettings(
     if (drvErr && (drvErr.code === '42703' || drvErr.code === 'PGRST204')) {
       delete drvUpdate.vehicles;
       delete drvUpdate.active_vehicle_id;
+      delete drvUpdate.pix_key_type;
       const retry = await supabase
         .from('driver_profiles')
         .update(drvUpdate)
@@ -2519,6 +2585,7 @@ export async function fetchAdminOverview(): Promise<{
     user_id: String(w.user_id),
     amount: Number(w.amount),
     pix_key: String(w.pix_key),
+    pix_key_type: w.pix_key_type ? String(w.pix_key_type) : undefined,
     status: (w.status as WalletWithdrawalStatus) || 'pending',
     note: w.note ? String(w.note) : null,
     created_at: String(w.created_at),
@@ -2596,6 +2663,8 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         app_logo_url: config.app_logo_url ?? null,
         primary_color: cleanPrimary,
         secondary_color: cleanSecondary,
+        theme_preset: config.theme_preset ?? 'electric_blue',
+        assistant_voice_default: config.assistant_voice_default ?? 'melissa-maps',
         vehicle_img_moto: config.vehicle_img_moto ?? null,
         vehicle_img_pop: config.vehicle_img_pop ?? null,
         vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
@@ -2607,7 +2676,7 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         sound_completed_url: config.sound_completed_url ?? null,
         sound_chat_url: config.sound_chat_url ?? null,
         sound_cancel_url: config.sound_cancel_url ?? null,
-        ota_latest_version: config.ota_latest_version ?? '1.2.4',
+        ota_latest_version: config.ota_latest_version ?? '1.2.5',
         ota_apk_url: config.ota_apk_url ?? null,
         ota_web_url: config.ota_web_url ?? null,
         ota_release_notes: config.ota_release_notes ?? null,
@@ -2618,6 +2687,10 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
         deposit_window_enabled: config.deposit_window_enabled !== false,
         deposit_start_time: normalizeHHMM(config.deposit_start_time, '07:00'),
         deposit_end_time: normalizeHHMM(config.deposit_end_time, '23:30'),
+        night_duty_enabled: config.night_duty_enabled !== false,
+        night_duty_start: normalizeHHMM(config.night_duty_start, '00:00'),
+        night_duty_end: normalizeHHMM(config.night_duty_end, '07:00'),
+        night_duty_auto_approve: config.night_duty_auto_approve !== false,
       })
     );
   } catch {
@@ -2651,6 +2724,8 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     app_logo_url: config.app_logo_url ?? null,
     primary_color: cleanPrimary,
     secondary_color: cleanSecondary,
+    theme_preset: config.theme_preset || 'electric_blue',
+    assistant_voice_default: config.assistant_voice_default || 'melissa-maps',
     vehicle_img_moto: config.vehicle_img_moto ?? null,
     vehicle_img_pop: config.vehicle_img_pop ?? null,
     vehicle_img_delivery_moto: config.vehicle_img_delivery_moto ?? null,
@@ -2662,7 +2737,7 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     sound_completed_url: config.sound_completed_url ?? null,
     sound_chat_url: config.sound_chat_url ?? null,
     sound_cancel_url: config.sound_cancel_url ?? null,
-    ota_latest_version: config.ota_latest_version?.trim() || '1.2.4',
+    ota_latest_version: config.ota_latest_version?.trim() || '1.2.5',
     ota_apk_url: config.ota_apk_url?.trim() || null,
     ota_web_url: config.ota_web_url?.trim() || null,
     ota_release_notes: config.ota_release_notes?.trim() || null,
@@ -2673,6 +2748,10 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
     deposit_window_enabled: config.deposit_window_enabled !== false,
     deposit_start_time: normalizeHHMM(config.deposit_start_time, '07:00'),
     deposit_end_time: normalizeHHMM(config.deposit_end_time, '23:30'),
+    night_duty_enabled: config.night_duty_enabled !== false,
+    night_duty_start: normalizeHHMM(config.night_duty_start, '00:00'),
+    night_duty_end: normalizeHHMM(config.night_duty_end, '07:00'),
+    night_duty_auto_approve: config.night_duty_auto_approve !== false,
     updated_at: new Date().toISOString(),
   };
 
@@ -2681,7 +2760,7 @@ export async function adminSavePlatformConfig(config: PlatformConfig): Promise<v
   let pixQrColumnMissing = false;
 
   // Progressively strip only the exact missing column when schema hasn't run latest delta yet
-  for (let attempt = 0; attempt < 10 && error && (error.code === '42703' || error.code === 'PGRST204'); attempt++) {
+  for (let attempt = 0; attempt < 18 && error && (error.code === '42703' || error.code === 'PGRST204'); attempt++) {
     const msg = String(error.message || '');
     const match =
       msg.match(/Could not find the '([^']+)' column/i) ||
@@ -2859,8 +2938,36 @@ export async function fetchDirectMessages(userId: string): Promise<DirectMessage
     sender_name: String(m.sender_name),
     sender_role: (m.sender_role as DirectMessage['sender_role']) || 'passenger',
     content: String(m.content),
+    attachment_url: m.attachment_url ? String(m.attachment_url) : null,
+    attachment_name: m.attachment_name ? String(m.attachment_name) : null,
+    attachment_type: m.attachment_type ? String(m.attachment_type) : null,
+    gps_lat: typeof m.gps_lat === 'number' ? m.gps_lat : null,
+    gps_lng: typeof m.gps_lng === 'number' ? m.gps_lng : null,
     created_at: String(m.created_at),
   }));
+}
+
+export async function uploadSupportAttachment(
+  userId: string,
+  fileName: string,
+  dataUrl: string
+): Promise<string> {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_') || `anexo-${Date.now()}`;
+    const objectPath = `support-attachments/${userId}/${Date.now()}-${safeName}`;
+    const { error } = await supabase.storage
+      .from('public-assets')
+      .upload(objectPath, blob, { upsert: true });
+    if (!error) {
+      const { data: pub } = supabase.storage.from('public-assets').getPublicUrl(objectPath);
+      if (pub?.publicUrl) return pub.publicUrl;
+    }
+  } catch {
+    // Fallback to inline data URL when small or bucket missing
+  }
+  return dataUrl;
 }
 
 export async function sendDirectMessage(input: {
@@ -2869,18 +2976,50 @@ export async function sendDirectMessage(input: {
   senderName: string;
   senderRole: DirectMessage['sender_role'];
   content: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  gpsLat?: number | null;
+  gpsLng?: number | null;
 }): Promise<DirectMessage> {
-  const { data, error } = await supabase
-    .from('direct_messages')
-    .insert({
-      user_id: input.userId,
-      sender_id: input.senderId,
-      sender_name: input.senderName,
-      sender_role: input.senderRole,
-      content: input.content.trim(),
-    })
-    .select('*')
-    .single();
+  const payload: Record<string, unknown> = {
+    user_id: input.userId,
+    sender_id: input.senderId,
+    sender_name: input.senderName,
+    sender_role: input.senderRole,
+    content: input.content.trim(),
+  };
+  if (input.attachmentUrl) payload.attachment_url = input.attachmentUrl;
+  if (input.attachmentName) payload.attachment_name = input.attachmentName;
+  if (input.attachmentType) payload.attachment_type = input.attachmentType;
+  if (typeof input.gpsLat === 'number') payload.gps_lat = input.gpsLat;
+  if (typeof input.gpsLng === 'number') payload.gps_lng = input.gpsLng;
+
+  let { data, error } = await supabase.from('direct_messages').insert(payload).select('*').single();
+  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+    const fallbackNote = [
+      input.content.trim(),
+      input.attachmentName ? `[Anexo: ${input.attachmentName}]` : '',
+      typeof input.gpsLat === 'number' && typeof input.gpsLng === 'number'
+        ? `[GPS: ${input.gpsLat.toFixed(5)}, ${input.gpsLng.toFixed(5)}]`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const retry = await supabase
+      .from('direct_messages')
+      .insert({
+        user_id: input.userId,
+        sender_id: input.senderId,
+        sender_name: input.senderName,
+        sender_role: input.senderRole,
+        content: fallbackNote,
+      })
+      .select('*')
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error || !data) {
     throw new Error(error?.message || 'Erro ao enviar mensagem direta.');
   }
@@ -2891,6 +3030,11 @@ export async function sendDirectMessage(input: {
     sender_name: String(data.sender_name),
     sender_role: (data.sender_role as DirectMessage['sender_role']) || 'passenger',
     content: String(data.content),
+    attachment_url: data.attachment_url ? String(data.attachment_url) : null,
+    attachment_name: data.attachment_name ? String(data.attachment_name) : null,
+    attachment_type: data.attachment_type ? String(data.attachment_type) : null,
+    gps_lat: typeof data.gps_lat === 'number' ? data.gps_lat : null,
+    gps_lng: typeof data.gps_lng === 'number' ? data.gps_lng : null,
     created_at: String(data.created_at),
   };
 }
@@ -3383,6 +3527,7 @@ export async function fetchMyWalletWithdrawals(userId: string): Promise<WalletWi
     user_id: String(w.user_id),
     amount: Number(w.amount),
     pix_key: String(w.pix_key),
+    pix_key_type: w.pix_key_type ? String(w.pix_key_type) : undefined,
     status: (w.status as WalletWithdrawalStatus) || 'pending',
     note: w.note ? String(w.note) : null,
     created_at: String(w.created_at),
@@ -3390,7 +3535,11 @@ export async function fetchMyWalletWithdrawals(userId: string): Promise<WalletWi
   }));
 }
 
-export async function requestWalletWithdrawal(amount: number, pixKey: string): Promise<string> {
+export async function requestWalletWithdrawal(
+  amount: number,
+  pixKey: string,
+  pixKeyType: PixKeyType = 'cpf_cnpj'
+): Promise<string> {
   const cleanAmount = Number(Math.max(0, amount).toFixed(2));
   const cleanPix = pixKey.trim();
   if (cleanAmount < 5) {
@@ -3408,7 +3557,15 @@ export async function requestWalletWithdrawal(amount: number, pixKey: string): P
   if (error) {
     throw new Error(error.message || 'Erro ao solicitar saque. Verifique o SQL incremental.');
   }
-  return String(data || '');
+  const withdrawalId = String(data || '');
+  if (withdrawalId && pixKeyType) {
+    await supabase
+      .from('wallet_withdrawals')
+      .update({ pix_key_type: pixKeyType })
+      .eq('id', withdrawalId)
+      .then(() => undefined, () => undefined);
+  }
+  return withdrawalId;
 }
 
 export async function adminProcessWalletWithdrawal(
@@ -3462,8 +3619,39 @@ function mapDbNotification(
         : {},
     created_by: row.created_by ? String(row.created_by) : null,
     created_at: String(row.created_at || new Date().toISOString()),
-    is_read: readIds ? readIds.has(id) : false,
+    is_read:
+      Boolean(readIds && readIds.has(id)) ||
+      (String(row.target_scope || '') === 'user' &&
+        (Boolean(row.lida) || Boolean(row.read_at))),
   };
+}
+
+const LOCAL_READ_NOTIF_PREFIX = 'godriver_read_notifs_v1_';
+
+function getLocalReadNotificationIds(userId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(`${LOCAL_READ_NOTIF_PREFIX}${userId}`);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.map((v) => String(v)));
+  } catch {
+    return new Set();
+  }
+}
+
+function addLocalReadNotificationIds(userId: string, ids: string[]): void {
+  if (!userId || ids.length === 0) return;
+  try {
+    const set = getLocalReadNotificationIds(userId);
+    for (const id of ids) {
+      if (id) set.add(String(id));
+    }
+    const trimmed = Array.from(set).slice(-300);
+    localStorage.setItem(`${LOCAL_READ_NOTIF_PREFIX}${userId}`, JSON.stringify(trimmed));
+  } catch {
+    // Ignore storage quota restrictions
+  }
 }
 
 export async function fetchMyNotifications(user: UserProfile): Promise<AppNotification[]> {
@@ -3480,7 +3668,12 @@ export async function fetchMyNotifications(user: UserProfile): Promise<AppNotifi
   ]);
 
   if (error || !rows) return [];
-  const readIds = new Set((reads || []).map((r) => String(r.notification_id)));
+  const readIds = getLocalReadNotificationIds(user.id);
+  for (const r of reads || []) {
+    if (r?.notification_id) {
+      readIds.add(String(r.notification_id));
+    }
+  }
 
   return rows
     .filter((r) => {
@@ -3498,36 +3691,45 @@ export async function markNotificationRead(
   notificationId: string,
   userId: string
 ): Promise<void> {
-  await supabase
-    .from('notification_reads')
-    .upsert(
-      {
-        notification_id: notificationId,
-        user_id: userId,
-        read_at: new Date().toISOString(),
-      },
-      { onConflict: 'notification_id,user_id' }
-    )
-    .then(() => undefined, () => undefined);
+  if (!notificationId || !userId) return;
+  await markAllNotificationsRead([notificationId], userId);
 }
 
 export async function markAllNotificationsRead(
   notificationIds: string[],
   userId: string
 ): Promise<void> {
-  if (notificationIds.length === 0) return;
+  const cleanIds = Array.from(new Set(notificationIds.filter(Boolean)));
+  if (!userId || cleanIds.length === 0) return;
+
+  addLocalReadNotificationIds(userId, cleanIds);
   const now = new Date().toISOString();
-  await supabase
-    .from('notification_reads')
-    .upsert(
-      notificationIds.map((nid) => ({
+
+  try {
+    const { error: rpcError } = await supabase.rpc('mark_notifications_read', {
+      p_notification_ids: cleanIds,
+    });
+    if (!rpcError) return;
+  } catch {
+    // Fallback to direct table updates if RPC is not deployed yet
+  }
+
+  await Promise.allSettled([
+    supabase.from('notification_reads').upsert(
+      cleanIds.map((nid) => ({
         notification_id: nid,
         user_id: userId,
         read_at: now,
       })),
       { onConflict: 'notification_id,user_id' }
-    )
-    .then(() => undefined, () => undefined);
+    ),
+    supabase
+      .from('app_notifications')
+      .update({ lida: true, read_at: now })
+      .in('id', cleanIds)
+      .eq('target_scope', 'user')
+      .eq('target_user_id', userId),
+  ]);
 }
 
 export async function adminFetchSentNotifications(): Promise<AppNotification[]> {
@@ -3873,4 +4075,186 @@ export async function process66PayRideTransfer(
       `GO-${driverId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
   };
 }
+
+// --- FILA DE RECONHECIMENTO FACIAL AO VIVO (MOTORISTA -> ADMIN) ---
+
+export async function submitDriverFacialVerification(
+  driverId: string,
+  selfieDataUrl: string
+): Promise<DriverFacialVerification> {
+  const { data: rpcData, error: rpcErr } = await supabase.rpc(
+    'submit_driver_facial_verification',
+    { p_selfie_data_url: selfieDataUrl }
+  );
+
+  if (!rpcErr && rpcData) {
+    const res = rpcData as Record<string, unknown>;
+    return {
+      id: String(res.id || `fac-${Date.now()}`),
+      driver_id: driverId,
+      selfie_data_url: selfieDataUrl,
+      status: 'pending',
+      queue_position: Number(res.queue_position ?? 1),
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  // Fallback direct insert when RPC hasn't been executed yet
+  const { data: ins, error: insErr } = await supabase
+    .from('driver_facial_verifications')
+    .insert({
+      driver_id: driverId,
+      selfie_data_url: selfieDataUrl,
+      status: 'pending',
+    })
+    .select('*')
+    .single();
+
+  if (insErr || !ins) {
+    throw new Error(
+      rpcErr?.message ||
+        insErr?.message ||
+        'Execute o SQL Incremental v1.2.5 para habilitar a Fila Facial ao Vivo.'
+    );
+  }
+
+  return {
+    id: String(ins.id),
+    driver_id: String(ins.driver_id),
+    selfie_data_url: String(ins.selfie_data_url),
+    status: (ins.status as FacialVerificationStatus) || 'pending',
+    queue_position: 1,
+    created_at: String(ins.created_at),
+  };
+}
+
+export async function fetchMyLatestFacialVerification(
+  driverId: string
+): Promise<DriverFacialVerification | null> {
+  const { data, error } = await supabase
+    .from('driver_facial_verifications')
+    .select('*')
+    .eq('driver_id', driverId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  let queuePos: number | undefined;
+  if (data.status === 'pending') {
+    const { count } = await supabase
+      .from('driver_facial_verifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .lte('created_at', String(data.created_at));
+    queuePos = Number(count ?? 1);
+  }
+
+  return {
+    id: String(data.id),
+    driver_id: String(data.driver_id),
+    selfie_data_url: String(data.selfie_data_url),
+    status: (data.status as FacialVerificationStatus) || 'pending',
+    queue_position: queuePos,
+    reviewed_by: data.reviewed_by ? String(data.reviewed_by) : null,
+    rejection_reason: data.rejection_reason ? String(data.rejection_reason) : null,
+    created_at: String(data.created_at),
+    reviewed_at: data.reviewed_at ? String(data.reviewed_at) : null,
+  };
+}
+
+export async function adminFetchFacialQueue(): Promise<DriverFacialVerification[]> {
+  const { data, error } = await supabase
+    .from('driver_facial_verifications')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+
+  if (error || !data || data.length === 0) return [];
+
+  const driverIds = Array.from(new Set(data.map((r) => String(r.driver_id))));
+  const [{ data: profs }, { data: drvs }] = await Promise.all([
+    supabase.from('profiles').select('*').in('id', driverIds),
+    supabase.from('driver_profiles').select('*').in('user_id', driverIds),
+  ]);
+
+  const drvById = new Map<string, Record<string, unknown>>();
+  for (const d of drvs || []) drvById.set(String(d.user_id), d as Record<string, unknown>);
+  const profById = new Map<string, UserProfile>();
+  for (const p of profs || []) {
+    profById.set(String(p.id), mapDbProfile(p as Record<string, unknown>, drvById.get(String(p.id))));
+  }
+
+  return data.map((row, idx) => ({
+    id: String(row.id),
+    driver_id: String(row.driver_id),
+    selfie_data_url: String(row.selfie_data_url),
+    status: (row.status as FacialVerificationStatus) || 'pending',
+    queue_position: idx + 1,
+    reviewed_by: row.reviewed_by ? String(row.reviewed_by) : null,
+    rejection_reason: row.rejection_reason ? String(row.rejection_reason) : null,
+    created_at: String(row.created_at),
+    reviewed_at: row.reviewed_at ? String(row.reviewed_at) : null,
+    driver: profById.get(String(row.driver_id)),
+  }));
+}
+
+export async function adminReviewFacialVerification(
+  verificationId: string,
+  driverId: string,
+  approve: boolean,
+  reason?: string
+): Promise<void> {
+  const { error: rpcErr } = await supabase.rpc('admin_review_driver_facial', {
+    p_verification_id: verificationId,
+    p_approve: approve,
+    p_reason: reason?.trim() || null,
+  });
+
+  if (!rpcErr) return;
+
+  const { error: updErr } = await supabase
+    .from('driver_facial_verifications')
+    .update({
+      status: approve ? 'approved' : 'rejected',
+      rejection_reason: approve ? null : reason?.trim() || 'Verificação facial não confirmada.',
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', verificationId);
+
+  if (updErr) throw new Error(rpcErr.message || updErr.message);
+
+  await supabase
+    .from('driver_profiles')
+    .update({ is_online: approve, updated_at: new Date().toISOString() })
+    .eq('user_id', driverId);
+}
+
+// --- PRIORIZAÇÃO DE CHAMADA POR PROXIMIDADE ---
+
+export function rankOnlineDriversByProximity(
+  ride: Pick<Ride, 'category' | 'origin_lat' | 'origin_lng'>,
+  drivers: UserProfile[]
+): Array<{ driver: UserProfile; distanceKm: number }> {
+  return drivers
+    .filter(
+      (d) =>
+        d.role === 'driver' &&
+        d.status === 'active' &&
+        Boolean(d.driver?.is_online) &&
+        rideMatchesDriverVehicle(ride.category, d.driver?.vehicle_type)
+    )
+    .map((driver) => {
+      const lat = driver.driver?.current_lat;
+      const lng = driver.driver?.current_lng;
+      const distanceKm =
+        typeof lat === 'number' && typeof lng === 'number'
+          ? haversineKm(lat, lng, ride.origin_lat, ride.origin_lng)
+          : 999;
+      return { driver, distanceKm };
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
 

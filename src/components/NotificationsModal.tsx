@@ -116,14 +116,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {unreadCount > 0 && (
+            {notifications.length > 0 && (
               <button
                 type="button"
                 onClick={onMarkAllRead}
-                className="flex min-h-[38px] items-center gap-1 rounded-xl border border-[#E2E8F0] bg-[#F4F6F9] px-2.5 text-[11px] font-extrabold text-[#0F172A] hover:bg-[#E2E8F0]/60 transition whitespace-nowrap"
+                className={`flex min-h-[38px] items-center gap-1 rounded-xl border px-2.5 text-[11px] font-extrabold transition whitespace-nowrap ${
+                  unreadCount > 0
+                    ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#2563EB] hover:bg-[#DBEAFE]'
+                    : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#475569] hover:bg-[#E2E8F0]/60'
+                }`}
               >
                 <CheckCheck className="h-3.5 w-3.5 text-[#10B981]" />
-                <span>Ler todas</span>
+                <span>{unreadCount > 0 ? 'Marcar todas como lidas' : 'Todas lidas'}</span>
               </button>
             )}
             <button

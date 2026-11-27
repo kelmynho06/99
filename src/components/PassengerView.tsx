@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Banknote,
   Bell,
+  Bot,
   Briefcase,
   Car,
   CheckCircle2,
@@ -17,6 +18,7 @@ import {
   EyeOff,
   FileText,
   Flag,
+  Gamepad2,
   Gift,
   Headphones,
   HelpCircle,
@@ -27,6 +29,7 @@ import {
   Menu,
   MessageSquare,
   Minus,
+  Moon,
   Navigation,
   Package,
   Phone,
@@ -38,6 +41,7 @@ import {
   Share2,
   Shield,
   ShieldCheck,
+  Sparkles,
   Star,
   Tag,
   Thermometer,
@@ -59,6 +63,7 @@ import {
   preloadLocalGeoIndex,
   reverseGeocode,
   searchAddresses,
+  searchAddressesWithMelissaAI,
   searchLocalGeoIndex,
 } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
@@ -72,6 +77,7 @@ import {
   fetchRideByIdEnriched,
   fetchUserProfileById,
   getDepositWindowStatus,
+  getNightDutyWindowStatus,
   markAllNotificationsRead,
   markNotificationRead,
   payCompletedRideWithWallet,
@@ -103,8 +109,10 @@ import { AccountSettingsModal } from './AccountSettingsModal';
 import { AvatarImage } from './AvatarImage';
 import { ClientWalletModal, type WalletModalTab } from './ClientWalletModal';
 import { DirectChatModal } from './DirectChatModal';
+import { GamesHub3D } from './games3d/GamesHub3D';
 import { LegalDocsModal } from './LegalDocsModal';
 import { LiveMap } from './LiveMap';
+import { MelissaAssistantModal } from './MelissaAssistantModal';
 import { NotificationsModal } from './NotificationsModal';
 import { PixPaymentModal } from './PixPaymentModal';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -170,6 +178,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [melissaOpen, setMelissaOpen] = useState(false);
+  const [gamesOpen, setGamesOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletInitialTab, setWalletInitialTab] = useState<WalletModalTab>('deposit');
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -177,6 +187,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     () => getDepositWindowStatus(platformConfig, new Date(nowTick)),
     [platformConfig, nowTick]
   );
+  const nightDutyStatus = useMemo(
+    () => getNightDutyWindowStatus(platformConfig, new Date(nowTick)),
+    [platformConfig, nowTick]
+  );
+  const pixBlockedNow = !depositWindow.isOpen || nightDutyStatus.isActive;
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 30_000);
     return () => window.clearInterval(id);
@@ -198,6 +213,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [nearbyPlaces, setNearbyPlaces] = useState<AddressSuggestion[]>([]);
   const [loadingNearby, setLoadingNearby] = useState(false);
   const [searchingAddress, setSearchingAddress] = useState(false);
+  const [searchingAiAddress, setSearchingAiAddress] = useState(false);
   const [activeSearchField, setActiveSearchField] = useState<'origin' | 'destination'>('destination');
   const [pickOnMapMode, setPickOnMapMode] = useState<'origin' | 'destination' | null>(null);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
@@ -339,6 +355,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
       setLoadingNotifications(false);
     }
   }, [currentUser]);
+
+  const handleOpenNotifications = useCallback(() => {
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length > 0) {
+      setNotifications((prev) => prev.map((n) => (n.is_read ? n : { ...n, is_read: true })));
+      void markAllNotificationsRead(unreadIds, currentUser.id);
+    }
+    setNotificationsOpen(true);
+    void loadNotificationsAndCoupons();
+  }, [notifications, currentUser.id, loadNotificationsAndCoupons]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    setNotifications((prev) => prev.map((n) => (n.is_read ? n : { ...n, is_read: true })));
+    void markAllNotificationsRead(unreadIds, currentUser.id);
+  }, [notificationsOpen, notifications, currentUser.id]);
 
   useEffect(() => {
     void loadNotificationsAndCoupons();
@@ -501,6 +535,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     ) {
       setOriginSuggestions([]);
       setSearchingAddress(false);
+      setSearchingAiAddress(false);
       return;
     }
 
@@ -511,29 +546,47 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
     const controller = new AbortController();
     setSearchingAddress(true);
+    setSearchingAiAddress(false);
     const timer = setTimeout(async () => {
       const res = await searchAddresses(trimmed, origin.lat, origin.lng, controller.signal);
-      if (!controller.signal.aborted) {
-        const merged = [...immediateLocal];
-        const seenKeys = new Set(
-          merged.map((m) => `${m.address.toLowerCase()}|${m.lat.toFixed(4)}|${m.lng.toFixed(4)}`)
-        );
-        for (const r of res) {
-          const k = `${r.address.toLowerCase()}|${r.lat.toFixed(4)}|${r.lng.toFixed(4)}`;
-          if (!seenKeys.has(k)) {
-            seenKeys.add(k);
-            merged.push(r);
-          }
+      if (controller.signal.aborted) return;
+
+      const merged = [...immediateLocal];
+      const seenKeys = new Set(
+        merged.map((m) => `${m.address.toLowerCase()}|${m.lat.toFixed(4)}|${m.lng.toFixed(4)}`)
+      );
+      for (const r of res) {
+        const k = `${r.address.toLowerCase()}|${r.lat.toFixed(4)}|${r.lng.toFixed(4)}`;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          merged.push(r);
         }
-        setOriginSuggestions(merged.slice(0, 12));
-        setSearchingAddress(false);
+      }
+      setOriginSuggestions(merged.slice(0, 12));
+      setSearchingAddress(false);
+
+      if (merged.length === 0 && trimmed.length >= 3) {
+        setSearchingAiAddress(true);
+        const aiHits = await searchAddressesWithMelissaAI(
+          trimmed,
+          origin.lat,
+          origin.lng,
+          weather?.city,
+          controller.signal
+        );
+        if (!controller.signal.aborted) {
+          if (aiHits.length > 0) {
+            setOriginSuggestions(aiHits);
+          }
+          setSearchingAiAddress(false);
+        }
       }
     }, 260);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [originQuery, addressScreenOpen, activeSearchField, origin.address, origin.lat, origin.lng, t.current_location]);
+  }, [originQuery, addressScreenOpen, activeSearchField, origin.address, origin.lat, origin.lng, t.current_location, weather?.city]);
 
   useEffect(() => {
     if (!addressScreenOpen || activeSearchField !== 'destination') return;
@@ -541,6 +594,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     if (trimmed.length < 1 || (destination && destQuery === destination.address)) {
       setDestSuggestions([]);
       setSearchingAddress(false);
+      setSearchingAiAddress(false);
       return;
     }
 
@@ -551,29 +605,79 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
     const controller = new AbortController();
     setSearchingAddress(true);
+    setSearchingAiAddress(false);
     const timer = setTimeout(async () => {
       const res = await searchAddresses(trimmed, origin.lat, origin.lng, controller.signal);
-      if (!controller.signal.aborted) {
-        const merged = [...immediateLocal];
-        const seenKeys = new Set(
-          merged.map((m) => `${m.address.toLowerCase()}|${m.lat.toFixed(4)}|${m.lng.toFixed(4)}`)
-        );
-        for (const r of res) {
-          const k = `${r.address.toLowerCase()}|${r.lat.toFixed(4)}|${r.lng.toFixed(4)}`;
-          if (!seenKeys.has(k)) {
-            seenKeys.add(k);
-            merged.push(r);
-          }
+      if (controller.signal.aborted) return;
+
+      const merged = [...immediateLocal];
+      const seenKeys = new Set(
+        merged.map((m) => `${m.address.toLowerCase()}|${m.lat.toFixed(4)}|${m.lng.toFixed(4)}`)
+      );
+      for (const r of res) {
+        const k = `${r.address.toLowerCase()}|${r.lat.toFixed(4)}|${r.lng.toFixed(4)}`;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          merged.push(r);
         }
-        setDestSuggestions(merged.slice(0, 12));
-        setSearchingAddress(false);
+      }
+      setDestSuggestions(merged.slice(0, 12));
+      setSearchingAddress(false);
+
+      if (merged.length === 0 && trimmed.length >= 3) {
+        setSearchingAiAddress(true);
+        const aiHits = await searchAddressesWithMelissaAI(
+          trimmed,
+          origin.lat,
+          origin.lng,
+          weather?.city,
+          controller.signal
+        );
+        if (!controller.signal.aborted) {
+          if (aiHits.length > 0) {
+            setDestSuggestions(aiHits);
+          }
+          setSearchingAiAddress(false);
+        }
       }
     }, 260);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [destQuery, addressScreenOpen, activeSearchField, destination, origin.lat, origin.lng]);
+  }, [destQuery, addressScreenOpen, activeSearchField, destination, origin.lat, origin.lng, weather?.city]);
+
+  const handleSearchWithMelissaAI = useCallback(
+    async (field: 'origin' | 'destination') => {
+      const raw = (field === 'origin' ? originQuery : destQuery).trim();
+      if (raw.length < 2 || searchingAiAddress) return;
+      setSearchingAiAddress(true);
+      try {
+        const aiHits = await searchAddressesWithMelissaAI(
+          raw,
+          origin.lat,
+          origin.lng,
+          weather?.city
+        );
+        if (aiHits.length > 0) {
+          if (field === 'origin') {
+            setOriginSuggestions((prev) => {
+              const seen = new Set(prev.map((p) => p.address.toLowerCase()));
+              return [...aiHits.filter((a) => !seen.has(a.address.toLowerCase())), ...prev].slice(0, 12);
+            });
+          } else {
+            setDestSuggestions((prev) => {
+              const seen = new Set(prev.map((p) => p.address.toLowerCase()));
+              return [...aiHits.filter((a) => !seen.has(a.address.toLowerCase())), ...prev].slice(0, 12);
+            });
+          }
+        }
+      } finally {
+        setSearchingAiAddress(false);
+      }
+    },
+    [destQuery, origin.lat, origin.lng, originQuery, searchingAiAddress, weather?.city]
+  );
 
   useEffect(() => {
     setSheetMinimized(false);
@@ -901,6 +1005,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const handleChooseCompletedPix = async (ride: Ride) => {
     setPostRidePaymentError(null);
+    if (nightDutyStatus.isActive) {
+      setPostRidePaymentError(
+        `Plantão Noturno da Melissa (${nightDutyStatus.startTime} às ${nightDutyStatus.endTime}): pagamentos manuais via Pix ficam pausados. Use Saldo GoPay ou Dinheiro.`
+      );
+      return;
+    }
     setPostRidePaymentBusy('pix');
     try {
       const updated =
@@ -1149,10 +1259,16 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => {
-                    setNotificationsOpen(true);
-                    void loadNotificationsAndCoupons();
-                  }}
+                  onClick={() => setMelissaOpen((v) => !v)}
+                  className="aurora-accent-flow flex h-10 items-center gap-1.5 rounded-full px-3 text-xs font-extrabold text-white shadow-sm active:scale-95 transition"
+                  aria-label="Assistente Melissa"
+                >
+                  <Bot className="h-4 w-4 shrink-0" />
+                  <span>Melissa</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenNotifications}
                   className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white border border-[#E2E8F0] text-[#0F172A] shadow-xs active:scale-95 transition"
                   aria-label="Notificações"
                 >
@@ -1323,6 +1439,28 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     </span>
                   </button>
                 </div>
+
+                {/* Central de Jogos 3D Shortcut */}
+                <button
+                  type="button"
+                  onClick={() => setGamesOpen(true)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] px-4 py-3 text-left hover:bg-[#DBEAFE]/60 active:scale-[0.99] transition"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2563EB] text-white">
+                      <Gamepad2 className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-extrabold text-[#0F172A] truncate">
+                        {t.games_3d_hub || 'Central de 10 Jogos 3D'}
+                      </p>
+                      <p className="text-[11px] text-[#475569] truncate">
+                        Divirta-se grátis enquanto aguarda ou durante a viagem
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-[#2563EB] shrink-0" />
+                </button>
               </div>
             </div>
           </div>
@@ -1365,22 +1503,30 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setNotificationsOpen(true);
-                void loadNotificationsAndCoupons();
-              }}
-              className="pointer-events-auto relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#0F172A] shadow-lg border border-[#E2E8F0] active:scale-95 transition"
-              aria-label="Notificações"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white font-mono-num shadow-sm">
-                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
-                </span>
-              )}
-            </button>
+            <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setMelissaOpen((v) => !v)}
+                className="aurora-accent-flow flex h-11 items-center gap-1.5 rounded-full px-3 text-xs font-extrabold text-white shadow-lg active:scale-95 transition"
+                aria-label="Assistente Melissa"
+              >
+                <Bot className="h-4 w-4 shrink-0" />
+                <span className="hidden xs:inline">Melissa</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenNotifications}
+                className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#0F172A] shadow-lg border border-[#E2E8F0] active:scale-95 transition"
+                aria-label="Notificações"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white font-mono-num shadow-sm">
+                    {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         ) : (
         <div className={`mx-auto flex max-w-2xl items-center justify-between gap-2 ${
@@ -1450,10 +1596,18 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
             <button
               type="button"
-              onClick={() => {
-                setNotificationsOpen(true);
-                void loadNotificationsAndCoupons();
-              }}
+              onClick={() => setMelissaOpen((v) => !v)}
+              className="aurora-accent-flow flex h-11 items-center gap-1.5 rounded-2xl px-3 text-xs font-extrabold text-white shadow-lg active:scale-95 transition"
+              aria-label="Assistente Melissa"
+              title="Assistente Melissa"
+            >
+              <Bot className="h-4 w-4 shrink-0" />
+              <span>Melissa</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenNotifications}
               className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/95 text-[#0F172A] shadow-lg border border-[#E2E8F0] active:scale-95 transition"
               aria-label="Notificações"
               title="Notificações"
@@ -2278,13 +2432,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         Saldo GoPay insuficiente ({formatBRL(walletBalance)})
                       </p>
                       <p className="text-[11px] text-[#2563EB]">
-                        {depositWindow.isOpen ? (
+                        {!pixBlockedNow ? (
                           <>
                             Deposite{' '}
                             <strong className="font-mono-num">
                               {formatBRL(totalFareWithDebt - walletBalance)}
                             </strong>{' '}
                             na carteira GoPay via Pix ou pague em Dinheiro.
+                          </>
+                        ) : nightDutyStatus.isActive ? (
+                          <>
+                            Plantão Noturno da Melissa ({nightDutyStatus.startTime} às{' '}
+                            {nightDutyStatus.endTime}): depósitos Pix pausados na madrugada. Quem já tem saldo GoPay usa normal; caso contrário, escolha{' '}
+                            <strong>Dinheiro</strong>.
                           </>
                         ) : (
                           <>
@@ -2295,7 +2455,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         )}
                       </p>
                     </div>
-                    {depositWindow.isOpen ? (
+                    {!pixBlockedNow ? (
                       <button
                         type="button"
                         onClick={() => openWallet('deposit')}
@@ -2459,11 +2619,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {!canPayWithWallet && (
                       <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-[11px]">
                         <span className="font-semibold text-[#0F172A]">
-                          {depositWindow.isOpen
+                          {!pixBlockedNow
                             ? `Saldo GoPay insuficiente (${formatBRL(walletBalance)}).`
+                            : nightDutyStatus.isActive
+                            ? `Plantão Noturno da Melissa (${nightDutyStatus.startTime}–${nightDutyStatus.endTime}): apenas Saldo GoPay ou Dinheiro nesta faixa.`
                             : `Depósitos Pix das ${depositWindow.startTime} às ${depositWindow.endTime}. Selecione Dinheiro para pagar ao motorista.`}
                         </span>
-                        {depositWindow.isOpen ? (
+                        {!pixBlockedNow ? (
                           <button
                             type="button"
                             onClick={() => openWallet('deposit')}
@@ -3192,11 +3354,38 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-[#E2E8F0]">
-            {searchingAddress && (
-              <div className="px-4 py-3 text-xs font-semibold text-[#2563EB]">
-                {t.searching_addresses}
+            {(searchingAddress || searchingAiAddress) && (
+              <div className="px-4 py-3 flex items-center gap-2 text-xs font-semibold text-[#2563EB]">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+                <span>
+                  {searchingAiAddress
+                    ? 'Melissa IA pesquisando estabelecimentos e endereços na sua região...'
+                    : t.searching_addresses}
+                </span>
               </div>
             )}
+            {((activeSearchField === 'origin' &&
+              originQuery.trim().length >= 3 &&
+              originQuery !== origin.address &&
+              originQuery !== t.current_location) ||
+              (activeSearchField === 'destination' &&
+                destQuery.trim().length >= 3 &&
+                (!destination || destQuery !== destination.address))) &&
+              !searchingAiAddress && (
+                <div className="px-4 py-2.5 bg-[#F8FAFC] flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-[#475569] truncate">
+                    Não encontrou o comércio ou galeria exata?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleSearchWithMelissaAI(activeSearchField)}
+                    className="aurora-accent-flow inline-flex shrink-0 items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white shadow-xs active:scale-95 transition"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    <span>Buscar com Melissa IA</span>
+                  </button>
+                </div>
+              )}
             {activeSearchField === 'origin' && originSuggestions.length > 0 ? (
               originSuggestions.map((item, i) => {
                 const km = haversineKm(origin.lat, origin.lng, item.lat, item.lng);
@@ -3213,16 +3402,26 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     className="flex min-h-[64px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[#F4F6F9]"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-[#2563EB]">
-                        <MapPin className="h-4 w-4" />
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                          item.isAiSuggestion
+                            ? 'aurora-accent-flow text-white'
+                            : 'bg-[#F1F5F9] text-[#2563EB]'
+                        }`}
+                      >
+                        {item.isAiSuggestion ? (
+                          <Sparkles className="h-4 w-4" />
+                        ) : (
+                          <MapPin className="h-4 w-4" />
+                        )}
                       </span>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-bold text-[#0F172A] truncate">
                             {item.address.split('·')[0].trim()}
                           </p>
-                          <span className="shrink-0 rounded-md bg-[#EFF6FF] px-1.5 py-0.5 text-[10px] font-bold text-[#2563EB]">
-                            {item.categoryLabel}
+                          <span className="shrink-0 text-[10px] font-extrabold text-[#2563EB]">
+                            {item.isAiSuggestion ? `Melissa IA · ${item.categoryLabel}` : item.categoryLabel}
                           </span>
                         </div>
                         <p className="text-xs text-[#475569] truncate">{item.subtitle || item.address}</p>
@@ -3293,14 +3492,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     className="flex min-h-[64px] w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[#F4F6F9]"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-[#2563EB]">
-                        <Navigation className="h-4 w-4" />
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                          item.isAiSuggestion
+                            ? 'aurora-accent-flow text-white'
+                            : 'bg-[#F1F5F9] text-[#2563EB]'
+                        }`}
+                      >
+                        {item.isAiSuggestion ? (
+                          <Sparkles className="h-4 w-4" />
+                        ) : (
+                          <Navigation className="h-4 w-4" />
+                        )}
                       </span>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-bold text-[#0F172A] truncate">{title}</p>
-                          <span className="shrink-0 rounded-md bg-[#EFF6FF] px-1.5 py-0.5 text-[10px] font-bold text-[#2563EB]">
-                            {item.categoryLabel}
+                          <span className="shrink-0 text-[10px] font-extrabold text-[#2563EB]">
+                            {item.isAiSuggestion ? `Melissa IA · ${item.categoryLabel}` : item.categoryLabel}
                           </span>
                         </div>
                         <p className="text-xs text-[#475569] truncate">{item.subtitle || item.address}</p>
@@ -3524,6 +3733,21 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
+                  setGamesOpen(true);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-2.5 text-sm font-extrabold text-[#2563EB] bg-[#EFF6FF] hover:bg-[#DBEAFE]/60"
+              >
+                <span className="flex items-center gap-3">
+                  <Gamepad2 className="h-5 w-5 text-[#2563EB]" />
+                  {t.games_3d_hub || 'Central de 10 Jogos 3D'}
+                </span>
+                <ChevronRight className="h-4 w-4 text-[#2563EB]" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
                   setSupportChatOpen(true);
                 }}
                 className="flex min-h-[48px] w-full items-center justify-between rounded-2xl px-2.5 text-sm font-semibold text-[#0F172A] hover:bg-[#F4F6F9]"
@@ -3685,11 +3909,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         </div>
       )}
 
-      {/* History Modal */}
+      {/* History Modal (Full Screen) */}
       {historyOpen && (
-        <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col border border-[#E2E8F0]">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <div className="fixed inset-0 z-[1050] flex flex-col bg-white h-[100dvh] w-screen overflow-hidden">
+          <div className="flex h-full w-full flex-col bg-white overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
               <h3 className="font-display text-lg font-extrabold text-[#0F172A]">
                 Atividade · Corridas e Entregas
               </h3>
@@ -3701,7 +3925,7 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-3 flex-1 overflow-y-auto space-y-3">
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 max-w-2xl w-full mx-auto">
               {myRides.length === 0 ? (
                 <p className="py-8 text-center text-sm text-[#475569]">
                   Você ainda não realizou corridas ou entregas.
@@ -4047,6 +4271,39 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
             <span>{cancelNotice.text}</span>
           </div>
         </div>
+      )}
+      {melissaOpen && (
+        <MelissaAssistantModal
+          open={melissaOpen}
+          currentUser={currentUser}
+          platformConfig={platformConfig}
+          activeRide={activeRide}
+          onlineDriversCount={onlineDrivers.length}
+          onClose={() => setMelissaOpen(false)}
+          onOpenGames={() => {
+            setMelissaOpen(false);
+            setGamesOpen(true);
+          }}
+          onOpenWallet={() => {
+            setMelissaOpen(false);
+            openWallet('deposit');
+          }}
+          onOpenSupport={() => {
+            setMelissaOpen(false);
+            setSupportChatOpen(true);
+          }}
+          onOpenSettings={() => {
+            setMelissaOpen(false);
+            setSettingsOpen(true);
+          }}
+        />
+      )}
+
+      {gamesOpen && (
+        <GamesHub3D
+          open={gamesOpen}
+          onClose={() => setGamesOpen(false)}
+        />
       )}
     </div>
   );

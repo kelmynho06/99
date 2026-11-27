@@ -2149,3 +2149,261 @@ CREATE POLICY "Admin delete public-assets"
   ON storage.objects FOR DELETE
   TO authenticated
   USING (bucket_id = 'public-assets' AND public.is_admin());
+
+-- ============================================================================
+-- 12. Go Driver v1.2.5 — Melissa Plantão Noturno, Tema Global, Pix e Fila Facial
+-- ============================================================================
+ALTER TABLE public.platform_settings
+  ADD COLUMN IF NOT EXISTS theme_preset TEXT DEFAULT 'electric_blue',
+  ADD COLUMN IF NOT EXISTS assistant_voice_default TEXT DEFAULT 'melissa-maps',
+  ADD COLUMN IF NOT EXISTS night_duty_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS night_duty_start TEXT NOT NULL DEFAULT '00:00',
+  ADD COLUMN IF NOT EXISTS night_duty_end TEXT NOT NULL DEFAULT '07:00',
+  ADD COLUMN IF NOT EXISTS night_duty_auto_approve BOOLEAN NOT NULL DEFAULT TRUE;
+
+UPDATE public.platform_settings
+SET
+  theme_preset = COALESCE(NULLIF(TRIM(theme_preset), ''), 'electric_blue'),
+  assistant_voice_default = COALESCE(NULLIF(TRIM(assistant_voice_default), ''), 'melissa-maps'),
+  night_duty_start = COALESCE(NULLIF(TRIM(night_duty_start), ''), '00:00'),
+  night_duty_end = COALESCE(NULLIF(TRIM(night_duty_end), ''), '07:00')
+WHERE id = 1;
+
+ALTER TABLE public.driver_profiles
+  ADD COLUMN IF NOT EXISTS pix_key_type TEXT DEFAULT 'cpf_cnpj';
+
+ALTER TABLE public.wallet_withdrawals
+  ADD COLUMN IF NOT EXISTS pix_key_type TEXT DEFAULT 'cpf_cnpj';
+
+ALTER TABLE public.direct_messages
+  ADD COLUMN IF NOT EXISTS attachment_url TEXT,
+  ADD COLUMN IF NOT EXISTS attachment_name TEXT,
+  ADD COLUMN IF NOT EXISTS attachment_type TEXT,
+  ADD COLUMN IF NOT EXISTS gps_lat DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS gps_lng DOUBLE PRECISION;
+
+CREATE TABLE IF NOT EXISTS public.driver_facial_verifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  selfie_data_url TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+  reviewed_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  rejection_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_facial_status_created
+  ON public.driver_facial_verifications (status, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_driver_facial_driver_created
+  ON public.driver_facial_verifications (driver_id, created_at DESC);
+
+ALTER TABLE public.driver_facial_verifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Motorista e Admin leem fila facial" ON public.driver_facial_verifications;
+DROP POLICY IF EXISTS "Motorista aprovado envia facial ao vivo" ON public.driver_facial_verifications;
+DROP POLICY IF EXISTS "Somente Admin revisa fila facial" ON public.driver_facial_verifications;
+
+CREATE POLICY "Motorista e Admin leem fila facial"
+  ON public.driver_facial_verifications FOR SELECT
+  USING (driver_id = auth.uid() OR public.is_admin());
+
+CREATE POLICY "Motorista aprovado envia facial ao vivo"
+  ON public.driver_facial_verifications FOR INSERT
+  WITH CHECK (
+    driver_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid() AND p.role = 'driver' AND p.status = 'active' AND p.is_anonymized = FALSE
+    )
+  );
+
+CREATE POLICY "Somente Admin revisa fila facial"
+  ON public.driver_facial_verifications FOR UPDATE
+  USING (public.is_admin());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'driver_facial_verifications'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.driver_facial_verifications;
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.submit_driver_facial_verification(p_selfie_data_url TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_role TEXT;
+  v_status TEXT;
+  v_id UUID;
+  v_pos INTEGER;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado';
+  END IF;
+
+  SELECT role, status INTO v_role, v_status
+  FROM public.profiles
+  WHERE id = v_uid AND is_anonymized = FALSE;
+
+  IF v_role <> 'driver' OR v_status <> 'active' THEN
+    RAISE EXCEPTION 'Conta de motorista não está ativa para verificação ao vivo';
+  END IF;
+
+  IF p_selfie_data_url IS NULL OR LENGTH(TRIM(p_selfie_data_url)) < 20 THEN
+    RAISE EXCEPTION 'Foto facial inválida';
+  END IF;
+
+  UPDATE public.driver_facial_verifications
+  SET status = 'rejected',
+      rejection_reason = 'Substituída por nova verificação ao vivo',
+      reviewed_at = NOW()
+  WHERE driver_id = v_uid AND status = 'pending';
+
+  INSERT INTO public.driver_facial_verifications (driver_id, selfie_data_url, status)
+  VALUES (v_uid, p_selfie_data_url, 'pending')
+  RETURNING id INTO v_id;
+
+  SELECT COUNT(*)::INTEGER INTO v_pos
+  FROM public.driver_facial_verifications
+  WHERE status = 'pending' AND created_at <= (
+    SELECT created_at FROM public.driver_facial_verifications WHERE id = v_id
+  );
+
+  RETURN jsonb_build_object(
+    'ok', TRUE,
+    'id', v_id,
+    'status', 'pending',
+    'queue_position', COALESCE(v_pos, 1)
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_review_driver_facial(
+  p_verification_id UUID,
+  p_approve BOOLEAN,
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_driver_id UUID;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Acesso negado: somente administrador';
+  END IF;
+
+  UPDATE public.driver_facial_verifications
+  SET
+    status = CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END,
+    reviewed_by = auth.uid(),
+    rejection_reason = CASE WHEN p_approve THEN NULL ELSE NULLIF(TRIM(COALESCE(p_reason, '')), '') END,
+    reviewed_at = NOW()
+  WHERE id = p_verification_id
+  RETURNING driver_id INTO v_driver_id;
+
+  IF v_driver_id IS NULL THEN
+    RAISE EXCEPTION 'Verificação facial não encontrada';
+  END IF;
+
+  IF p_approve THEN
+    UPDATE public.driver_profiles
+    SET is_online = TRUE,
+        updated_at = NOW()
+    WHERE user_id = v_driver_id;
+  ELSE
+    UPDATE public.driver_profiles
+    SET is_online = FALSE,
+        updated_at = NOW()
+    WHERE user_id = v_driver_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', TRUE,
+    'driver_id', v_driver_id,
+    'status', CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END
+  );
+END;
+$$;
+
+-- ============================================================================
+-- 13. Persistência Real de Notificações Lidas (lida, read_at, RLS e RPC)
+-- ============================================================================
+ALTER TABLE public.app_notifications
+  ADD COLUMN IF NOT EXISTS lida BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS public.notification_reads (
+  notification_id UUID NOT NULL REFERENCES public.app_notifications(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (notification_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_reads_user
+  ON public.notification_reads (user_id, read_at DESC);
+
+ALTER TABLE public.notification_reads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "notification_reads_own" ON public.notification_reads;
+CREATE POLICY "notification_reads_own"
+  ON public.notification_reads FOR ALL
+  TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS "app_notifications_mark_own_read" ON public.app_notifications;
+CREATE POLICY "app_notifications_mark_own_read"
+  ON public.app_notifications FOR UPDATE
+  TO authenticated
+  USING (target_scope = 'user' AND target_user_id = auth.uid())
+  WITH CHECK (target_scope = 'user' AND target_user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION public.mark_notifications_read(p_notification_ids UUID[])
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_now TIMESTAMPTZ := NOW();
+  v_count INTEGER := 0;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado';
+  END IF;
+
+  IF p_notification_ids IS NULL OR array_length(p_notification_ids, 1) IS NULL THEN
+    RETURN jsonb_build_object('ok', TRUE, 'marked', 0);
+  END IF;
+
+  INSERT INTO public.notification_reads (notification_id, user_id, read_at)
+  SELECT n.id, v_uid, v_now
+  FROM public.app_notifications n
+  WHERE n.id = ANY(p_notification_ids)
+  ON CONFLICT (notification_id, user_id)
+  DO UPDATE SET read_at = COALESCE(public.notification_reads.read_at, EXCLUDED.read_at);
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  UPDATE public.app_notifications
+  SET lida = TRUE,
+      read_at = COALESCE(read_at, v_now)
+  WHERE id = ANY(p_notification_ids)
+    AND target_scope = 'user'
+    AND target_user_id = v_uid;
+
+  RETURN jsonb_build_object('ok', TRUE, 'marked', v_count, 'read_at', v_now);
+END;
+$$;
+

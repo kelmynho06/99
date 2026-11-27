@@ -15,6 +15,7 @@ import {
   Info,
   KeyRound,
   Lock,
+  Moon,
   Pencil,
   Plus,
   QrCode,
@@ -37,6 +38,7 @@ import {
   fetchUserProfileById,
   fetchWalletTransactions,
   getDepositWindowStatus,
+  getNightDutyWindowStatus,
   lookupWalletRecipient,
   requestWalletWithdrawal,
   transferirSaldo66,
@@ -45,6 +47,7 @@ import {
 import { PixQrSvg, usePixSecurityRotation } from '../lib/pixQr';
 import { supabase } from '../lib/supabase';
 import type {
+  PixKeyType,
   PlatformConfig,
   UserProfile,
   WalletDeposit,
@@ -126,15 +129,26 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     () => getDepositWindowStatus(platformConfig, new Date(nowTick)),
     [platformConfig, nowTick]
   );
+  const nightDutyStatus = useMemo(
+    () => getNightDutyWindowStatus(platformConfig, new Date(nowTick)),
+    [platformConfig, nowTick]
+  );
+  const depositsBlockedNow = !depositWindow.isOpen || nightDutyStatus.isActive;
 
   const [depositSecurityAccepted, setDepositSecurityAccepted] = useState(false);
   const [showDepositSecurityGate, setShowDepositSecurityGate] = useState(
-    () => initialTab === 'deposit' && getDepositWindowStatus(platformConfig).isOpen
+    () =>
+      initialTab === 'deposit' &&
+      getDepositWindowStatus(platformConfig).isOpen &&
+      !getNightDutyWindowStatus(platformConfig).isActive
   );
   const [tab, setTab] = useState<WalletModalTab>(() => {
     if (initialTab === 'withdraw' && !isDriver) return 'home';
     if (initialTab === 'deposit') {
-      return getDepositWindowStatus(platformConfig).isOpen ? 'home' : 'deposit';
+      const canDeposit =
+        getDepositWindowStatus(platformConfig).isOpen &&
+        !getNightDutyWindowStatus(platformConfig).isActive;
+      return canDeposit ? 'home' : 'deposit';
     }
     return initialTab;
   });
@@ -187,6 +201,9 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const [withdrawPixKey, setWithdrawPixKey] = useState(
     () => currentUser.driver?.pix_key || currentUser.phone || currentUser.email || ''
   );
+  const [withdrawPixKeyType, setWithdrawPixKeyType] = useState<PixKeyType>(
+    () => currentUser.driver?.pix_key_type || 'cpf_cnpj'
+  );
 
   // Shared records state
   const [deposits, setDeposits] = useState<WalletDeposit[]>([]);
@@ -229,7 +246,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     setError(null);
     setSuccessMsg(null);
     setLastTransferReceiptTx(null);
-    if (nextTab === 'deposit' && depositWindow.isOpen && !depositSecurityAccepted) {
+    if (nextTab === 'deposit' && !depositsBlockedNow && !depositSecurityAccepted) {
       setShowDepositSecurityGate(true);
       return;
     }
@@ -652,7 +669,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
     setSubmitting(true);
     try {
-      await requestWalletWithdrawal(numericWithdrawAmount, withdrawPixKey.trim());
+      await requestWalletWithdrawal(numericWithdrawAmount, withdrawPixKey.trim(), withdrawPixKeyType);
       setSuccessMsg(
         `Saque de ${formatBRL(numericWithdrawAmount)} enviado ao Administrador! Você será notificado assim que o Pix for pago.`
       );
@@ -734,9 +751,9 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-[1220] flex items-end sm:items-center justify-center bg-[#0F172A]/60 backdrop-blur-xs p-0 sm:p-4">
+    <div className="fixed inset-0 z-[1220] flex flex-col bg-[#F4F6F9] h-[100dvh] w-screen overflow-hidden">
       <div
-        className={`relative flex h-[94vh] sm:h-auto sm:max-h-[92vh] w-full max-w-md flex-col rounded-t-[28px] sm:rounded-[28px] bg-[#F4F6F9] shadow-2xl overflow-hidden border border-[#E2E8F0] ${
+        className={`relative flex h-full w-full flex-col bg-[#F4F6F9] overflow-hidden ${
           selectedReceiptTx ? 'no-print' : ''
         }`}
       >
@@ -773,7 +790,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
         </div>
 
         {/* Scrollable Body (with extra bottom padding for floating pill dock) */}
-        <div className="flex-1 overflow-y-auto px-4 pt-4 pb-24 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 pt-4 pb-24 space-y-4 max-w-xl w-full mx-auto">
           {/* CABEÇALHO GOPAY */}
           <div className="rounded-3xl bg-white border border-[#E2E8F0] p-5 text-[#0F172A] shadow-sm space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -1059,31 +1076,46 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </div>
           )}
 
-          {/* TAB: DEPOSIT PIX (Blocked outside operating hours; existing balance stays 100% usable 24h) */}
-          {tab === 'deposit' && !depositWindow.isOpen && (
+          {/* TAB: DEPOSIT PIX (Blocked during Night Duty or outside operating hours; existing balance stays 100% usable 24h) */}
+          {tab === 'deposit' && depositsBlockedNow && (
             <div className="space-y-4 rounded-3xl bg-white p-5 border border-[#E2E8F0]">
               <div className="flex items-start gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#2563EB]">
-                  <Clock className="h-6 w-6" />
+                  {nightDutyStatus.isActive ? <Moon className="h-6 w-6" /> : <Clock className="h-6 w-6" />}
                 </span>
                 <div>
                   <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#2563EB]">
-                    Horário de Depósitos Pix
+                    {nightDutyStatus.isActive
+                      ? `Plantão Noturno da Melissa (${nightDutyStatus.startTime} às ${nightDutyStatus.endTime})`
+                      : 'Horário de Depósitos Pix'}
                   </p>
                   <h4 className="font-display text-base font-extrabold text-[#0F172A]">
-                    Depósitos disponíveis das {depositWindow.startTime} às {depositWindow.endTime}
+                    {nightDutyStatus.isActive
+                      ? 'Depósitos manuais via Pix pausados na madrugada'
+                      : `Depósitos disponíveis das ${depositWindow.startTime} às ${depositWindow.endTime}`}
                   </h4>
                   <p className="mt-1.5 text-xs text-[#475569] leading-relaxed">
-                    No momento novos depósitos via Pix estão pausados porque a confirmação administrativa funciona das{' '}
-                    <strong className="font-mono-num">{depositWindow.startTime}</strong> às{' '}
-                    <strong className="font-mono-num">{depositWindow.endTime}</strong>.
+                    {nightDutyStatus.isActive ? (
+                      <>
+                        Durante o Plantão Autônomo da Melissa (
+                        <strong className="font-mono-num">{nightDutyStatus.startTime}</strong> às{' '}
+                        <strong className="font-mono-num">{nightDutyStatus.endTime}</strong>), não há
+                        aprovação manual de depósitos Pix pelo Administrador.
+                      </>
+                    ) : (
+                      <>
+                        No momento novos depósitos via Pix estão pausados porque a confirmação administrativa funciona das{' '}
+                        <strong className="font-mono-num">{depositWindow.startTime}</strong> às{' '}
+                        <strong className="font-mono-num">{depositWindow.endTime}</strong>.
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-3.5 text-xs text-[#0F172A] leading-relaxed">
                 <strong>Seu saldo atual GoPay ({formatBRL(currentUser.wallet_balance || 0)}) continua ativo 24h:</strong>{' '}
-                quem já depositou pode pagar corridas e fazer transferências normalmente. Se estiver sem saldo agora, peça sua corrida escolhendo pagamento em <strong>Dinheiro</strong>.
+                você pode pagar corridas com <strong>Saldo da Carteira GoPay</strong> ou <strong>Dinheiro</strong> a qualquer hora da madrugada e transferir saldo normalmente.
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -1105,7 +1137,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             </div>
           )}
 
-          {tab === 'deposit' && depositWindow.isOpen && depositSecurityAccepted && (
+          {tab === 'deposit' && !depositsBlockedNow && depositSecurityAccepted && (
             <form onSubmit={handleSubmitDeposit} className="space-y-4 rounded-3xl bg-white p-4 border border-[#E2E8F0]">
               <div>
                 <label className="block text-xs font-extrabold text-[#0F172A] mb-2">
@@ -1649,7 +1681,33 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
 
               <div>
                 <label className="block text-xs font-extrabold text-[#0F172A] mb-1.5">
-                  2. {t.pix_key_label}
+                  2. Tipo de Chave Pix
+                </label>
+                <div className="grid grid-cols-4 gap-1.5 mb-3">
+                  {(
+                    [
+                      { id: 'cpf_cnpj', label: 'CPF/CNPJ' },
+                      { id: 'phone', label: 'Celular' },
+                      { id: 'email', label: 'E-mail' },
+                      { id: 'random', label: 'Aleatória' },
+                    ] as Array<{ id: PixKeyType; label: string }>
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setWithdrawPixKeyType(opt.id)}
+                      className={`min-h-[38px] rounded-xl border text-[11px] font-extrabold transition ${
+                        withdrawPixKeyType === opt.id
+                          ? 'border-[#10B981] bg-[#10B981] text-white'
+                          : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#475569]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="block text-xs font-extrabold text-[#0F172A] mb-1.5">
+                  3. {t.pix_key_label}
                 </label>
                 <input
                   type="text"
@@ -1711,7 +1769,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                             </span>
                           </div>
                           <p className="mt-0.5 font-mono-num text-[11px] text-[#475569] truncate">
-                            Chave: {wd.pix_key}
+                            {wd.pix_key_type ? `[${wd.pix_key_type.toUpperCase()}] ` : ''}Chave: {wd.pix_key}
                           </p>
                           <p className="text-[10px] text-[#64748B] font-mono-num">
                             {new Date(wd.created_at).toLocaleString('pt-BR')}

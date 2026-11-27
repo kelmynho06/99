@@ -303,9 +303,15 @@ export type TranslationKeys = {
   events_bonuses_label: string;
   active_vehicle_filter: string;
   vehicles_btn: string;
+  melissa_title: string;
+  games_3d_hub: string;
+  night_duty_title: string;
+  facial_queue_title: string;
+  driver_goals_title: string;
+  pix_key_type_label: string;
 };
 
-const PT_BR: TranslationKeys = {
+const PT_BR: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Corridas, Entregas & GoPay',
   splash_preparing: 'Preparando mapa, GPS e carteira segura...',
   offline_cached: 'Sem conexão — exibindo dados em cache',
@@ -527,9 +533,9 @@ const PT_BR: TranslationKeys = {
   install_apk_btn: 'Baixar Aplicativo Android (APK)',
   install_pwa_btn: 'Instalar App Web (PWA) Agora',
   install_pwa_installed: 'PWA já instalado neste dispositivo!',
-  voice_assistant_title: 'Assistente de Voz Luana',
+  voice_assistant_title: 'Assistente de Voz Melissa',
   voice_assistant_desc: 'Dá boas-vindas por horário, narra corridas, entregas, rota e pagamentos sem toques irritantes.',
-  voice_test_btn: 'Conversar / Testar voz da Luana',
+  voice_test_btn: 'Conversar / Testar voz da Melissa',
   voice_enabled_badge: 'Ativada',
   voice_muted_badge: 'Silenciada',
   bg_alerts_title: 'Alertas em Segundo Plano',
@@ -587,7 +593,7 @@ const PT_BR: TranslationKeys = {
   vehicles_btn: 'Veículos',
 };
 
-const EN: TranslationKeys = {
+const EN: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Rides, Deliveries & GoPay',
   splash_preparing: 'Preparing map, GPS and secure wallet...',
   offline_cached: 'Offline — showing cached data',
@@ -809,9 +815,9 @@ const EN: TranslationKeys = {
   install_apk_btn: 'Download Android App (APK)',
   install_pwa_btn: 'Install Web App (PWA) Now',
   install_pwa_installed: 'PWA already installed on this device!',
-  voice_assistant_title: 'Voice Assistant Luana',
+  voice_assistant_title: 'Voice Assistant Melissa',
   voice_assistant_desc: 'Greets you by time of day and announces rides, deliveries, routes, and payments without annoying chimes.',
-  voice_test_btn: 'Talk / Test Luana Voice',
+  voice_test_btn: 'Talk / Test Melissa Voice',
   voice_enabled_badge: 'Enabled',
   voice_muted_badge: 'Muted',
   bg_alerts_title: 'Background Alerts',
@@ -869,7 +875,7 @@ const EN: TranslationKeys = {
   vehicles_btn: 'Vehicles',
 };
 
-const ES: TranslationKeys = {
+const ES: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Viajes, Entregas y GoPay',
   splash_preparing: 'Preparando mapa, GPS y billetera segura...',
   offline_cached: 'Sin conexión — mostrando datos en caché',
@@ -1091,9 +1097,9 @@ const ES: TranslationKeys = {
   install_apk_btn: 'Descargar App Android (APK)',
   install_pwa_btn: 'Instalar App Web (PWA) Ahora',
   install_pwa_installed: '¡PWA ya instalada en este dispositivo!',
-  voice_assistant_title: 'Asistente de Voz Luana',
+  voice_assistant_title: 'Asistente de Voz Melissa',
   voice_assistant_desc: 'Te da la bienvenida según la hora y narra viajes, entregas, ruta y pagos con voz humana.',
-  voice_test_btn: 'Hablar / Probar voz de Luana',
+  voice_test_btn: 'Hablar / Probar voz de Melissa',
   voice_enabled_badge: 'Activada',
   voice_muted_badge: 'Silenciada',
   bg_alerts_title: 'Alertas en Segundo Plano',
@@ -1151,7 +1157,7 @@ const ES: TranslationKeys = {
   vehicles_btn: 'Vehículos',
 };
 
-const FR: TranslationKeys = {
+const FR: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Courses, Livraisons & GoPay',
   splash_preparing: 'Préparation de la carte, du GPS et du portefeuille sécurisé...',
   offline_cached: 'Hors ligne — données en cache affichées',
@@ -1373,9 +1379,9 @@ const FR: TranslationKeys = {
   install_apk_btn: "Télécharger l'App Android (APK)",
   install_pwa_btn: 'Installer App Web (PWA) Maintenant',
   install_pwa_installed: 'PWA déjà installée sur cet appareil !',
-  voice_assistant_title: 'Assistante Vocale Luana',
+  voice_assistant_title: 'Assistante Vocale Melissa',
   voice_assistant_desc: 'Vous accueille selon l’heure et annonce courses, livraisons, itinéraire et paiements.',
-  voice_test_btn: 'Parler / Tester la voix de Luana',
+  voice_test_btn: 'Parler / Tester la voix de Melissa',
   voice_enabled_badge: 'Activée',
   voice_muted_badge: 'Silencieuse',
   bg_alerts_title: 'Alertes en Arrière-plan',
@@ -1433,7 +1439,7 @@ const FR: TranslationKeys = {
   vehicles_btn: 'Véhicules',
 };
 
-const RU: TranslationKeys = {
+const RU: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Поездки, Доставка и GoPay',
   splash_preparing: 'Подготовка карты, GPS и безопасного кошелька...',
   offline_cached: 'Нет сети — показаны сохранённые данные',
@@ -1655,9 +1661,9 @@ const RU: TranslationKeys = {
   install_apk_btn: 'Скачать Android-приложение (APK)',
   install_pwa_btn: 'Установить веб-приложение (PWA)',
   install_pwa_installed: 'PWA уже установлено!',
-  voice_assistant_title: 'Голосовой ассистент Луана',
+  voice_assistant_title: 'Голосовой ассистент Мелисса',
   voice_assistant_desc: 'Приветствует по времени суток и озвучивает заказы, маршруты и оплату.',
-  voice_test_btn: 'Проверить голос Луаны',
+  voice_test_btn: 'Проверить голос Мелиссы',
   voice_enabled_badge: 'Включена',
   voice_muted_badge: 'Без звука',
   bg_alerts_title: 'Фоновые уведомления',
@@ -1715,7 +1721,7 @@ const RU: TranslationKeys = {
   vehicles_btn: 'Транспорт',
 };
 
-const IT: TranslationKeys = {
+const IT: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Corse, Consegne & GoPay',
   splash_preparing: 'Preparazione mappa, GPS e portafoglio sicuro...',
   offline_cached: 'Offline — dati salvati visualizzati',
@@ -1937,9 +1943,9 @@ const IT: TranslationKeys = {
   install_apk_btn: 'Scarica App Android (APK)',
   install_pwa_btn: 'Installa App Web (PWA) Ora',
   install_pwa_installed: 'PWA già installata su questo dispositivo!',
-  voice_assistant_title: 'Assistente Vocale Luana',
+  voice_assistant_title: 'Assistente Vocale Melissa',
   voice_assistant_desc: 'Ti saluta in base all’ora e annuncia corse, consegne, percorsi e pagamenti.',
-  voice_test_btn: 'Parla / Prova voce di Luana',
+  voice_test_btn: 'Parla / Prova voce di Melissa',
   voice_enabled_badge: 'Attiva',
   voice_muted_badge: 'Silenziata',
   bg_alerts_title: 'Avvisi in Background',
@@ -1997,7 +2003,7 @@ const IT: TranslationKeys = {
   vehicles_btn: 'Veicoli',
 };
 
-const DE: TranslationKeys = {
+const DE: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'Fahrten, Lieferungen & GoPay',
   splash_preparing: 'Karte, GPS und sicheres Wallet werden geladen...',
   offline_cached: 'Offline — zwischengespeicherte Daten',
@@ -2219,9 +2225,9 @@ const DE: TranslationKeys = {
   install_apk_btn: 'Android-App herunterladen (APK)',
   install_pwa_btn: 'Web-App (PWA) jetzt installieren',
   install_pwa_installed: 'PWA bereits installiert!',
-  voice_assistant_title: 'Sprachassistentin Luana',
+  voice_assistant_title: 'Sprachassistentin Melissa',
   voice_assistant_desc: 'Begrüßt Sie tageszeitabhängig und sagt Fahrten, Routen und Zahlungen an.',
-  voice_test_btn: 'Luanas Stimme testen',
+  voice_test_btn: 'Melissas Stimme testen',
   voice_enabled_badge: 'Aktiv',
   voice_muted_badge: 'Stumm',
   bg_alerts_title: 'Hintergrund-Hinweise',
@@ -2279,7 +2285,7 @@ const DE: TranslationKeys = {
   vehicles_btn: 'Fahrzeuge',
 };
 
-const ZH: TranslationKeys = {
+const ZH: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: '出行、配送与 GoPay',
   splash_preparing: '正在准备地图、GPS 与安全钱包...',
   offline_cached: '无网络 — 显示缓存数据',
@@ -2501,9 +2507,9 @@ const ZH: TranslationKeys = {
   install_apk_btn: '下载 Android 安装包 (APK)',
   install_pwa_btn: '立即安装网页应用 (PWA)',
   install_pwa_installed: 'PWA 已安装在此设备上！',
-  voice_assistant_title: '语音助手 Luana',
+  voice_assistant_title: '语音助手 Melissa',
   voice_assistant_desc: '按时段问候您，并流畅播报行程、配送、路线与付款状态。',
-  voice_test_btn: '对话 / 测试 Luana 语音',
+  voice_test_btn: '对话 / 测试 Melissa 语音',
   voice_enabled_badge: '已开启',
   voice_muted_badge: '已静音',
   bg_alerts_title: '后台通知',
@@ -2561,7 +2567,7 @@ const ZH: TranslationKeys = {
   vehicles_btn: '车辆管理',
 };
 
-const JA: TranslationKeys = {
+const JA: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: '配車・配達 & GoPay',
   splash_preparing: '地図・GPS・ウォレットを準備しています...',
   offline_cached: 'オフライン — キャッシュデータを表示中',
@@ -2783,9 +2789,9 @@ const JA: TranslationKeys = {
   install_apk_btn: 'Androidアプリをダウンロード (APK)',
   install_pwa_btn: 'Webアプリ (PWA) を今すぐ追加',
   install_pwa_installed: 'PWAは既にインストールされています！',
-  voice_assistant_title: '音声アシスタント ルアナ (Luana)',
+  voice_assistant_title: '音声アシスタント メリッサ (Melissa)',
   voice_assistant_desc: '時間帯に合わせて挨拶し、配車・配達・ルート・支払いを自然に案内します。',
-  voice_test_btn: 'ルアナの音声をテスト',
+  voice_test_btn: 'メリッサの音声をテスト',
   voice_enabled_badge: '有効',
   voice_muted_badge: 'ミュート',
   bg_alerts_title: 'バックグラウンド通知',
@@ -2843,7 +2849,7 @@ const JA: TranslationKeys = {
   vehicles_btn: '車両管理',
 };
 
-const KO: TranslationKeys = {
+const KO: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: '호출, 배달 & GoPay',
   splash_preparing: '지도, GPS 및 안전한 지갑을 준비하는 중...',
   offline_cached: '오프라인 — 저장된 데이터 표시 중',
@@ -3065,9 +3071,9 @@ const KO: TranslationKeys = {
   install_apk_btn: 'Android 앱 다운로드 (APK)',
   install_pwa_btn: '웹 앱 (PWA) 지금 설치',
   install_pwa_installed: '이 기기에 PWA가 이미 설치되었습니다!',
-  voice_assistant_title: '음성 비서 루아나 (Luana)',
+  voice_assistant_title: '음성 비서 멜리사 (Melissa)',
   voice_assistant_desc: '시간대별 인사와 호출, 배달, 경로, 결제를 자연스럽게 안내합니다.',
-  voice_test_btn: '루아나 음성 테스트',
+  voice_test_btn: '멜리사 음성 테스트',
   voice_enabled_badge: '켜짐',
   voice_muted_badge: '음소거',
   bg_alerts_title: '백그라운드 알림',
@@ -3125,7 +3131,7 @@ const KO: TranslationKeys = {
   vehicles_btn: '차량 관리',
 };
 
-const AR: TranslationKeys = {
+const AR: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'رحلات، توصيل و GoPay',
   splash_preparing: 'جارٍ تجهيز الخريطة ونظام GPS والمحفظة الآمنة...',
   offline_cached: 'غير متصل — عرض البيانات المحفوظة',
@@ -3347,9 +3353,9 @@ const AR: TranslationKeys = {
   install_apk_btn: 'تحميل تطبيق أندرويد (APK)',
   install_pwa_btn: 'تثبيت تطبيق الويب (PWA) الآن',
   install_pwa_installed: 'تم تثبيت PWA بالفعل على هذا الجهاز!',
-  voice_assistant_title: 'المساعدة الصوتية لوانا (Luana)',
+  voice_assistant_title: 'المساعدة الصوتية ميليسا (Melissa)',
   voice_assistant_desc: 'ترحب بك حسب الوقت وتقرأ الرحلات والتوصيل والمسار والمدفوعات.',
-  voice_test_btn: 'اختبار صوت لوانا',
+  voice_test_btn: 'اختبار صوت ميليسا',
   voice_enabled_badge: 'مفعّلة',
   voice_muted_badge: 'صامتة',
   bg_alerts_title: 'تنبيهات الخلفية',
@@ -3407,7 +3413,7 @@ const AR: TranslationKeys = {
   vehicles_btn: 'المركبات',
 };
 
-const HI: TranslationKeys = {
+const HI: Omit<TranslationKeys, 'melissa_title' | 'games_3d_hub' | 'night_duty_title' | 'facial_queue_title' | 'driver_goals_title' | 'pix_key_type_label'> = {
   brand_tagline: 'राइड, डिलीवरी और GoPay',
   splash_preparing: 'मैप, GPS और सुरक्षित वॉलेट तैयार हो रहा है...',
   offline_cached: 'ऑफ़लाइन — सहेजा गया डेटा दिख रहा है',
@@ -3629,9 +3635,9 @@ const HI: TranslationKeys = {
   install_apk_btn: 'Android ऐप डाउनलोड करें (APK)',
   install_pwa_btn: 'वेब ऐप (PWA) अभी इंस्टॉल करें',
   install_pwa_installed: 'इस डिवाइस पर PWA पहले से इंस्टॉल है!',
-  voice_assistant_title: 'वॉइस असिस्टेंट लुआना (Luana)',
+  voice_assistant_title: 'वॉइस असिस्टेंट मेलिसा (Melissa)',
   voice_assistant_desc: 'समय के अनुसार अभिवादन करती है और राइड, डिलीवरी, रूट व भुगतान बताती है।',
-  voice_test_btn: 'लुआना की आवाज़ जांचें',
+  voice_test_btn: 'मेलिसा की आवाज़ जांचें',
   voice_enabled_badge: 'सक्रिय',
   voice_muted_badge: 'म्यूट',
   bg_alerts_title: 'बैकग्राउंड अलर्ट',
@@ -3689,27 +3695,78 @@ const HI: TranslationKeys = {
   vehicles_btn: 'वाहन',
 };
 
-const DICTIONARIES: Record<string, TranslationKeys> = {
-  'pt-BR': PT_BR,
-  en: EN,
-  es: ES,
-  fr: FR,
-  ru: RU,
-  it: IT,
-  de: DE,
-  zh: ZH,
-  ja: JA,
-  ko: KO,
-  ar: AR,
-  hi: HI,
+type CoreDict = Omit<
+  TranslationKeys,
+  | 'melissa_title'
+  | 'games_3d_hub'
+  | 'night_duty_title'
+  | 'facial_queue_title'
+  | 'driver_goals_title'
+  | 'pix_key_type_label'
+>;
+
+const EXTRA_LABELS: Record<
+  string,
+  Pick<
+    TranslationKeys,
+    | 'melissa_title'
+    | 'games_3d_hub'
+    | 'night_duty_title'
+    | 'facial_queue_title'
+    | 'driver_goals_title'
+    | 'pix_key_type_label'
+  >
+> = {
+  'pt-BR': {
+    melissa_title: 'Melissa IA',
+    games_3d_hub: 'Jogos 3D',
+    night_duty_title: 'Plantão Noturno da Melissa',
+    facial_queue_title: 'Reconhecimento Facial ao Vivo',
+    driver_goals_title: 'Metas de Ganhos',
+    pix_key_type_label: 'Tipo da Chave Pix',
+  },
+  en: {
+    melissa_title: 'Melissa AI',
+    games_3d_hub: '3D Games',
+    night_duty_title: 'Melissa Night Duty',
+    facial_queue_title: 'Live Facial Verification',
+    driver_goals_title: 'Earnings Goals',
+    pix_key_type_label: 'Pix Key Type',
+  },
+  es: {
+    melissa_title: 'Melissa IA',
+    games_3d_hub: 'Juegos 3D',
+    night_duty_title: 'Turno Nocturno de Melissa',
+    facial_queue_title: 'Verificación Facial en Vivo',
+    driver_goals_title: 'Metas de Ganancias',
+    pix_key_type_label: 'Tipo de Clave Pix',
+  },
+};
+
+const DICTIONARIES: Record<string, CoreDict> = {
+  'pt-BR': PT_BR as CoreDict,
+  en: EN as CoreDict,
+  es: ES as CoreDict,
+  fr: FR as CoreDict,
+  ru: RU as CoreDict,
+  it: IT as CoreDict,
+  de: DE as CoreDict,
+  zh: ZH as CoreDict,
+  ja: JA as CoreDict,
+  ko: KO as CoreDict,
+  ar: AR as CoreDict,
+  hi: HI as CoreDict,
 };
 
 export function getTranslations(lang?: string): TranslationKeys {
   const code = lang || getUserPreferences().language || 'pt-BR';
-  if (DICTIONARIES[code]) return DICTIONARIES[code];
   const base = code.split('-')[0];
-  if (DICTIONARIES[base]) return DICTIONARIES[base];
-  return DICTIONARIES['pt-BR'];
+  const core = DICTIONARIES[code] || DICTIONARIES[base] || DICTIONARIES['pt-BR'];
+  const extra =
+    EXTRA_LABELS[code] ||
+    EXTRA_LABELS[base] ||
+    (code.startsWith('pt') ? EXTRA_LABELS['pt-BR'] : EXTRA_LABELS.en);
+  return { ...core, ...extra };
 }
 
 export function useTranslation() {

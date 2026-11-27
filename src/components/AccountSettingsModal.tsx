@@ -23,6 +23,7 @@ import {
   Star,
   Sun,
   SunMoon,
+  Target,
   Trash2,
   User,
   Volume2,
@@ -53,7 +54,11 @@ import {
   checkForOtaUpdate,
   type OtaUpdateInfo,
 } from '../lib/otaUpdate';
-import { speakPtBr } from '../lib/sound';
+import {
+  ASSISTANT_VOICE_PRESETS,
+  listAvailableMelissaVoices,
+  speakWithMelissaNaturalVoice,
+} from '../lib/sound';
 import {
   getUserPreferences,
   isDarkThemeActive,
@@ -61,8 +66,10 @@ import {
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
+  AssistantVoiceId,
   DriverVehicle,
   PaymentMethod,
+  PixKeyType,
   PlatformConfig,
   SavedAddress,
   ThemeMode,
@@ -81,6 +88,7 @@ export type SettingsSection =
   | 'password'
   | 'addresses'
   | 'vehicle'
+  | 'goals'
   | 'prefs'
   | 'privacy';
 
@@ -152,6 +160,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [vehiclePlate, setVehiclePlate] = useState(currentUser.driver?.vehicle_plate || '');
   const [vehicleColor, setVehicleColor] = useState(currentUser.driver?.vehicle_color || '');
   const [pixKey, setPixKey] = useState(currentUser.driver?.pix_key || '');
+  const [pixKeyType, setPixKeyType] = useState<PixKeyType>(
+    currentUser.driver?.pix_key_type || 'cpf_cnpj'
+  );
 
   // Password change
   const [newPassword, setNewPassword] = useState('');
@@ -159,6 +170,18 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   // LGPD delete confirmation & Voice/Sounds/Permissions/Theme/Language/OTA
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(() => getUserPreferences());
+  const [goalDayInput, setGoalDayInput] = useState<string>(() =>
+    String(getUserPreferences().driver_goal_day || 150)
+  );
+  const [goalWeekInput, setGoalWeekInput] = useState<string>(() =>
+    String(getUserPreferences().driver_goal_week || 900)
+  );
+  const [goalMonthInput, setGoalMonthInput] = useState<string>(() =>
+    String(getUserPreferences().driver_goal_month || 3600)
+  );
+  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>(() =>
+    listAvailableMelissaVoices(getUserPreferences().language)
+  );
   const [permsModalOpen, setPermsModalOpen] = useState(false);
   const [legalDocsOpen, setLegalDocsOpen] = useState(false);
   const [checkingOta, setCheckingOta] = useState(false);
@@ -170,7 +193,16 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const searchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeUserPreferences(setUserPrefs);
+    const unsub = subscribeUserPreferences((nextPrefs) => {
+      setUserPrefs(nextPrefs);
+      setBrowserVoices(listAvailableMelissaVoices(nextPrefs.language));
+    });
+    const onVoicesChanged = () => {
+      setBrowserVoices(listAvailableMelissaVoices(getUserPreferences().language));
+    };
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.addEventListener?.('voiceschanged', onVoicesChanged);
+    }
     getInstalledNativeVersion(CURRENT_APP_VERSION).then(setInstalledVersion).catch(() => {});
     getCurrentGpsPosition().then((pos) => {
       if (pos) {
@@ -179,6 +211,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     });
     return () => {
       unsub();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.removeEventListener?.('voiceschanged', onVoicesChanged);
+      }
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
       searchAbortRef.current?.abort();
     };
@@ -198,6 +233,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       setVehiclePlate(currentUser.driver.vehicle_plate);
       setVehicleColor(currentUser.driver.vehicle_color);
       setPixKey(currentUser.driver.pix_key);
+      setPixKeyType(currentUser.driver.pix_key_type || 'cpf_cnpj');
     }
   }, [currentUser]);
 
@@ -394,6 +430,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               vehicle_plate: vehiclePlate,
               vehicle_color: vehicleColor,
               pix_key: pixKey,
+              pix_key_type: pixKeyType,
             }
           : {}),
       });
@@ -469,10 +506,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const activeDarkResolved = isDarkThemeActive(userPrefs.theme_mode);
 
   return (
-    <div className="fixed inset-0 z-[1150] flex items-end sm:items-center justify-center bg-[#0F172A]/60 backdrop-blur-xs p-0 sm:p-4">
-      <div className="flex h-[90vh] sm:h-auto sm:max-h-[90vh] w-full max-w-lg flex-col rounded-t-3xl sm:rounded-3xl bg-white text-[#0F172A] shadow-2xl overflow-hidden border border-[#E2E8F0]">
+    <div className="fixed inset-0 z-[1150] flex flex-col bg-white text-[#0F172A] h-[100dvh] w-screen overflow-hidden">
+      <div className="flex h-full w-full flex-col bg-white text-[#0F172A] overflow-hidden">
         {/* Header */}
-        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
+        <div className="aurora-surface-flow flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4 shrink-0">
           <div className="flex items-center gap-2">
             {section !== 'menu' && (
               <button
@@ -492,7 +529,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               {section === 'password' && 'Alterar Senha'}
               {section === 'addresses' && 'Endereços e Pagamento'}
               {section === 'vehicle' && 'Veículo e Chave Pix'}
-              {section === 'prefs' && 'Idioma, Tema, Voz & Permissões'}
+              {section === 'goals' && 'Minhas Metas de Ganhos'}
+              {section === 'prefs' && 'Idioma, Tema, Voz Melissa & Permissões'}
               {section === 'privacy' && t.privacy_security}
             </h3>
           </div>
@@ -506,7 +544,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-white p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto bg-white p-5 space-y-4 max-w-2xl w-full mx-auto">
           {feedback && (
             <div
               className={`rounded-2xl px-4 py-3 text-xs font-bold ${
@@ -652,17 +690,30 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 )}
 
                 {currentUser.role === 'driver' && (
-                  <button
-                    type="button"
-                    onClick={() => setSection('vehicle')}
-                    className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
-                  >
-                    <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
-                      <Car className="h-4 w-4 text-[#475569]" />
-                      Veículo e Chave Pix de repasse
-                    </span>
-                    <ChevronRight className="h-4 w-4 text-[#475569]" />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setSection('vehicle')}
+                      className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
+                    >
+                      <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                        <Car className="h-4 w-4 text-[#475569]" />
+                        Veículo e Chave Pix de repasse
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-[#475569]" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSection('goals')}
+                      className="flex min-h-[54px] w-full items-center justify-between px-4 text-left hover:bg-[#F4F6F9]"
+                    >
+                      <span className="flex items-center gap-3 text-sm font-bold text-[#0F172A]">
+                        <Target className="h-4 w-4 text-[#2563EB]" />
+                        Minhas Metas (Dia, Semana e Mês)
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-[#475569]" />
+                    </button>
+                  </>
                 )}
 
                 <button
@@ -1280,13 +1331,40 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-[#475569] mb-1">
-                    Chave Pix para repasses
+                    Tipo da Chave Pix
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2.5">
+                    {(
+                      [
+                        { id: 'cpf_cnpj', label: 'CPF / CNPJ' },
+                        { id: 'phone', label: 'Celular' },
+                        { id: 'email', label: 'E-mail' },
+                        { id: 'random', label: 'Aleatória' },
+                      ] as Array<{ id: PixKeyType; label: string }>
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPixKeyType(opt.id)}
+                        className={`min-h-[38px] rounded-xl border text-xs font-bold ${
+                          pixKeyType === opt.id
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'bg-[#F4F6F9] text-[#475569] border-[#E2E8F0]'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="block text-xs font-bold text-[#475569] mb-1">
+                    Chave Pix para repasses e saques
                   </label>
                   <input
                     type="text"
                     required
                     value={pixKey}
                     onChange={(e) => setPixKey(e.target.value)}
+                    placeholder="Informe sua chave Pix"
                     className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 font-mono-num text-sm text-[#0F172A] outline-none focus:border-[#2563EB]"
                   />
                 </div>
@@ -1299,6 +1377,93 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 </button>
               </form>
             </div>
+          )}
+
+          {section === 'goals' && currentUser.role === 'driver' && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const day = Math.max(10, Number(goalDayInput) || 150);
+                const week = Math.max(50, Number(goalWeekInput) || 900);
+                const month = Math.max(200, Number(goalMonthInput) || 3600);
+                const next = saveUserPreferences({
+                  driver_goal_day: day,
+                  driver_goal_week: week,
+                  driver_goal_month: month,
+                });
+                setUserPrefs(next);
+                setGoalDayInput(String(day));
+                setGoalWeekInput(String(week));
+                setGoalMonthInput(String(month));
+                setFeedback({
+                  type: 'ok',
+                  msg: `Metas atualizadas: Dia ${formatBRL(day)} · Semana ${formatBRL(week)} · Mês ${formatBRL(month)}.`,
+                });
+              }}
+              className="space-y-4"
+            >
+              <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-4 text-xs text-[#0F172A] space-y-1">
+                <p className="font-extrabold flex items-center gap-2 text-[#2563EB]">
+                  <Target className="h-4 w-4" />
+                  Metas Financeiras do Motorista / Entregador
+                </p>
+                <p className="text-[#475569]">
+                  Defina seus objetivos de faturamento diário, semanal e mensal. A Melissa acompanha seu progresso sempre que você perguntar sobre seus ganhos.
+                </p>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-4">
+                <div>
+                  <label className="block text-xs font-extrabold text-[#0F172A] mb-1">
+                    Meta Diária (R$)
+                  </label>
+                  <input
+                    type="number"
+                    min="10"
+                    step="10"
+                    required
+                    value={goalDayInput}
+                    onChange={(e) => setGoalDayInput(e.target.value)}
+                    className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 font-mono-num text-sm font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-[#0F172A] mb-1">
+                    Meta Semanal (R$)
+                  </label>
+                  <input
+                    type="number"
+                    min="50"
+                    step="50"
+                    required
+                    value={goalWeekInput}
+                    onChange={(e) => setGoalWeekInput(e.target.value)}
+                    className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 font-mono-num text-sm font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-[#0F172A] mb-1">
+                    Meta Mensal (R$)
+                  </label>
+                  <input
+                    type="number"
+                    min="200"
+                    step="100"
+                    required
+                    value={goalMonthInput}
+                    onChange={(e) => setGoalMonthInput(e.target.value)}
+                    className="min-h-[46px] w-full rounded-2xl border border-[#E2E8F0] bg-white px-3.5 font-mono-num text-sm font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="aurora-accent-flow min-h-[48px] w-full rounded-2xl text-sm font-extrabold text-white"
+              >
+                Salvar Minhas Metas
+              </button>
+            </form>
           )}
 
           {section === 'password' && (
@@ -1419,7 +1584,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       });
                       setUserPrefs(next);
                       if (next.voice_enabled) {
-                        speakPtBr('Oi! Aqui é a Luana, da Go Driver. Que bom falar com você — minha voz já está ativada!', true);
+                        void speakWithMelissaNaturalVoice(
+                          'Oi! Aqui é a Melissa, da Go Driver. Que bom falar com você — minha voz já está ativada!'
+                        );
                       }
                     }}
                     className={`min-h-[36px] shrink-0 rounded-xl px-3.5 text-xs font-extrabold transition ${
@@ -1432,15 +1599,112 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </button>
                 </div>
                 {userPrefs.voice_enabled && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      speakPtBr('Oi! Aqui é a Luana, da Go Driver. Vou acompanhar cada detalhe da sua viagem com calma e clareza. Tudo pronto para seguir!', true)
-                    }
-                    className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F172A] hover:bg-[#F1F5F9]"
-                  >
-                    {t.voice_test_btn}
-                  </button>
+                  <div className="space-y-3 pt-2 border-t border-[#E2E8F0]">
+                    <div>
+                      <p className="text-xs font-extrabold text-[#0F172A] mb-1.5">
+                        Estilo de Voz da Melissa
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {ASSISTANT_VOICE_PRESETS.map((preset) => {
+                          const selected =
+                            (userPrefs.assistant_voice_id || 'melissa-maps') === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => {
+                                const next = saveUserPreferences({
+                                  assistant_voice_id: preset.id as AssistantVoiceId,
+                                });
+                                setUserPrefs(next);
+                                void speakWithMelissaNaturalVoice(
+                                  `Olá! Esta é a voz ${preset.label} da Melissa.`
+                                );
+                              }}
+                              className={`rounded-xl border p-2.5 text-left transition ${
+                                selected
+                                  ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                                  : 'bg-white text-[#0F172A] border-[#E2E8F0]'
+                              }`}
+                            >
+                              <p className="text-xs font-extrabold">{preset.label}</p>
+                              <p
+                                className={`text-[10px] mt-0.5 ${
+                                  selected ? 'text-white/85' : 'text-[#475569]'
+                                }`}
+                              >
+                                {preset.description}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {browserVoices.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-bold text-[#475569] mb-1">
+                          Voz do Sistema / Navegador (Fallback Offline)
+                        </label>
+                        <select
+                          value={userPrefs.assistant_voice_name || ''}
+                          onChange={(e) => {
+                            const next = saveUserPreferences({
+                              assistant_voice_name: e.target.value,
+                            });
+                            setUserPrefs(next);
+                          }}
+                          className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                        >
+                          <option value="">Automática (Melhor voz feminina disponível)</option>
+                          {browserVoices.map((v) => (
+                            <option key={`${v.name}-${v.lang}`} value={v.name}>
+                              {v.name} ({v.lang})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E2E8F0] bg-white px-3 py-2">
+                      <div>
+                        <p className="text-xs font-extrabold text-[#0F172A]">
+                          Voz Neural Natural IA (Melissa)
+                        </p>
+                        <p className="text-[10px] text-[#475569]">
+                          Usa síntese neural HD com retorno automático para voz local se sem cota
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = saveUserPreferences({
+                            assistant_use_gemini_tts: !(userPrefs.assistant_use_gemini_tts ?? true),
+                          });
+                          setUserPrefs(next);
+                        }}
+                        className={`min-h-[32px] rounded-lg px-2.5 text-[11px] font-extrabold ${
+                          (userPrefs.assistant_use_gemini_tts ?? true)
+                            ? 'bg-[#10B981] text-white'
+                            : 'bg-[#E2E8F0] text-[#475569]'
+                        }`}
+                      >
+                        {(userPrefs.assistant_use_gemini_tts ?? true) ? 'Ativada' : 'Local'}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void speakWithMelissaNaturalVoice(
+                          'Oi! Aqui é a Melissa, da Go Driver. Vou acompanhar cada detalhe da sua viagem com calma e clareza. Tudo pronto para seguir!'
+                        )
+                      }
+                      className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-bold text-[#0F172A] hover:bg-[#F1F5F9]"
+                    >
+                      {t.voice_test_btn}
+                    </button>
+                  </div>
                 )}
               </div>
 

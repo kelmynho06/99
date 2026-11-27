@@ -1,4 +1,4 @@
-import type { PlatformConfig, UserProfile } from '../types/mobility';
+import type { AssistantVoiceId, PlatformConfig, UserProfile } from '../types/mobility';
 import { getUserPreferences } from './userPrefs';
 
 export type SoundCueType =
@@ -10,8 +10,73 @@ export type SoundCueType =
   | 'chat'
   | 'cancel';
 
-export function syncPlatformSounds(_config?: PlatformConfig | null): void {
-  // Toques musicais/bipes removidos: alertas utilizam exclusivamente a assistente de voz Luana.
+export interface AssistantVoicePreset {
+  id: AssistantVoiceId;
+  label: string;
+  description: string;
+  geminiVoiceName: 'Kore' | 'Zephyr' | 'Aoede' | 'Leda';
+  geminiStyleHint: string;
+  rate: number;
+  pitch: number;
+}
+
+export const ASSISTANT_VOICE_PRESETS: AssistantVoicePreset[] = [
+  {
+    id: 'melissa-maps',
+    label: 'Melissa · Navegação Maps',
+    description: 'Clara, objetiva e cordial — estilo GPS profissional',
+    geminiVoiceName: 'Kore',
+    geminiStyleHint: 'Fale com clareza, simpatia e ritmo preciso de navegação urbana:',
+    rate: 1.07,
+    pitch: 1.02,
+  },
+  {
+    id: 'melissa-suave',
+    label: 'Melissa · Suave & Acolhedora',
+    description: 'Tom leve, calmo e humano para conversas confortáveis',
+    geminiVoiceName: 'Zephyr',
+    geminiStyleHint: 'Fale de forma suave, acolhedora e natural:',
+    rate: 1.02,
+    pitch: 1.04,
+  },
+  {
+    id: 'melissa-agil',
+    label: 'Melissa · Ágil & Dinâmica',
+    description: 'Respostas rápidas ideais para motoristas em movimento',
+    geminiVoiceName: 'Aoede',
+    geminiStyleHint: 'Fale de forma ágil, animada e direta:',
+    rate: 1.15,
+    pitch: 1.05,
+  },
+  {
+    id: 'melissa-executiva',
+    label: 'Melissa · Executiva VIP',
+    description: 'Voz firme, elegante e equilibrada',
+    geminiVoiceName: 'Leda',
+    geminiStyleHint: 'Fale com tom elegante, firme e atencioso:',
+    rate: 1.04,
+    pitch: 0.99,
+  },
+];
+
+let platformDefaultVoiceId: AssistantVoiceId = 'melissa-maps';
+
+export function syncPlatformSounds(config?: PlatformConfig | null): void {
+  const def = config?.assistant_voice_default;
+  if (
+    def === 'melissa-maps' ||
+    def === 'melissa-suave' ||
+    def === 'melissa-agil' ||
+    def === 'melissa-executiva'
+  ) {
+    platformDefaultVoiceId = def;
+  }
+}
+
+export function getActiveVoicePreset(): AssistantVoicePreset {
+  const prefs = getUserPreferences();
+  const targetId = prefs.assistant_voice_id || platformDefaultVoiceId || 'melissa-maps';
+  return ASSISTANT_VOICE_PRESETS.find((v) => v.id === targetId) || ASSISTANT_VOICE_PRESETS[0];
 }
 
 let sharedAudioCtx: AudioContext | null = null;
@@ -30,6 +95,7 @@ let isSpeakingFromQueue = false;
 let speechWatchdogTimer: number | null = null;
 let cachedVoiceByLang: Record<string, SpeechSynthesisVoice> = {};
 let voicesChangedBound = false;
+let activeAudioElement: HTMLAudioElement | null = null;
 
 function bindVoicesChangedListener(): void {
   if (voicesChangedBound || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -85,18 +151,18 @@ export function primeSpeechEngine(): void {
 }
 
 export async function playSoundCue(_cue: SoundCueType): Promise<void> {
-  // Bipes e toques de notificação removidos: somente a assistente Luana fala.
+  // Bipes e toques removidos: somente a assistente Melissa fala.
 }
 
 export function playRideAcceptedChime(): void {
-  // Silenciado: somente a assistente Luana anuncia o aceite.
+  // Silenciado: somente a assistente Melissa anuncia o aceite.
 }
 
 export function playOfferAlertSound(): void {
   // Silenciado: sem toque de notificação.
 }
 
-function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): number {
+function scoreMelissaVoice(voice: SpeechSynthesisVoice, activeLang: string): number {
   const name = voice.name.toLowerCase();
   const lang = voice.lang.toLowerCase();
   const targetLang = activeLang.toLowerCase();
@@ -143,7 +209,6 @@ function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): numbe
   else if (lang.startsWith('pt')) score += 40;
   else return -200;
 
-  // Prefer natural/neural/enhanced human voices first
   if (/(natural|neural|wavenet|studio|enhanced|aprimorada|premium)/i.test(name)) {
     score += 150;
   }
@@ -151,7 +216,6 @@ function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): numbe
     score += 80;
   }
 
-  // Strongly prefer warm female voices (especially PT-BR Thalita, Francisca, Luciana, Camila, Google PT-BR)
   const femalePriority = [
     'thalita',
     'francisca',
@@ -165,7 +229,7 @@ function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): numbe
     'maria',
     'helena',
     'fernanda',
-    'luana',
+    'melissa',
     'google português do brasil',
     'jenny',
     'aria',
@@ -188,7 +252,6 @@ function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): numbe
     score += 110;
   }
 
-  // Extra preference for modern conversational PT-BR neural voices
   if (name.includes('thalita') || name.includes('francisca')) {
     score += 40;
   }
@@ -196,10 +259,27 @@ function scoreLuanaVoice(voice: SpeechSynthesisVoice, activeLang: string): numbe
   return score;
 }
 
-function resolveLuanaVoice(activeLang: string): SpeechSynthesisVoice | null {
+export function listAvailableMelissaVoices(activeLang?: string): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+  bindVoicesChangedListener();
+  const lang = (activeLang || getUserPreferences().language || 'pt-BR').toLowerCase();
+  const prefix = lang.split('-')[0];
+  const voices = window.speechSynthesis.getVoices();
+  return [...voices]
+    .filter((v) => v.lang.toLowerCase().startsWith(prefix) || v.lang.toLowerCase().startsWith('pt'))
+    .sort((a, b) => scoreMelissaVoice(b, lang) - scoreMelissaVoice(a, lang));
+}
+
+function resolveMelissaVoice(activeLang: string): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
   bindVoicesChangedListener();
   const voices = window.speechSynthesis.getVoices();
+  const prefs = getUserPreferences();
+  if (prefs.assistant_voice_name && voices.length) {
+    const manual = voices.find((v) => v.name === prefs.assistant_voice_name);
+    if (manual) return manual;
+  }
+
   const langLower = activeLang.toLowerCase();
   if (!voices.length) return cachedVoiceByLang[langLower] || null;
 
@@ -207,7 +287,7 @@ function resolveLuanaVoice(activeLang: string): SpeechSynthesisVoice | null {
   let bestScore = -Infinity;
 
   for (const voice of voices) {
-    const s = scoreLuanaVoice(voice, activeLang);
+    const s = scoreMelissaVoice(voice, activeLang);
     if (s > bestScore) {
       bestScore = s;
       bestVoice = voice;
@@ -224,7 +304,7 @@ function resolveLuanaVoice(activeLang: string): SpeechSynthesisVoice | null {
 
 function humanizeSpeechText(raw: string): string {
   return raw
-    .replace(/\b(?:Évelyn|Evelyn)\b/g, 'Luana')
+    .replace(/\b(?:Évelyn|Evelyn|Luana)\b/g, 'Melissa')
     .replace(/R\$\s*(\d+)[,.](\d{2})/g, (_m, reais: string, cents: string) =>
       cents === '00' ? `${reais} reais` : `${reais} reais e ${Number(cents)} centavos`
     )
@@ -243,7 +323,6 @@ function splitHumanBreathClauses(text: string): string[] {
 
   if (sentences.length <= 1) return [text];
 
-  // Group very short fragments with the next clause so prosody stays fluid without stalling
   const grouped: string[] = [];
   for (const s of sentences) {
     const prev = grouped[grouped.length - 1];
@@ -260,16 +339,18 @@ function computeNaturalSpeechParams(voice: SpeechSynthesisVoice | null): {
   rate: number;
   pitch: number;
 } {
+  const preset = getActiveVoicePreset();
   const name = (voice?.name || '').toLowerCase();
   const isMicrosoftNatural =
     name.includes('microsoft') && (name.includes('natural') || name.includes('online'));
 
-  // Microsoft Neural/Natural voices sound clearest & warmest around 1.06 rate and 1.01 pitch;
-  // Google / Android / Apple voices sound lively, warm, and natural at 1.09 rate and 1.03 pitch.
   if (isMicrosoftNatural) {
-    return { rate: 1.06, pitch: 1.01 };
+    return {
+      rate: Math.max(0.85, Math.min(1.25, preset.rate - 0.02)),
+      pitch: preset.pitch,
+    };
   }
-  return { rate: 1.09, pitch: 1.03 };
+  return { rate: preset.rate, pitch: preset.pitch };
 }
 
 function clearSpeechWatchdog(): void {
@@ -279,29 +360,38 @@ function clearSpeechWatchdog(): void {
   }
 }
 
-function pumpSpeechQueue(): void {
+function pumpSpeechQueue(onAllFinished?: () => void): void {
   const prefs = getUserPreferences();
   if (!prefs.voice_enabled) {
     speechQueue.length = 0;
     isSpeakingFromQueue = false;
     clearSpeechWatchdog();
+    onAllFinished?.();
     return;
   }
 
-  if (isSpeakingFromQueue || speechQueue.length === 0) return;
+  if (isSpeakingFromQueue) return;
+  if (speechQueue.length === 0) {
+    onAllFinished?.();
+    return;
+  }
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     speechQueue.length = 0;
+    onAllFinished?.();
     return;
   }
 
   const next = speechQueue.shift();
-  if (!next) return;
+  if (!next) {
+    onAllFinished?.();
+    return;
+  }
 
   try {
     isSpeakingFromQueue = true;
     const utterance = new SpeechSynthesisUtterance(next.text);
     const activeLang = prefs.language || 'pt-BR';
-    const voice = resolveLuanaVoice(activeLang);
+    const voice = resolveMelissaVoice(activeLang);
     const { rate, pitch } = computeNaturalSpeechParams(voice);
 
     utterance.lang = voice?.lang || activeLang;
@@ -316,7 +406,7 @@ function pumpSpeechQueue(): void {
     const advance = () => {
       clearSpeechWatchdog();
       isSpeakingFromQueue = false;
-      pumpSpeechQueue();
+      pumpSpeechQueue(onAllFinished);
     };
 
     utterance.onend = advance;
@@ -330,6 +420,7 @@ function pumpSpeechQueue(): void {
   } catch {
     clearSpeechWatchdog();
     isSpeakingFromQueue = false;
+    onAllFinished?.();
   }
 }
 
@@ -337,6 +428,15 @@ export function stopSpeech(): void {
   speechQueue.length = 0;
   isSpeakingFromQueue = false;
   clearSpeechWatchdog();
+  if (activeAudioElement) {
+    try {
+      activeAudioElement.pause();
+      activeAudioElement.src = '';
+    } catch {
+      // Ignore
+    }
+    activeAudioElement = null;
+  }
   try {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -346,28 +446,36 @@ export function stopSpeech(): void {
   }
 }
 
-export function speakPtBr(text: string, interrupt = true): void {
+export function speakPtBr(text: string, interrupt = true, onDone?: () => void): void {
   const prefs = getUserPreferences();
-  if (!prefs.voice_enabled) return;
+  if (!prefs.voice_enabled) {
+    onDone?.();
+    return;
+  }
   const clean = humanizeSpeechText(text);
-  if (!clean) return;
+  if (!clean) {
+    onDone?.();
+    return;
+  }
 
   const now = Date.now();
-  if (clean === lastSpokenText && now - lastSpokenAt < 3500) {
+  if (!interrupt && clean === lastSpokenText && now - lastSpokenAt < 3500) {
+    onDone?.();
     return;
   }
   lastSpokenText = clean;
   lastSpokenAt = now;
 
   try {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      onDone?.();
+      return;
+    }
 
     if (interrupt) {
-      speechQueue.length = 0;
-      isSpeakingFromQueue = false;
-      clearSpeechWatchdog();
-      window.speechSynthesis.cancel();
+      stopSpeech();
     } else if (speechQueue.some((item) => item.text === clean)) {
+      onDone?.();
       return;
     }
 
@@ -378,10 +486,80 @@ export function speakPtBr(text: string, interrupt = true): void {
       }
       speechQueue.push({ text: clause });
     }
-    pumpSpeechQueue();
+    pumpSpeechQueue(onDone);
   } catch {
-    // Ignore blocked speech synthesis before gesture
+    onDone?.();
   }
+}
+
+/**
+ * Interactive Alexa-style natural speech for Melissa Assistant:
+ * Attempts Gemini Natural TTS (/api/melissa/tts) when enabled, and falls back smoothly to Web Speech API.
+ */
+export async function speakWithMelissaNaturalVoice(
+  text: string,
+  options?: { interrupt?: boolean; forceGeminiTts?: boolean }
+): Promise<void> {
+  const prefs = getUserPreferences();
+  if (!prefs.voice_enabled) return;
+  const clean = humanizeSpeechText(text);
+  if (!clean) return;
+
+  if (options?.interrupt !== false) {
+    stopSpeech();
+  }
+
+  const useGemini =
+    options?.forceGeminiTts !== undefined
+      ? options.forceGeminiTts
+      : prefs.assistant_use_gemini_tts !== false;
+  const preset = getActiveVoicePreset();
+
+  if (useGemini && clean.length <= 420) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 5500);
+      const res = await fetch('/api/melissa/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: clean,
+          voiceName: preset.geminiVoiceName,
+          styleHint: preset.geminiStyleHint,
+          language: prefs.language || 'pt-BR',
+        }),
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = (await res.json()) as { ok?: boolean; audioBase64?: string; mimeType?: string };
+        if (data.ok && data.audioBase64) {
+          await new Promise<void>((resolve) => {
+            const audio = new Audio(`data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`);
+            activeAudioElement = audio;
+            const finish = () => {
+              if (activeAudioElement === audio) activeAudioElement = null;
+              resolve();
+            };
+            audio.onended = finish;
+            audio.onerror = finish;
+            audio.play().catch(() => {
+              finish();
+              speakPtBr(clean, true);
+            });
+          });
+          return;
+        }
+      }
+    } catch {
+      // Fallback to local SpeechSynthesis below
+    }
+  }
+
+  await new Promise<void>((resolve) => {
+    speakPtBr(clean, options?.interrupt !== false, resolve);
+  });
 }
 
 export function getTimeOfDayGreeting(date: Date = new Date()): 'Bom dia' | 'Boa tarde' | 'Boa noite' {
@@ -404,12 +582,12 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
         ? 'good afternoon'
         : 'good evening';
     if (user.is_admin || user.role === 'admin') {
-      return `Hi, ${enGreet}, ${displayName}! I'm Luana from Go Driver. Your admin dashboard is ready whenever you need it.`;
+      return `Hi, ${enGreet}, ${displayName}! I'm Melissa from Go Driver. Your admin dashboard is ready whenever you need it.`;
     }
     if (user.role === 'driver') {
-      return `Hi, ${enGreet}, ${displayName}! I'm Luana from Go Driver. Ready to hit the road whenever you go online!`;
+      return `Hi, ${enGreet}, ${displayName}! I'm Melissa from Go Driver. Ready to hit the road whenever you go online!`;
     }
-    return `Hi, ${enGreet}, ${displayName}! I'm Luana from Go Driver. Where are we heading today?`;
+    return `Hi, ${enGreet}, ${displayName}! I'm Melissa from Go Driver. Where are we heading today?`;
   }
 
   if (activeLang.startsWith('es')) {
@@ -420,18 +598,18 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
         ? 'buenas tardes'
         : 'buenas noches';
     if (user.is_admin || user.role === 'admin') {
-      return `¡Hola, ${esGreet}, ${displayName}! Soy Luana, de Go Driver. El panel administrativo ya está listo.`;
+      return `¡Hola, ${esGreet}, ${displayName}! Soy Melissa, de Go Driver. El panel administrativo ya está listo.`;
     }
     if (user.role === 'driver') {
-      return `¡Hola, ${esGreet}, ${displayName}! Soy Luana, de Go Driver. Conéctate cuando quieras empezar a recibir viajes.`;
+      return `¡Hola, ${esGreet}, ${displayName}! Soy Melissa, de Go Driver. Conéctate cuando quieras empezar a recibir viajes.`;
     }
-    return `¡Hola, ${esGreet}, ${displayName}! Soy Luana, de Go Driver. ¿A dónde vamos hoy?`;
+    return `¡Hola, ${esGreet}, ${displayName}! Soy Melissa, de Go Driver. ¿A dónde vamos hoy?`;
   }
 
   const greeting = getTimeOfDayGreeting().toLowerCase();
 
   if (user.is_admin || user.role === 'admin') {
-    return `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. O painel já está todo pronto pra você acompanhar corridas, depósitos e saques.`;
+    return `Oi, ${greeting}, ${displayName}! Aqui é a Melissa, da Go Driver. O painel já está todo pronto pra você acompanhar corridas, verificações faciais, depósitos e saques.`;
   }
 
   if (user.role === 'driver') {
@@ -439,12 +617,12 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
     const isOnline = Boolean(user.driver?.is_online);
     if (isDelivery) {
       return isOnline
-        ? `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Você já está online e pronto para receber novas entregas.`
-        : `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Quando quiser começar as entregas, é só ficar online.`;
+        ? `Oi, ${greeting}, ${displayName}! Aqui é a Melissa, da Go Driver. Você já está online e pronto para receber novas entregas.`
+        : `Oi, ${greeting}, ${displayName}! Aqui é a Melissa, da Go Driver. Quando quiser começar as entregas, é só tocar em conectar.`;
     }
     return isOnline
-      ? `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Você já está online e pronto para receber corridas.`
-      : `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Tudo pronto para rodar hoje — assim que quiser, é só ficar online.`;
+      ? `Oi, ${greeting}, ${displayName}! Aqui é a Melissa, da Go Driver. Você já está online e pronto para receber corridas.`
+      : `Oi, ${greeting}, ${displayName}! Aqui é a Melissa, da Go Driver. Tudo pronto para rodar hoje — assim que quiser, é só tocar em conectar.`;
   }
 
   const debtNote =
@@ -456,7 +634,7 @@ export function buildLoginGreetingSpeech(user: UserProfile): string {
           .replace('.', ',')} reais, que será somada na próxima corrida.`
       : '';
 
-  return `Oi, ${greeting}, ${displayName}! Aqui é a Luana, da Go Driver. Pra onde a gente vai hoje? É só escolher seu destino no mapa.${debtNote}`;
+  return `Oi, ${greeting}, ${displayName}! Aqui é a Melissa, da Go Driver. Pra onde a gente vai hoje? É só escolher seu destino no mapa.${debtNote}`;
 }
 
 export function resetSessionGreeting(): void {

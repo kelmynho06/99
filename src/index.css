@@ -8,16 +8,28 @@
     --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-    --godriver-canvas: #F4F6F9;
-    --godriver-surface: #FFFFFF;
-    --godriver-surface-muted: #F1F5F9;
-    --godriver-border: #E2E8F0;
-    --godriver-ink: #0F172A;
-    --godriver-ink-muted: #475569;
-    --godriver-blue: #2563EB;
-    --godriver-blue-hover: #1D4ED8;
-    --godriver-sky: #0EA5E9;
-    --godriver-blue-tint: #EFF6FF;
+    --color-primary: #2563EB;
+    --color-primary-hover: #1D4ED8;
+    --color-secondary: #0F172A;
+    --color-glow: #0EA5E9;
+    --color-tint: #EFF6FF;
+    --bg-canvas: #F4F6F9;
+    --bg-surface: #FFFFFF;
+    --bg-surface-muted: #F1F5F9;
+    --color-border: #E2E8F0;
+    --color-ink: #0F172A;
+    --color-ink-muted: #475569;
+
+    --godriver-canvas: var(--bg-canvas);
+    --godriver-surface: var(--bg-surface);
+    --godriver-surface-muted: var(--bg-surface-muted);
+    --godriver-border: var(--color-border);
+    --godriver-ink: var(--color-ink);
+    --godriver-ink-muted: var(--color-ink-muted);
+    --godriver-blue: var(--color-primary);
+    --godriver-blue-hover: var(--color-primary-hover);
+    --godriver-sky: var(--color-glow);
+    --godriver-blue-tint: var(--color-tint);
     --godriver-emerald: #10B981;
     --godriver-emerald-deep: #059669;
   }
@@ -95,64 +107,141 @@
 }
 
 .aurora-surface-flow {
-  background: linear-gradient(125deg, #FFFFFF 0%, #F4F6F9 32%, #EFF6FF 65%, #E0F2FE 88%, #FFFFFF 100%);
+  background: linear-gradient(
+    125deg,
+    var(--bg-surface) 0%,
+    var(--bg-canvas) 32%,
+    var(--color-tint) 65%,
+    color-mix(in srgb, var(--color-glow) 14%, var(--bg-surface)) 88%,
+    var(--bg-surface) 100%
+  );
   background-size: 220% 220%;
   animation: godriver-color-flow 10s ease-in-out infinite;
+  transition: background 300ms ease, color 240ms ease;
 }
 
 .aurora-accent-flow {
-  background: linear-gradient(115deg, #1D4ED8 0%, #2563EB 38%, #0EA5E9 72%, #2563EB 100%);
+  background: linear-gradient(
+    115deg,
+    var(--color-primary-hover) 0%,
+    var(--color-primary) 38%,
+    var(--color-glow) 72%,
+    var(--color-primary) 100%
+  );
   background-size: 220% 220%;
+  box-shadow: 0 8px 22px -6px color-mix(in srgb, var(--color-glow) 48%, transparent);
   animation: godriver-color-flow 7.5s ease-in-out infinite;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 240ms ease, filter 240ms ease;
+}
+
+.aurora-accent-flow:hover {
+  box-shadow: 0 10px 26px -4px color-mix(in srgb, var(--color-glow) 60%, transparent);
 }
 
 .aurora-border-glow {
   position: relative;
   background-image:
-    linear-gradient(#ffffff, #ffffff),
-    linear-gradient(120deg, rgba(37, 99, 235, 0.85), rgba(14, 165, 233, 0.8), rgba(59, 130, 246, 0.8), rgba(29, 78, 216, 0.85));
+    linear-gradient(var(--bg-surface), var(--bg-surface)),
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--color-primary) 88%, transparent),
+      color-mix(in srgb, var(--color-glow) 82%, transparent),
+      color-mix(in srgb, var(--color-primary) 75%, transparent),
+      color-mix(in srgb, var(--color-primary-hover) 88%, transparent)
+    );
   background-origin: border-box;
   background-clip: padding-box, border-box;
   background-size: 100% 100%, 220% 220%;
   border: 1.5px solid transparent;
+  box-shadow: 0 6px 20px -8px color-mix(in srgb, var(--color-glow) 35%, transparent);
   animation: godriver-color-flow 8s ease-in-out infinite;
+  transition: box-shadow 240ms ease, transform 180ms ease;
 }
 
 .dark .aurora-border-glow {
   background-image:
     linear-gradient(#0f172a, #0f172a),
-    linear-gradient(120deg, rgba(59, 130, 246, 0.72), rgba(14, 165, 233, 0.65), rgba(37, 99, 235, 0.72));
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--color-primary) 78%, transparent),
+      color-mix(in srgb, var(--color-glow) 72%, transparent),
+      color-mix(in srgb, var(--color-primary) 78%, transparent)
+    );
 }
 
 .aurora-search-trigger {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(115deg, #FFFFFF 0%, #EFF6FF 50%, #F0F9FF 100%);
+  background: linear-gradient(
+    115deg,
+    var(--bg-surface) 0%,
+    var(--color-tint) 50%,
+    color-mix(in srgb, var(--color-glow) 16%, var(--bg-surface)) 100%
+  );
   background-size: 200% 200%;
-  border: 1.5px solid rgba(37, 99, 235, 0.28);
+  border: 1.5px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 240ms ease, box-shadow 240ms ease;
   animation: godriver-color-flow 9s ease-in-out infinite;
 }
 
 .aurora-search-trigger:hover {
-  border-color: #2563EB;
-  box-shadow: 0 8px 22px -6px rgba(37, 99, 235, 0.22);
+  border-color: var(--color-primary);
+  box-shadow: 0 8px 22px -6px color-mix(in srgb, var(--color-glow) 35%, transparent);
 }
 
 .aurora-search-trigger:active {
   transform: scale(0.985);
-  background: linear-gradient(115deg, #EFF6FF 0%, #DBEAFE 52%, #E0F2FE 100%);
+  background: linear-gradient(
+    115deg,
+    var(--color-tint) 0%,
+    color-mix(in srgb, var(--color-primary) 16%, var(--bg-surface)) 52%,
+    var(--color-tint) 100%
+  );
 }
 
 .dark .aurora-search-trigger {
-  background: linear-gradient(115deg, rgba(15, 23, 42, 0.96) 0%, rgba(30, 58, 138, 0.52) 50%, rgba(14, 116, 144, 0.42) 100%);
-  border-color: rgba(96, 165, 250, 0.5);
+  background: linear-gradient(
+    115deg,
+    rgba(15, 23, 42, 0.96) 0%,
+    color-mix(in srgb, var(--color-primary) 35%, rgba(15, 23, 42, 0.95)) 50%,
+    color-mix(in srgb, var(--color-glow) 28%, rgba(15, 23, 42, 0.95)) 100%
+  );
+  border-color: color-mix(in srgb, var(--color-glow) 55%, transparent);
   color: #F8FAFC;
 }
 
 .dark .aurora-surface-flow {
-  background: linear-gradient(125deg, #020617 0%, #0F172A 38%, #172554 70%, #0F172A 100%);
+  background: linear-gradient(
+    125deg,
+    #020617 0%,
+    #0F172A 38%,
+    color-mix(in srgb, var(--color-primary) 26%, #0F172A) 70%,
+    #0F172A 100%
+  );
   background-size: 220% 220%;
+}
+
+/* Sync brand accent tokens across all 14 Admin Color Palettes while keeping animations & layout intact */
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .bg-\[\#2563EB\] {
+  background-color: var(--color-primary);
+}
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .hover\:bg-\[\#1D4ED8\]:hover {
+  background-color: var(--color-primary-hover);
+}
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .text-\[\#2563EB\],
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .text-\[\#1D4ED8\] {
+  color: var(--color-primary);
+}
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .border-\[\#2563EB\],
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .focus\:border-\[\#2563EB\]:focus,
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .focus-within\:border-\[\#2563EB\]:focus-within {
+  border-color: var(--color-primary);
+}
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .bg-\[\#EFF6FF\] {
+  background-color: var(--color-tint);
+}
+:root[data-theme-preset]:not([data-theme-preset="electric_blue"]) .border-\[\#BFDBFE\] {
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
 /* Comprehensive Dark Mode readability across all panels, pickup/destination bars, inputs, and modals */
@@ -306,6 +395,47 @@
 .dark input::placeholder,
 .dark textarea::placeholder {
   color: #94A3B8;
+}
+
+/* Melissa Light Shell: Always bright, crisp, and legible in all 3 panels regardless of global dark mode */
+.melissa-light-shell {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+  color-scheme: light;
+}
+
+.melissa-light-shell .melissa-surface {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+.melissa-light-shell .melissa-muted-surface {
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
+}
+
+.melissa-light-shell .melissa-hairline {
+  border-color: #E2E8F0 !important;
+}
+
+.melissa-light-shell .melissa-ink {
+  color: #0F172A !important;
+}
+
+.melissa-light-shell .melissa-ink-muted {
+  color: #475569 !important;
+}
+
+.melissa-light-shell input,
+.melissa-light-shell select,
+.melissa-light-shell textarea {
+  color: #0F172A !important;
+  color-scheme: light;
+}
+
+.melissa-light-shell input::placeholder,
+.melissa-light-shell textarea::placeholder {
+  color: #94A3B8 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

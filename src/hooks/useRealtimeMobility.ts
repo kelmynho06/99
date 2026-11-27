@@ -12,6 +12,7 @@ import {
   fetchRideMessages,
   fetchUserProfileById,
   pushDriverLocation,
+  rankOnlineDriversByProximity,
   rideMatchesDriverVehicle,
 } from '../lib/mobilityApi';
 import { formatBRL } from '../lib/geo';
@@ -167,7 +168,7 @@ export function useRealtimeMobility(
                 const isDelivery =
                   enriched.category === 'delivery_moto' || enriched.category === 'delivery_car';
 
-                // Driver / Motoboy online receives single deduped local notification (+ voice if minimized) ONLY when ride matches active vehicle
+                // Driver / Motoboy online receives proximity-ordered nominal voice alert ONLY when ride matches active vehicle
                 if (
                   u.role === 'driver' &&
                   u.status === 'active' &&
@@ -176,20 +177,31 @@ export function useRealtimeMobility(
                   enriched.status === 'searching' &&
                   rideMatchesDriverVehicle(enriched.category, u.driver.vehicle_type)
                 ) {
+                  const ranked = rankOnlineDriversByProximity(enriched, [
+                    u,
+                    ...onlineDrivers.filter((od) => od.id !== u.id),
+                  ]);
+                  const myRank = Math.max(
+                    0,
+                    ranked.findIndex((item) => item.driver.id === u.id)
+                  );
+                  const driverFirstName = u.full_name?.trim().split(' ')[0] || 'parceiro';
                   const fareVoice = Number(enriched.estimated_fare || 0).toFixed(2).replace('.', ',');
-                  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-                    speakPtBr(
-                      isDelivery
-                        ? `Oi! Chegou uma nova solicitação de entrega na Go Driver. Valor de ${fareVoice} reais, coleta em ${enriched.origin_address}.`
-                        : `Oi! Chegou uma nova solicitação de corrida na Go Driver. Valor de ${fareVoice} reais, embarque em ${enriched.origin_address}.`
-                    );
-                  }
-                  triggerLocalNotification({
-                    dedupeKey: `ride-offer-${enriched.id}`,
-                    title: isDelivery ? 'Nova Entrega Disponível!' : 'Nova Corrida Disponível!',
-                    body: `${formatBRL(enriched.estimated_fare)} · ${enriched.origin_address} → ${enriched.destination_address}`,
-                    playSound: false,
-                  });
+                  const nominalSpeech = isDelivery
+                    ? `${driverFirstName}, tem uma entrega para você! Valor de ${fareVoice} reais, coleta em ${enriched.origin_address}.`
+                    : `${driverFirstName}, tem uma corrida para você! Valor de ${fareVoice} reais, embarque em ${enriched.origin_address}.`;
+
+                  window.setTimeout(() => {
+                    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                      speakPtBr(nominalSpeech);
+                    }
+                    triggerLocalNotification({
+                      dedupeKey: `ride-offer-${enriched.id}`,
+                      title: isDelivery ? 'Nova Entrega Disponível!' : 'Nova Corrida Disponível!',
+                      body: `${formatBRL(enriched.estimated_fare)} · ${enriched.origin_address} → ${enriched.destination_address}`,
+                      playSound: false,
+                    });
+                  }, myRank * 2200);
                 }
 
                 // Driver receives voice confirmation when Admin approves Pix
@@ -208,7 +220,7 @@ export function useRealtimeMobility(
                   });
                 }
 
-                // Passenger receives PT-BR voice on status changes (conversational Luana)
+                // Passenger receives PT-BR voice on status changes (conversational Melissa)
                 if (u.role === 'passenger' && enriched.passenger_id === u.id && prevStatus !== enriched.status) {
                   const driverDisplayName =
                     enriched.driver?.full_name?.trim() || 'seu parceiro';

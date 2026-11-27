@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import type { PlatformConfig } from '../types/mobility';
 import { getInstalledNativeVersion, isNativeAndroidApp, openExternalDownloadUrl } from './floatingBubble';
 
-export const CURRENT_APP_VERSION = '1.2.4';
+export const CURRENT_APP_VERSION = '1.2.5';
 const WEB_RELOAD_GUARD_KEY = 'mobilidade66_web_auto_reloaded_v';
 
 function buildDirectDownloadHref(rawUrl: string, filename: string): string {

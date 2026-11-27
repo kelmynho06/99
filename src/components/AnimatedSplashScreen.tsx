@@ -18,8 +18,8 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
       key="splash-godriver"
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 1.03 }}
-      transition={{ duration: 0.42, ease: 'easeOut' }}
+      exit={{ opacity: 0, scale: 1.02 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
       className="fixed inset-0 z-[9999] flex flex-col items-center justify-between aurora-surface-flow px-6 py-12 text-[#0F172A] overflow-hidden select-none"
     >
       {/* Clean sky-blue light ribbons backdrop */}
@@ -28,7 +28,7 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
         className="pointer-events-none absolute inset-0 opacity-90"
         style={{
           background:
-            'radial-gradient(circle at 22% 24%, rgba(37, 99, 235, 0.12) 0%, rgba(255, 255, 255, 0) 52%), radial-gradient(circle at 80% 30%, rgba(14, 165, 233, 0.14) 0%, rgba(255, 255, 255, 0) 48%), radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.08) 0%, rgba(255, 255, 255, 0) 56%)',
+            'radial-gradient(circle at 22% 24%, color-mix(in srgb, var(--brand-primary, #2563EB) 14%, transparent) 0%, rgba(255, 255, 255, 0) 52%), radial-gradient(circle at 80% 30%, color-mix(in srgb, var(--godriver-sky, #0EA5E9) 14%, transparent) 0%, rgba(255, 255, 255, 0) 48%)',
         }}
       />
 
@@ -38,21 +38,23 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
       <div className="relative z-10 flex flex-col items-center text-center">
         <div className="relative flex items-center justify-center">
           <motion.div
-            animate={{ scale: [1, 1.28, 1], opacity: [0.45, 0.08, 0.45] }}
-            transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute h-32 w-32 rounded-[2.25rem] border-2 border-[#2563EB]/35"
+            animate={{ scale: [1, 1.24, 1], opacity: [0.45, 0.1, 0.45] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute h-32 w-32 rounded-[2.25rem] border-2"
+            style={{ borderColor: 'color-mix(in srgb, var(--brand-primary, #2563EB) 38%, transparent)' }}
           />
           <motion.div
-            animate={{ scale: [0.95, 1.15, 0.95], opacity: [0.22, 0.48, 0.22] }}
+            animate={{ scale: [0.95, 1.12, 0.95], opacity: [0.22, 0.44, 0.22] }}
             transition={{ duration: 2.0, repeat: Infinity, ease: 'easeInOut' }}
             className="absolute h-28 w-28 rounded-[2rem] bg-[#38BDF8]/25 blur-xl"
           />
 
           <motion.div
-            initial={{ scale: 0.72, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.75rem] border-2 border-[#2563EB]/25 bg-white shadow-[0_18px_42px_rgba(37,99,235,0.18)]"
+            initial={{ scale: 1, opacity: 1, y: 0 }}
+            animate={{ scale: [0.98, 1.02, 1], opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.75rem] border-2 bg-white shadow-[0_18px_42px_rgba(37,99,235,0.18)]"
+            style={{ borderColor: 'color-mix(in srgb, var(--brand-primary, #2563EB) 30%, transparent)' }}
           >
             <img
               src={brandLogoUrl}
@@ -63,23 +65,16 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
           </motion.div>
         </div>
 
-        <motion.h1
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22, duration: 0.45 }}
-          className="mt-6 font-display text-3xl font-extrabold tracking-tight text-[#0F172A]"
-        >
+        <h1 className="mt-6 font-display text-3xl font-extrabold tracking-tight text-[#0F172A]">
           {brandName}
-        </motion.h1>
+        </h1>
 
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.38, duration: 0.4 }}
-          className="mt-1.5 text-xs font-bold uppercase tracking-[0.22em] text-[#2563EB]"
+        <p
+          className="mt-1.5 text-xs font-bold uppercase tracking-[0.22em]"
+          style={{ color: 'var(--brand-primary, #2563EB)' }}
         >
           {t.brand_tagline}
-        </motion.p>
+        </p>
 
         {/* Speed track + accelerating Electric Blue SVG car */}
         <div className="relative mt-10 h-14 w-64 overflow-hidden">
