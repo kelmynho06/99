@@ -397,7 +397,7 @@
   color: #94A3B8;
 }
 
-/* Melissa Light Shell: Always bright, crisp, and legible in all 3 panels regardless of global dark mode */
+/* Melissa Light Shell: Always bright, crisp, and legible in all 3 panels regardless of global dark mode or palette */
 .melissa-light-shell {
   background-color: #F8FAFC !important;
   color: #0F172A !important;
@@ -415,7 +415,7 @@
 }
 
 .melissa-light-shell .melissa-hairline {
-  border-color: #E2E8F0 !important;
+  border-color: #CBD5E1 !important;
 }
 
 .melissa-light-shell .melissa-ink {
@@ -426,16 +426,53 @@
   color: #475569 !important;
 }
 
+.melissa-light-shell .melissa-bubble-assistant {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border-color: #CBD5E1 !important;
+}
+
+.melissa-light-shell .melissa-bubble-user {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-primary-hover, #1D4ED8) 82%, #0F172A) 0%,
+    color-mix(in srgb, var(--color-primary, #2563EB) 86%, #0F172A) 100%
+  ) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 8px 20px -6px rgba(15, 23, 42, 0.28);
+}
+
+.melissa-light-shell .melissa-warning-banner {
+  background-color: #FFFBEB !important;
+  border-color: #FDE68A !important;
+  color: #78350F !important;
+}
+
+.melissa-light-shell .melissa-input,
 .melissa-light-shell input,
 .melissa-light-shell select,
 .melissa-light-shell textarea {
+  background-color: #FFFFFF !important;
   color: #0F172A !important;
+  -webkit-text-fill-color: #0F172A !important;
+  caret-color: #2563EB !important;
+  border-color: #CBD5E1 !important;
   color-scheme: light;
+}
+
+.melissa-light-shell .melissa-input:focus,
+.melissa-light-shell input:focus,
+.melissa-light-shell textarea:focus {
+  background-color: #FFFFFF !important;
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
 .melissa-light-shell input::placeholder,
 .melissa-light-shell textarea::placeholder {
-  color: #94A3B8 !important;
+  color: #64748B !important;
+  -webkit-text-fill-color: #64748B !important;
+  opacity: 1 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

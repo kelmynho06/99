@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Send,
   ShieldAlert,
-  Sparkles,
   Volume2,
   VolumeX,
   X,
@@ -21,18 +20,20 @@ import {
 import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import { formatBRL } from '../lib/geo';
 import {
+  checkMelissaBackendStatus,
+  queryMelissaWithCloudflareFallback,
+} from '../lib/melissaGeminiClient';
+import {
   getNightDutyWindowStatus,
   sendDirectMessage,
   uploadSupportAttachment,
 } from '../lib/mobilityApi';
 import {
-  ASSISTANT_VOICE_PRESETS,
-  listAvailableMelissaVoices,
   speakWithMelissaNaturalVoice,
   stopSpeech,
 } from '../lib/sound';
 import { getUserPreferences, saveUserPreferences } from '../lib/userPrefs';
-import type { AssistantVoiceId, PlatformConfig, Ride, UserProfile } from '../types/mobility';
+import type { PlatformConfig, Ride, UserProfile } from '../types/mobility';
 
 interface ChatMessage {
   id: string;
@@ -122,14 +123,14 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
   const [speaking, setSpeaking] = useState(false);
   const [alexaListening, setAlexaListening] = useState(false);
   const [quotaExhausted, setQuotaExhausted] = useState(false);
+  const [missingGeminiKey, setMissingGeminiKey] = useState(false);
+  const [apiDiagnostic, setApiDiagnostic] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingAdminConfirmation | null>(null);
   const [pendingAttachment, setPendingAttachment] = useState<{
     base64: string;
     mimeType: string;
     name: string;
   } | null>(null);
-  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [showVoicePanel, setShowVoicePanel] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -161,7 +162,16 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
       return;
     }
 
-    setBrowserVoices(listAvailableMelissaVoices());
+    let cancelled = false;
+    void checkMelissaBackendStatus().then((status) => {
+      if (cancelled) return;
+      if (status === 'cloudflare-missing-key') {
+        setMissingGeminiKey(true);
+      } else {
+        setMissingGeminiKey(false);
+      }
+    });
+
     setMessages((prev) =>
       prev.length > 0
         ? prev
@@ -175,6 +185,9 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
             },
           ]
     );
+    return () => {
+      cancelled = true;
+    };
   }, [buildWelcomeMenu, open]);
 
   useEffect(() => {
@@ -563,49 +576,59 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
           .filter(Boolean)
           .join(' | ');
 
-        const res = await fetch('/api/melissa/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userMsgText,
-            role: currentUser.is_admin ? 'admin' : currentUser.role,
-            appName,
-            contextSummary: contextParts,
-            history: messages.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
-            attachment: attachSnapshot,
-          }),
+        const aiResult = await queryMelissaWithCloudflareFallback({
+          message: userMsgText,
+          role: currentUser.is_admin ? 'admin' : currentUser.role,
+          appName,
+          contextSummary: contextParts,
+          history: messages.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
+          attachment: attachSnapshot,
         });
 
-        const data = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          reply?: string;
-          quotaExceeded?: boolean;
-          requiresConfirmation?: boolean;
-          suggestedAction?: string;
-          message?: string;
-        };
-
-        if (res.status === 429 || data.quotaExceeded) {
+        if (aiResult.quotaExceeded) {
           setQuotaExhausted(true);
-          const quotaMsg = 'O limite de IA foi esgotado. Você só pode usar agora o chatbot local.';
+          setApiDiagnostic(aiResult.diagnosticError || null);
+          const quotaMsg =
+            aiResult.message ||
+            'O limite de IA foi esgotado. Você só pode usar agora o chatbot local.';
           appendMessage({ sender: 'melissa', text: quotaMsg, badge: 'Limite Atingido · Modo Local' });
           setThinking(false);
           await speakReply(quotaMsg);
           return;
         }
 
-        if (!res.ok || !data.ok) {
-          const fallback =
-            data.message ||
-            'Estou operando no chatbot local no momento. Digite "menu" ou envie um número de 1 a 4.';
-          appendMessage({ sender: 'melissa', text: fallback, badge: 'Modo Local' });
+        if (aiResult.missingApiKey) {
+          setMissingGeminiKey(true);
+          setApiDiagnostic(null);
+          const keyMsg =
+            aiResult.message ||
+            'Configure a variável VITE_GEMINI_API_KEY no painel da Cloudflare e faça um novo deploy para ativar a IA da Melissa. Enquanto isso, digite "menu" ou 1, 2, 3 ou 4 para usar o chatbot local.';
+          appendMessage({ sender: 'melissa', text: keyMsg, badge: 'Configuração Cloudflare' });
           setThinking(false);
-          await speakReply(fallback);
+          await speakReply(keyMsg);
           return;
         }
 
-        const replyText = data.reply || 'Pronto! Como posso ajudar mais?';
-        if (data.requiresConfirmation && (currentUser.role === 'admin' || currentUser.is_admin)) {
+        if (!aiResult.ok) {
+          const reason =
+            aiResult.diagnosticError ||
+            aiResult.message ||
+            'Falha ao consultar a API Gemini no momento. Você pode continuar usando o chatbot local (digite "menu" ou 1, 2, 3, 4).';
+          setApiDiagnostic(reason);
+          appendMessage({
+            sender: 'melissa',
+            text: aiResult.message || reason,
+            badge: 'Diagnóstico IA · Modo Local',
+          });
+          setThinking(false);
+          await speakReply(reason);
+          return;
+        }
+
+        setMissingGeminiKey(false);
+        setApiDiagnostic(null);
+        const replyText = aiResult.reply || 'Pronto! Como posso ajudar mais?';
+        if (aiResult.requiresConfirmation && (currentUser.role === 'admin' || currentUser.is_admin)) {
           setPendingConfirm({
             action: 'financial_prompt',
             summary: userMsgText,
@@ -615,12 +638,16 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         setThinking(false);
         await speakReply(replyText);
 
-        if (data.suggestedAction === 'open_games') onOpenGames?.();
-        if (data.suggestedAction === 'open_wallet') onOpenWallet?.();
-      } catch {
-        const offlineMsg =
-          'Sem resposta da IA externa no momento — você pode usar todos os atalhos locais (digite "menu", 1, 2, 3 ou 4).';
-        appendMessage({ sender: 'melissa', text: offlineMsg, badge: 'Chatbot Local' });
+        if (aiResult.suggestedAction === 'open_games') onOpenGames?.();
+        if (aiResult.suggestedAction === 'open_wallet') onOpenWallet?.();
+      } catch (err) {
+        const detail =
+          err instanceof Error && err.message
+            ? ` (${err.message.slice(0, 120)})`
+            : '';
+        const offlineMsg = `Não foi possível conectar à IA agora${detail}. Os atalhos locais seguem ativos (digite "menu", 1, 2, 3 ou 4).`;
+        setApiDiagnostic(offlineMsg);
+        appendMessage({ sender: 'melissa', text: offlineMsg, badge: 'Diagnóstico · Modo Local' });
         await speakReply(offlineMsg);
       } finally {
         setThinking(false);
@@ -925,16 +952,6 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowVoicePanel((v) => !v)}
-            className="melissa-muted-surface melissa-hairline melissa-ink flex h-10 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold hover:brightness-95 transition"
-            title="Escolher Voz da Melissa"
-          >
-            <Sparkles className="h-4 w-4" style={{ color: 'var(--color-primary, #2563EB)' }} />
-            <span className="hidden sm:inline">Voz</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => {
               const next = saveUserPreferences({ voice_enabled: !prefs.voice_enabled });
               setPrefs(next);
@@ -970,89 +987,38 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
         </div>
       </header>
 
-      {/* Collapsible Voice Selection Drawer */}
-      {showVoicePanel && (
-        <div className="melissa-surface melissa-hairline border-b px-4 py-3 space-y-2.5 shrink-0 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span
-              className="text-xs font-extrabold tracking-wide"
-              style={{ color: 'var(--color-primary, #2563EB)' }}
-            >
-              Personalizar Voz da Melissa
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowVoicePanel(false)}
-              className="melissa-ink-muted text-xs font-bold hover:underline"
-            >
-              Ocultar
-            </button>
+      {/* Missing Cloudflare VITE_GEMINI_API_KEY Notice */}
+      {missingGeminiKey && !quotaExhausted && (
+        <div className="melissa-warning-banner flex items-center gap-2 border-b px-4 py-2 text-xs font-bold shrink-0">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-amber-700" />
+          <span>
+            Chave <code className="font-mono-num font-extrabold">VITE_GEMINI_API_KEY</code> ausente no build da Cloudflare. Adicione <code className="font-mono-num font-extrabold">VITE_GEMINI_API_KEY</code> nas variáveis de ambiente da Cloudflare e faça um novo deploy após salvar. O chatbot local segue ativo para comandos rápidos.
+          </span>
+        </div>
+      )}
+
+      {/* Detailed API Diagnostic Banner */}
+      {apiDiagnostic && !missingGeminiKey && !quotaExhausted && (
+        <div className="melissa-warning-banner flex items-center justify-between gap-2 border-b px-4 py-2 text-xs font-bold shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldAlert className="h-4 w-4 shrink-0 text-amber-700" />
+            <span className="break-words">{apiDiagnostic}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {ASSISTANT_VOICE_PRESETS.map((preset) => {
-              const active = (prefs.assistant_voice_id || 'melissa-maps') === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => {
-                    const next = saveUserPreferences({
-                      assistant_voice_id: preset.id as AssistantVoiceId,
-                    });
-                    setPrefs(next);
-                    void speakReply(`Olá! Esta é a minha voz ${preset.label}.`);
-                  }}
-                  className="rounded-xl border p-2.5 text-left transition"
-                  style={
-                    active
-                      ? {
-                          borderColor: 'var(--color-primary, #2563EB)',
-                          backgroundColor: 'var(--color-tint, #EFF6FF)',
-                        }
-                      : {
-                          borderColor: '#E2E8F0',
-                          backgroundColor: '#F8FAFC',
-                        }
-                  }
-                >
-                  <p className="melissa-ink text-xs font-extrabold">{preset.label}</p>
-                  <p className="melissa-ink-muted text-[11px] mt-0.5 line-clamp-2">
-                    {preset.description}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-          {browserVoices.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="melissa-ink-muted text-xs font-bold shrink-0">
-                Voz do aparelho:
-              </label>
-              <select
-                value={prefs.assistant_voice_name || ''}
-                onChange={(e) => {
-                  const next = saveUserPreferences({ assistant_voice_name: e.target.value });
-                  setPrefs(next);
-                }}
-                className="flex-1 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-2.5 py-1.5 text-xs font-semibold text-[#0F172A]"
-              >
-                <option value="">Automática (Melissa Neural / Maps)</option>
-                {browserVoices.slice(0, 12).map((v) => (
-                  <option key={v.name} value={v.name}>
-                    {v.name} ({v.lang})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => setApiDiagnostic(null)}
+            className="shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-extrabold underline"
+          >
+            Fechar
+          </button>
         </div>
       )}
 
       {/* Quota Warning Banner */}
       {quotaExhausted && (
-        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-900 shrink-0">
-          <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
-          <span>O limite de IA foi esgotado. Você só pode usar agora o chatbot local.</span>
+        <div className="melissa-warning-banner flex items-center gap-2 border-b px-4 py-2 text-xs font-bold shrink-0">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-amber-700" />
+          <span>{apiDiagnostic || 'O limite de IA foi esgotado. Você só pode usar agora o chatbot local.'}</span>
         </div>
       )}
 
@@ -1092,15 +1058,14 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
                 <div
                   className={`max-w-[88%] sm:max-w-[76%] rounded-2xl px-4 py-3 text-[14px] leading-relaxed whitespace-pre-line ${
                     m.sender === 'user'
-                      ? 'aurora-accent-flow text-white rounded-br-sm shadow-md'
-                      : 'melissa-surface melissa-hairline melissa-ink border rounded-bl-sm shadow-xs'
+                      ? 'melissa-bubble-user text-white rounded-br-sm shadow-md'
+                      : 'melissa-bubble-assistant border rounded-bl-sm shadow-xs'
                   }`}
                 >
                   {m.sender === 'melissa' && (
-                    <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-[#64748B]">
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold melissa-ink-muted">
                       <span
-                        className="font-extrabold"
-                        style={{ color: 'var(--color-primary, #2563EB)' }}
+                        className="font-extrabold text-[#1D4ED8]"
                       >
                         Melissa
                       </span>
@@ -1235,7 +1200,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
             <button
               type="button"
               onClick={handleForwardSupport}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-extrabold text-amber-900 shrink-0"
+              className="melissa-warning-banner inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-extrabold shrink-0"
             >
               Enviar ao Suporte Admin
             </button>
@@ -1328,7 +1293,7 @@ export const MelissaAssistantModal: React.FC<MelissaAssistantModalProps> = ({
               }
             }}
             placeholder="Converse com a Melissa ou digite 1, 2, 3..."
-            className="min-w-0 flex-1 rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] px-3.5 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2563EB] focus:bg-white transition"
+            className="melissa-input min-w-0 flex-1 rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-2.5 text-sm font-medium text-[#0F172A] outline-none transition"
           />
 
           <button

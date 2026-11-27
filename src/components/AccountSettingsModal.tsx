@@ -54,11 +54,7 @@ import {
   checkForOtaUpdate,
   type OtaUpdateInfo,
 } from '../lib/otaUpdate';
-import {
-  ASSISTANT_VOICE_PRESETS,
-  listAvailableMelissaVoices,
-  speakWithMelissaNaturalVoice,
-} from '../lib/sound';
+import { speakWithMelissaNaturalVoice } from '../lib/sound';
 import {
   getUserPreferences,
   isDarkThemeActive,
@@ -66,7 +62,6 @@ import {
   subscribeUserPreferences,
 } from '../lib/userPrefs';
 import type {
-  AssistantVoiceId,
   DriverVehicle,
   PaymentMethod,
   PixKeyType,
@@ -179,9 +174,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [goalMonthInput, setGoalMonthInput] = useState<string>(() =>
     String(getUserPreferences().driver_goal_month || 3600)
   );
-  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>(() =>
-    listAvailableMelissaVoices(getUserPreferences().language)
-  );
   const [permsModalOpen, setPermsModalOpen] = useState(false);
   const [legalDocsOpen, setLegalDocsOpen] = useState(false);
   const [checkingOta, setCheckingOta] = useState(false);
@@ -195,14 +187,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   useEffect(() => {
     const unsub = subscribeUserPreferences((nextPrefs) => {
       setUserPrefs(nextPrefs);
-      setBrowserVoices(listAvailableMelissaVoices(nextPrefs.language));
     });
-    const onVoicesChanged = () => {
-      setBrowserVoices(listAvailableMelissaVoices(getUserPreferences().language));
-    };
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.addEventListener?.('voiceschanged', onVoicesChanged);
-    }
     getInstalledNativeVersion(CURRENT_APP_VERSION).then(setInstalledVersion).catch(() => {});
     getCurrentGpsPosition().then((pos) => {
       if (pos) {
@@ -211,9 +196,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     });
     return () => {
       unsub();
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.removeEventListener?.('voiceschanged', onVoicesChanged);
-      }
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
       searchAbortRef.current?.abort();
     };
@@ -1598,114 +1580,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     {userPrefs.voice_enabled ? t.voice_enabled_badge : t.voice_muted_badge}
                   </button>
                 </div>
-                {userPrefs.voice_enabled && (
-                  <div className="space-y-3 pt-2 border-t border-[#E2E8F0]">
-                    <div>
-                      <p className="text-xs font-extrabold text-[#0F172A] mb-1.5">
-                        Estilo de Voz da Melissa
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {ASSISTANT_VOICE_PRESETS.map((preset) => {
-                          const selected =
-                            (userPrefs.assistant_voice_id || 'melissa-maps') === preset.id;
-                          return (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              onClick={() => {
-                                const next = saveUserPreferences({
-                                  assistant_voice_id: preset.id as AssistantVoiceId,
-                                });
-                                setUserPrefs(next);
-                                void speakWithMelissaNaturalVoice(
-                                  `Olá! Esta é a voz ${preset.label} da Melissa.`
-                                );
-                              }}
-                              className={`rounded-xl border p-2.5 text-left transition ${
-                                selected
-                                  ? 'bg-[#2563EB] text-white border-[#2563EB]'
-                                  : 'bg-white text-[#0F172A] border-[#E2E8F0]'
-                              }`}
-                            >
-                              <p className="text-xs font-extrabold">{preset.label}</p>
-                              <p
-                                className={`text-[10px] mt-0.5 ${
-                                  selected ? 'text-white/85' : 'text-[#475569]'
-                                }`}
-                              >
-                                {preset.description}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {browserVoices.length > 0 && (
-                      <div>
-                        <label className="block text-xs font-bold text-[#475569] mb-1">
-                          Voz do Sistema / Navegador (Fallback Offline)
-                        </label>
-                        <select
-                          value={userPrefs.assistant_voice_name || ''}
-                          onChange={(e) => {
-                            const next = saveUserPreferences({
-                              assistant_voice_name: e.target.value,
-                            });
-                            setUserPrefs(next);
-                          }}
-                          className="min-h-[40px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
-                        >
-                          <option value="">Automática (Melhor voz feminina disponível)</option>
-                          {browserVoices.map((v) => (
-                            <option key={`${v.name}-${v.lang}`} value={v.name}>
-                              {v.name} ({v.lang})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E2E8F0] bg-white px-3 py-2">
-                      <div>
-                        <p className="text-xs font-extrabold text-[#0F172A]">
-                          Voz Neural Natural IA (Melissa)
-                        </p>
-                        <p className="text-[10px] text-[#475569]">
-                          Usa síntese neural HD com retorno automático para voz local se sem cota
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = saveUserPreferences({
-                            assistant_use_gemini_tts: !(userPrefs.assistant_use_gemini_tts ?? true),
-                          });
-                          setUserPrefs(next);
-                        }}
-                        className={`min-h-[32px] rounded-lg px-2.5 text-[11px] font-extrabold ${
-                          (userPrefs.assistant_use_gemini_tts ?? true)
-                            ? 'bg-[#10B981] text-white'
-                            : 'bg-[#E2E8F0] text-[#475569]'
-                        }`}
-                      >
-                        {(userPrefs.assistant_use_gemini_tts ?? true) ? 'Ativada' : 'Local'}
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void speakWithMelissaNaturalVoice(
-                          'Oi! Aqui é a Melissa, da Go Driver. Vou acompanhar cada detalhe da sua viagem com calma e clareza. Tudo pronto para seguir!'
-                        )
-                      }
-                      className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-bold text-[#0F172A] hover:bg-[#F1F5F9]"
-                    >
-                      {t.voice_test_btn}
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* System Notifications (Background only) */}

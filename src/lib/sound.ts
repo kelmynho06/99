@@ -23,60 +23,21 @@ export interface AssistantVoicePreset {
 export const ASSISTANT_VOICE_PRESETS: AssistantVoicePreset[] = [
   {
     id: 'melissa-maps',
-    label: 'Melissa · Navegação Maps',
-    description: 'Clara, objetiva e cordial — estilo GPS profissional',
+    label: 'Melissa · Voz Oficial',
+    description: 'Voz feminina natural padrão da Go Driver',
     geminiVoiceName: 'Kore',
-    geminiStyleHint: 'Fale com clareza, simpatia e ritmo preciso de navegação urbana:',
+    geminiStyleHint: 'Fale com clareza, simpatia e ritmo natural de assistente urbana:',
     rate: 1.07,
     pitch: 1.02,
   },
-  {
-    id: 'melissa-suave',
-    label: 'Melissa · Suave & Acolhedora',
-    description: 'Tom leve, calmo e humano para conversas confortáveis',
-    geminiVoiceName: 'Zephyr',
-    geminiStyleHint: 'Fale de forma suave, acolhedora e natural:',
-    rate: 1.02,
-    pitch: 1.04,
-  },
-  {
-    id: 'melissa-agil',
-    label: 'Melissa · Ágil & Dinâmica',
-    description: 'Respostas rápidas ideais para motoristas em movimento',
-    geminiVoiceName: 'Aoede',
-    geminiStyleHint: 'Fale de forma ágil, animada e direta:',
-    rate: 1.15,
-    pitch: 1.05,
-  },
-  {
-    id: 'melissa-executiva',
-    label: 'Melissa · Executiva VIP',
-    description: 'Voz firme, elegante e equilibrada',
-    geminiVoiceName: 'Leda',
-    geminiStyleHint: 'Fale com tom elegante, firme e atencioso:',
-    rate: 1.04,
-    pitch: 0.99,
-  },
 ];
 
-let platformDefaultVoiceId: AssistantVoiceId = 'melissa-maps';
-
-export function syncPlatformSounds(config?: PlatformConfig | null): void {
-  const def = config?.assistant_voice_default;
-  if (
-    def === 'melissa-maps' ||
-    def === 'melissa-suave' ||
-    def === 'melissa-agil' ||
-    def === 'melissa-executiva'
-  ) {
-    platformDefaultVoiceId = def;
-  }
+export function syncPlatformSounds(_config?: PlatformConfig | null): void {
+  // Voz da Melissa unificada para padrão único feminino natural
 }
 
 export function getActiveVoicePreset(): AssistantVoicePreset {
-  const prefs = getUserPreferences();
-  const targetId = prefs.assistant_voice_id || platformDefaultVoiceId || 'melissa-maps';
-  return ASSISTANT_VOICE_PRESETS.find((v) => v.id === targetId) || ASSISTANT_VOICE_PRESETS[0];
+  return ASSISTANT_VOICE_PRESETS[0];
 }
 
 let sharedAudioCtx: AudioContext | null = null;
@@ -274,11 +235,6 @@ function resolveMelissaVoice(activeLang: string): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
   bindVoicesChangedListener();
   const voices = window.speechSynthesis.getVoices();
-  const prefs = getUserPreferences();
-  if (prefs.assistant_voice_name && voices.length) {
-    const manual = voices.find((v) => v.name === prefs.assistant_voice_name);
-    if (manual) return manual;
-  }
 
   const langLower = activeLang.toLowerCase();
   if (!voices.length) return cachedVoiceByLang[langLower] || null;
@@ -304,7 +260,6 @@ function resolveMelissaVoice(activeLang: string): SpeechSynthesisVoice | null {
 
 function humanizeSpeechText(raw: string): string {
   return raw
-    .replace(/\b(?:Évelyn|Evelyn|Luana)\b/g, 'Melissa')
     .replace(/R\$\s*(\d+)[,.](\d{2})/g, (_m, reais: string, cents: string) =>
       cents === '00' ? `${reais} reais` : `${reais} reais e ${Number(cents)} centavos`
     )
@@ -532,7 +487,8 @@ export async function speakWithMelissaNaturalVoice(
       });
       window.clearTimeout(timeoutId);
 
-      if (res.ok) {
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      if (res.ok && contentType.includes('application/json')) {
         const data = (await res.json()) as { ok?: boolean; audioBase64?: string; mimeType?: string };
         if (data.ok && data.audioBase64) {
           await new Promise<void>((resolve) => {

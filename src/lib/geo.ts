@@ -1,4 +1,5 @@
 import type { WeatherInfo } from '../types/mobility';
+import { geocodeWithCloudflareFallback } from './melissaGeminiClient';
 
 export interface NominatimResult {
   place_id: number;
@@ -1004,21 +1005,13 @@ export async function searchAddressesWithMelissaAI(
     (hasLocalCoords ? await resolveCachedLocalCity(nearLat, nearLng).catch(() => '') : '');
 
   try {
-    const res = await fetch('/api/melissa/geocode', {
-      method: 'POST',
+    const rawList = await geocodeWithCloudflareFallback({
+      query: cleanQuery,
+      lat: hasLocalCoords ? nearLat : undefined,
+      lng: hasLocalCoords ? nearLng : undefined,
+      city: localCity || undefined,
       signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: cleanQuery,
-        lat: hasLocalCoords ? nearLat : undefined,
-        lng: hasLocalCoords ? nearLng : undefined,
-        city: localCity || undefined,
-      }),
     });
-    if (!res.ok) return [];
-
-    const data = (await res.json()) as { ok?: boolean; results?: MelissaGeocodeRawItem[] };
-    const rawList = Array.isArray(data.results) ? data.results : [];
     if (rawList.length === 0) return [];
 
     const resolved: AddressSuggestion[] = [];

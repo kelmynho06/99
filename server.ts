@@ -183,35 +183,51 @@ async function startServer() {
           : userText,
       });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: parts,
-        config: {
-          systemInstruction: buildMelissaSystemInstruction(role, contextSummary, appName),
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              reply: {
-                type: Type.STRING,
-                description: 'Resposta natural, humana e concisa da Melissa para leitura em tela e voz.',
-              },
-              requiresConfirmation: {
-                type: Type.BOOLEAN,
-                description: 'True apenas se for ação destrutiva, financeira ou administrativa que exija confirmação Sim.',
-              },
-              suggestedAction: {
-                type: Type.STRING,
-                description:
-                  'Ação opcional: none, open_wallet, open_games, open_support, forward_to_admin, toggle_night_duty, open_facial_queue, open_settings',
+      const modelChain = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite'];
+      let rawText = '';
+      let lastErr: unknown = null;
+
+      for (const model of modelChain) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: parts,
+            config: {
+              systemInstruction: buildMelissaSystemInstruction(role, contextSummary, appName),
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  reply: {
+                    type: Type.STRING,
+                    description: 'Resposta natural, humana e concisa da Melissa para leitura em tela e voz.',
+                  },
+                  requiresConfirmation: {
+                    type: Type.BOOLEAN,
+                    description: 'True apenas se for ação destrutiva, financeira ou administrativa que exija confirmação Sim.',
+                  },
+                  suggestedAction: {
+                    type: Type.STRING,
+                    description:
+                      'Ação opcional: none, open_wallet, open_games, open_support, forward_to_admin, toggle_night_duty, open_facial_queue, open_settings',
+                  },
+                },
+                required: ['reply', 'requiresConfirmation', 'suggestedAction'],
               },
             },
-            required: ['reply', 'requiresConfirmation', 'suggestedAction'],
-          },
-        },
-      });
+          });
+          rawText = (response.text || '').trim();
+          if (rawText) break;
+        } catch (modelErr) {
+          lastErr = modelErr;
+          if (isQuotaError(modelErr)) continue;
+        }
+      }
 
-      const rawText = (response.text || '').trim();
+      if (!rawText && lastErr) {
+        throw lastErr;
+      }
+
       let parsed: { reply?: string; requiresConfirmation?: boolean; suggestedAction?: string } = {};
       try {
         parsed = JSON.parse(rawText);

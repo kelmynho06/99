@@ -89,7 +89,6 @@ import {
 import { CURRENT_APP_VERSION } from '../lib/otaUpdate';
 import { isDateInPeriod } from '../lib/periodFilter';
 import {
-  ASSISTANT_VOICE_PRESETS,
   speakPtBr,
   stopSpeech,
   syncPlatformSounds,
@@ -103,7 +102,6 @@ import {
 } from '../lib/userPrefs';
 import type {
   AppNotification,
-  AssistantVoiceId,
   AuditLogEntry,
   Coupon,
   DriverFacialVerification,
@@ -4168,29 +4166,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
                   </div>
-                </div>
-
-                {/* Melissa Default Voice Selector */}
-                <div className="rounded-2xl border border-[#E2E8F0] bg-[#F4F6F9] p-3.5 space-y-2">
-                  <label className="block text-xs font-extrabold text-[#0F172A]">
-                    Voz Padrão da Assistente Melissa
-                  </label>
-                  <select
-                    value={platformConfig.assistant_voice_default || 'melissa-maps'}
-                    onChange={(e) =>
-                      setPlatformConfig((prev) => ({
-                        ...prev,
-                        assistant_voice_default: e.target.value as AssistantVoiceId,
-                      }))
-                    }
-                    className="min-h-[42px] w-full rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#0F172A] outline-none focus:border-[#2563EB]"
-                  >
-                    {ASSISTANT_VOICE_PRESETS.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.label} — {v.description}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
                 {/* Plantão Noturno Autônomo da Melissa */}
