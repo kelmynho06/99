@@ -62,7 +62,11 @@ import type {
   WalletWithdrawal,
 } from '../types/mobility';
 import { AvatarImage } from './AvatarImage';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import {
+  handleBrandImageError,
+  normalizeImageUrl,
+  resolveBrandLogo,
+} from '../lib/brandAssets';
 import { Receipt66PayModal } from './Receipt66PayModal';
 
 export type WalletModalTab = 'home' | 'deposit' | 'transfer' | 'qrcode' | 'withdraw' | 'ledger';
@@ -143,6 +147,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
   const manualPixEnabled = platformConfig.manual_pix_enabled !== false;
   const depositsBlockedNow = !depositWindow.isOpen || nightDutyStatus.isActive;
   const canDepositAnyMethod = autoPixEnabled || !depositsBlockedNow;
+  const [manualQrImgError, setManualQrImgError] = useState(false);
+  const manualQrUrl = normalizeImageUrl(platformConfig.platform_pix_qr_url);
 
   const [depositSecurityAccepted, setDepositSecurityAccepted] = useState(false);
   const [showDepositSecurityGate, setShowDepositSecurityGate] = useState(
@@ -626,7 +632,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
     setGeneratingAutoPix(true);
     try {
       const res = await createMercadoPagoPix({
-        tipo: 'recarga',
+        tipo: 'recarga_carteira',
         valor: numericAmount,
         email: currentUser.email,
         nome: currentUser.full_name,
@@ -664,7 +670,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
       await createWalletDepositRequest(currentUser.id, numericAmount, pixPayload, noteInput);
       await createManualPagamentoPix({
         usuario_id: currentUser.id,
-        tipo: 'recarga',
+        tipo: 'recarga_carteira',
         valor: numericAmount,
         qr_code: pixPayload,
       });
@@ -862,6 +868,8 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
             <img
               src={resolveBrandLogo(platformConfig)}
               alt="GoPay"
+              referrerPolicy="no-referrer"
+              onError={(e) => handleBrandImageError(e)}
               className="h-10 w-10 shrink-0 rounded-xl object-cover border border-[#BFDBFE] shadow-sm bg-white"
             />
             <div>
@@ -1399,7 +1407,7 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         Recargas Pix Recentes
                       </p>
                       {myPagamentosPix
-                        .filter((p) => p.tipo === 'recarga')
+                        .filter((p) => p.tipo === 'recarga' || p.tipo === 'recarga_carteira')
                         .slice(0, 3)
                         .map((px) => (
                           <div
@@ -1463,10 +1471,12 @@ export const ClientWalletModal: React.FC<ClientWalletModalProps> = ({
                         key={cycle}
                         className="rounded-2xl border-2 border-[#2563EB] bg-white p-3 shadow-xs transition-opacity"
                       >
-                        {platformConfig.platform_pix_qr_url ? (
+                        {manualQrUrl && !manualQrImgError ? (
                           <img
-                            src={platformConfig.platform_pix_qr_url}
+                            src={manualQrUrl}
                             alt="QR Code Pix Oficial"
+                            referrerPolicy="no-referrer"
+                            onError={() => setManualQrImgError(true)}
                             className="h-40 w-40 object-contain rounded-lg"
                           />
                         ) : (

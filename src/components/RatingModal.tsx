@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bike, Car, Package, ShieldCheck, Star, X } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
 import {
@@ -121,6 +121,8 @@ export const RatingModal: React.FC<RatingModalProps> = ({
           <img
             src={brandLogo}
             alt={appConfig.app_name}
+            referrerPolicy="no-referrer"
+            onError={(e) => handleBrandImageError(e)}
             className="h-12 w-12 rounded-2xl object-cover border-2 border-[#2563EB] shadow-xs"
           />
         </div>

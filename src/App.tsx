@@ -16,7 +16,7 @@ import { useAppConfig } from './context/AppConfigContext';
 import { useAdminAuth } from './hooks/useAdminAuth';
 import { useRealtimeMobility } from './hooks/useRealtimeMobility';
 import { logAuditEvent } from './lib/audit';
-import { resolveBrandLogo } from './lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo } from './lib/brandAssets';
 import {
   syncNativeFloatingBubbleActiveRide,
   syncNativeFloatingBubbleEnabled,
@@ -386,6 +386,8 @@ export default function App() {
             <img
               src={resolveBrandLogo(effectivePlatformConfig)}
               alt={effectivePlatformConfig.site_name || 'Go Driver Mobilidade'}
+              referrerPolicy="no-referrer"
+              onError={(e) => handleBrandImageError(e)}
               className="mx-auto h-16 w-16 rounded-2xl object-cover border-2 border-[#2563EB]/25 bg-white shadow-lg"
             />
             <p className="mt-3 text-sm font-extrabold text-[#0F172A]">

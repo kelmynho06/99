@@ -1,3 +1,4 @@
+import { normalizeImageUrl } from './brandAssets';
 import { haversineKm } from './geo';
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
 import type {
@@ -739,7 +740,8 @@ export async function resolveDocumentDisplayUrl(rawUrl?: string | null): Promise
     }
   }
 
-  return rawUrl;
+  const normalized = normalizeImageUrl(rawUrl);
+  return normalized ?? rawUrl;
 }
 
 export async function fetchUserProfileById(userId: string): Promise<UserProfile | null> {
@@ -4359,7 +4361,12 @@ function mapDbPagamentoPix(
     id: String(row.id),
     usuario_id: uid,
     corrida_id: row.corrida_id ? String(row.corrida_id) : null,
-    tipo: row.tipo === 'corrida' ? 'corrida' : 'recarga',
+    tipo:
+      row.tipo === 'corrida' || row.tipo === 'pagamento_corrida'
+        ? (row.tipo as 'corrida' | 'pagamento_corrida')
+        : row.tipo === 'recarga_carteira'
+        ? 'recarga_carteira'
+        : 'recarga',
     metodo_confirmacao:
       row.metodo_confirmacao === 'manual_admin' ? 'manual_admin' : 'mercadopago_auto',
     mp_payment_id: row.mp_payment_id ? String(row.mp_payment_id) : null,
@@ -4374,7 +4381,7 @@ function mapDbPagamentoPix(
 }
 
 export async function createMercadoPagoPix(input: {
-  tipo: 'recarga' | 'corrida';
+  tipo: 'recarga' | 'recarga_carteira' | 'corrida' | 'pagamento_corrida';
   valor: number;
   corrida_id?: string | null;
   email?: string;
@@ -4402,14 +4409,8 @@ export async function createMercadoPagoPix(input: {
     body: JSON.stringify(input),
   });
 
-  const contentType = (res.headers.get('content-type') || '').toLowerCase();
-  if (!contentType.includes('application/json')) {
-    throw new Error(
-      'Endpoint /api/mp-create-pix indisponível neste host. Configure o Cloudflare Worker ou use o Pix Manual do Administrador.'
-    );
-  }
-
-  const data = (await res.json()) as {
+  const rawText = await res.text();
+  interface CreateMpPixResponse {
     ok?: boolean;
     error?: string;
     id?: string;
@@ -4418,10 +4419,23 @@ export async function createMercadoPagoPix(input: {
     qr_code_base64?: string;
     valor?: number;
     status?: 'pendente';
-  };
+  }
+  let data: CreateMpPixResponse | null = null;
+
+  try {
+    data = JSON.parse(rawText) as CreateMpPixResponse;
+  } catch {
+    data = null;
+  }
+
+  if (!data) {
+    throw new Error(
+      `Endpoint /api/mp-create-pix indisponível neste host (HTTP ${res.status}). Verifique o Cloudflare Worker ou use o Pix Manual do Administrador.`
+    );
+  }
 
   if (!res.ok || !data.ok || !data.id) {
-    throw new Error(data.error || 'Erro ao criar cobrança Pix no Mercado Pago.');
+    throw new Error(data.error || `Erro ao criar cobrança Pix no Mercado Pago (HTTP ${res.status}).`);
   }
 
   return {
@@ -4436,18 +4450,22 @@ export async function createMercadoPagoPix(input: {
 
 export async function createManualPagamentoPix(input: {
   usuario_id: string;
-  tipo: 'recarga' | 'corrida';
+  tipo: 'recarga' | 'recarga_carteira' | 'corrida' | 'pagamento_corrida';
   valor: number;
   corrida_id?: string | null;
   qr_code?: string | null;
 }): Promise<PagamentoPix | null> {
   try {
+    const normalizedTipo =
+      input.tipo === 'corrida' || input.tipo === 'pagamento_corrida'
+        ? 'pagamento_corrida'
+        : 'recarga_carteira';
     const { data, error } = await supabase
       .from('pagamentos_pix')
       .insert({
         usuario_id: input.usuario_id,
         corrida_id: input.corrida_id || null,
-        tipo: input.tipo,
+        tipo: normalizedTipo,
         metodo_confirmacao: 'manual_admin',
         valor: Number(input.valor.toFixed(2)),
         qr_code: input.qr_code || null,

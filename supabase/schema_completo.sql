@@ -2855,7 +2855,7 @@ CREATE TABLE IF NOT EXISTS public.pagamentos_pix (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   corrida_id UUID NULL REFERENCES public.rides(id) ON DELETE SET NULL,
-  tipo TEXT NOT NULL CHECK (tipo IN ('recarga', 'corrida')),
+  tipo TEXT NOT NULL CHECK (tipo IN ('recarga', 'recarga_carteira', 'corrida', 'pagamento_corrida')),
   metodo_confirmacao TEXT NOT NULL DEFAULT 'mercadopago_auto' CHECK (metodo_confirmacao IN ('mercadopago_auto', 'manual_admin')),
   mp_payment_id TEXT UNIQUE,
   valor NUMERIC(10,2) NOT NULL CHECK (valor > 0),
@@ -2865,6 +2865,23 @@ CREATE TABLE IF NOT EXISTS public.pagamentos_pix (
   criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   aprovado_em TIMESTAMPTZ
 );
+
+DO $$
+DECLARE
+  c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'public.pagamentos_pix'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%tipo%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.pagamentos_pix DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+  ALTER TABLE public.pagamentos_pix
+    ADD CONSTRAINT pagamentos_pix_tipo_check
+    CHECK (tipo IN ('recarga', 'recarga_carteira', 'corrida', 'pagamento_corrida'));
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_pagamentos_pix_user_date
   ON public.pagamentos_pix (usuario_id, criado_em DESC);
@@ -2896,9 +2913,19 @@ CREATE POLICY "pagamentos_pix_admin_all"
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+ALTER TABLE public.pagamentos_pix REPLICA IDENTITY FULL;
+ALTER TABLE public.rides REPLICA IDENTITY FULL;
+
 DO $$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.pagamentos_pix;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.rides;
 EXCEPTION
   WHEN OTHERS THEN NULL;
 END $$;
@@ -2939,7 +2966,7 @@ BEGIN
       aprovado_em = NOW()
   WHERE id = v_pix.id;
 
-  IF v_pix.tipo = 'recarga' THEN
+  IF v_pix.tipo IN ('recarga', 'recarga_carteira') THEN
     UPDATE public.profiles
     SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_pix.valor)::NUMERIC, 2),
         updated_at = NOW()
@@ -2961,7 +2988,7 @@ BEGIN
       'user',
       v_pix.usuario_id
     );
-  ELSIF v_pix.tipo = 'corrida' AND v_pix.corrida_id IS NOT NULL THEN
+  ELSIF v_pix.tipo IN ('corrida', 'pagamento_corrida') AND v_pix.corrida_id IS NOT NULL THEN
     SELECT * INTO v_ride FROM public.rides WHERE id = v_pix.corrida_id FOR UPDATE;
     IF FOUND THEN
       v_ride_amount := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, v_pix.valor)::NUMERIC, 2);
@@ -3059,7 +3086,7 @@ BEGIN
       aprovado_em = NOW()
   WHERE id = v_pix.id;
 
-  IF v_pix.tipo = 'recarga' THEN
+  IF v_pix.tipo IN ('recarga', 'recarga_carteira') THEN
     UPDATE public.profiles
     SET wallet_balance = ROUND((COALESCE(wallet_balance, 0) + v_pix.valor)::NUMERIC, 2),
         updated_at = NOW()
@@ -3072,7 +3099,7 @@ BEGIN
       'deposit',
       'Recarga Pix aprovada pelo Administrador #' || RIGHT(v_pix.id::TEXT, 4)
     );
-  ELSIF v_pix.tipo = 'corrida' AND v_pix.corrida_id IS NOT NULL THEN
+  ELSIF v_pix.tipo IN ('corrida', 'pagamento_corrida') AND v_pix.corrida_id IS NOT NULL THEN
     SELECT * INTO v_ride FROM public.rides WHERE id = v_pix.corrida_id FOR UPDATE;
     IF FOUND THEN
       v_ride_amount := ROUND(COALESCE(v_ride.final_fare, v_ride.estimated_fare, v_pix.valor)::NUMERIC, 2);

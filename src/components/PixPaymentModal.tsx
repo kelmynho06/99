@@ -11,6 +11,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { normalizeImageUrl } from '../lib/brandAssets';
 import { buildPixEmvPayload, formatBRL } from '../lib/geo';
 import { useTranslation } from '../lib/i18n';
 import {
@@ -58,9 +59,12 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
   const [autoApproved, setAutoApproved] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [manualQrImgError, setManualQrImgError] = useState(false);
   const celebratedRef = useRef(false);
   const autoAttemptedRef = useRef(false);
   const { formattedTimer, cycle } = usePixSecurityRotation(90);
+
+  const manualQrUrl = normalizeImageUrl(platformConfig.platform_pix_qr_url);
 
   const amount = ride.final_fare ?? ride.estimated_fare;
   const pixPayload = useMemo(
@@ -86,7 +90,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
     setGeneratingAuto(true);
     try {
       const res = await createMercadoPagoPix({
-        tipo: 'corrida',
+        tipo: 'pagamento_corrida',
         valor: amount,
         corrida_id: ride.id,
         email: ride.passenger?.email,
@@ -216,7 +220,7 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
       const updated = await declarePixPaid(ride);
       await createManualPagamentoPix({
         usuario_id: ride.passenger_id,
-        tipo: 'corrida',
+        tipo: 'pagamento_corrida',
         valor: amount,
         corrida_id: ride.id,
         qr_code: pixPayload,
@@ -450,10 +454,12 @@ export const PixPaymentModal: React.FC<PixPaymentModalProps> = ({
                 key={cycle}
                 className="rounded-2xl border-2 border-[#0F172A] bg-white p-3 shadow-sm transition-opacity"
               >
-                {platformConfig.platform_pix_qr_url ? (
+                {manualQrUrl && !manualQrImgError ? (
                   <img
-                    src={platformConfig.platform_pix_qr_url}
+                    src={manualQrUrl}
                     alt="QR Code Pix Oficial"
+                    referrerPolicy="no-referrer"
+                    onError={() => setManualQrImgError(true)}
                     className="h-44 w-44 object-contain rounded-lg"
                   />
                 ) : (

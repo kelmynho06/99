@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import type {
   Pay66ReceiptResult,
@@ -443,6 +443,8 @@ export const Receipt66PayModal: React.FC<Receipt66PayModalProps> = ({
             <img
               src={brandLogo}
               alt={siteName}
+              referrerPolicy="no-referrer"
+              onError={(e) => handleBrandImageError(e)}
               className="h-10 w-10 rounded-xl object-cover border-2 border-white/60 bg-white shrink-0"
             />
             <div className="min-w-0">

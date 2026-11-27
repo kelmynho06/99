@@ -208,15 +208,16 @@ async function startServer() {
         email?: string;
         nome?: string;
       };
-      const tipo = body.tipo === 'corrida' ? 'corrida' : 'recarga';
+      const isRidePix = body.tipo === 'corrida' || body.tipo === 'pagamento_corrida';
+      const tipo = isRidePix ? 'pagamento_corrida' : 'recarga_carteira';
       const valor = Number(Number(body.valor || 0).toFixed(2));
       if (!Number.isFinite(valor) || valor < 1 || valor > 25000) {
         res.status(400).json({ ok: false, error: 'Informe um valor entre R$ 1,00 e R$ 25.000,00.' });
         return;
       }
 
-      const corridaId = tipo === 'corrida' && body.corrida_id ? String(body.corrida_id) : null;
-      if (tipo === 'corrida' && !corridaId) {
+      const corridaId = isRidePix && body.corrida_id ? String(body.corrida_id).trim() : null;
+      if (isRidePix && !corridaId) {
         res.status(400).json({ ok: false, error: 'corrida_id é obrigatório para Pix de corrida.' });
         return;
       }
@@ -229,10 +230,9 @@ async function startServer() {
 
       const mpPayload: Record<string, unknown> = {
         transaction_amount: valor,
-        description:
-          tipo === 'corrida'
-            ? `GoDriver Corrida #${String(corridaId).slice(-4)}`
-            : 'Recarga Carteira GoPay · GoDriver',
+        description: isRidePix
+          ? `GoDriver Corrida #${String(corridaId).slice(-4)}`
+          : 'Recarga Carteira GoPay · GoDriver',
         payment_method_id: 'pix',
         external_reference: `${tipo}:${authUser.id}:${corridaId || 'wallet'}:${Date.now()}`,
         payer: {
@@ -257,6 +257,7 @@ async function startServer() {
       const mpData = (await mpRes.json()) as {
         id?: number | string;
         message?: string;
+        cause?: Array<{ description?: string }>;
         point_of_interaction?: {
           transaction_data?: { qr_code?: string; qr_code_base64?: string };
         };
@@ -264,7 +265,10 @@ async function startServer() {
       if (!mpRes.ok || !mpData?.id) {
         res.status(502).json({
           ok: false,
-          error: mpData?.message || 'Erro ao gerar Pix no Mercado Pago.',
+          error:
+            mpData?.cause?.[0]?.description ||
+            mpData?.message ||
+            'Erro ao gerar Pix no Mercado Pago.',
         });
         return;
       }
@@ -293,12 +297,16 @@ async function startServer() {
           status: 'pendente',
         }),
       });
-      const insertedRows = (await insertRes.json()) as Array<{ id?: string }>;
+      const insertedRows = (await insertRes.json()) as Array<{ id?: string }> | { message?: string };
       const inserted = Array.isArray(insertedRows) ? insertedRows[0] : null;
       if (!insertRes.ok || !inserted?.id) {
+        const msg =
+          !Array.isArray(insertedRows) && insertedRows?.message ? insertedRows.message : '';
         res.status(500).json({
           ok: false,
-          error: 'Pix criado no Mercado Pago, mas falhou ao registrar no Supabase.',
+          error: msg
+            ? `Pix criado no Mercado Pago, mas falhou ao registrar no Supabase: ${msg}`
+            : 'Pix criado no Mercado Pago, mas falhou ao registrar no Supabase.',
         });
         return;
       }
@@ -306,6 +314,7 @@ async function startServer() {
       res.json({
         ok: true,
         id: inserted.id,
+        tipo,
         mp_payment_id: mpPaymentId,
         qr_code: qrCode,
         qr_code_base64: qrCodeBase64,

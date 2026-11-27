@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { DEFAULT_BRAND_LOGO } from '../lib/brandAssets';
+import { DEFAULT_BRAND_LOGO, normalizeImageUrl } from '../lib/brandAssets';
 import { fetchAppBrandConfig, PLATFORM_BRAND_CACHE_KEY } from '../lib/mobilityApi';
 import { supabase } from '../lib/supabase';
 import { applyGlobalThemePreset } from '../lib/themePresets';
@@ -56,17 +56,7 @@ function upgradeLegacyAppName(name?: unknown): string {
 
 function upgradeLegacyLogoUrl(url?: unknown): string | null {
   if (typeof url !== 'string') return null;
-  const clean = url.trim();
-  if (!clean) return null;
-  const lower = clean.toLowerCase();
-  if (
-    lower.includes('mobilidade66_logo') ||
-    lower.includes('boreal_brand_logo') ||
-    lower.includes('velo_brand_icon')
-  ) {
-    return null;
-  }
-  return clean;
+  return normalizeImageUrl(url);
 }
 
 function upgradeLegacyPrimaryColor(color?: unknown): string {
@@ -164,7 +154,9 @@ function syncHeadMetadata(cfg: AppConfig) {
   applyGlobalThemePreset(cfg.theme_preset, cfg.primary_color, cfg.secondary_color);
 
   const resolvedIcon =
-    (isNative ? cfg.apk_icon_url : cfg.pwa_icon_url) || cfg.logo_url || DEFAULT_BRAND_LOGO;
+    normalizeImageUrl(isNative ? cfg.apk_icon_url : cfg.pwa_icon_url) ||
+    normalizeImageUrl(cfg.logo_url) ||
+    DEFAULT_BRAND_LOGO;
   if (resolvedIcon) {
     let iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (!iconLink) {

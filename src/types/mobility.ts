@@ -447,7 +447,7 @@ export interface PagamentoPix {
   id: string;
   usuario_id: string;
   corrida_id?: string | null;
-  tipo: 'recarga' | 'corrida';
+  tipo: 'recarga' | 'recarga_carteira' | 'corrida' | 'pagamento_corrida';
   metodo_confirmacao: 'mercadopago_auto' | 'manual_admin';
   mp_payment_id?: string | null;
   valor: number;

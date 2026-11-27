@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
 import { logAuditEvent } from '../lib/audit';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo } from '../lib/brandAssets';
 import { SUPPORTED_LANGUAGES, useTranslation } from '../lib/i18n';
 import {
   compressImageFileToDataUrl,
@@ -195,6 +195,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 src={brandLogoUrl}
                 alt={siteName}
                 referrerPolicy="no-referrer"
+                onError={(e) => handleBrandImageError(e)}
                 className="h-12 w-12 rounded-2xl object-cover bg-white shadow-md border border-[#E2E8F0]"
               />
               <div>

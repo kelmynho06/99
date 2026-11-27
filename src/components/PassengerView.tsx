@@ -49,7 +49,7 @@ import {
   X,
 } from 'lucide-react';
 import { logAuditEvent } from '../lib/audit';
-import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
 import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import {
   type AddressSuggestion,
@@ -231,7 +231,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
   const [category, setCategory] = useState<RideCategory>('pop');
   const [negotiatedFare, setNegotiatedFare] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
-    currentUser.preferred_payment === 'cash' ? 'cash' : 'wallet'
+    currentUser.preferred_payment === 'cash'
+      ? 'cash'
+      : currentUser.preferred_payment === 'pix'
+      ? 'pix'
+      : 'wallet'
   );
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [requireDeliveryPin, setRequireDeliveryPin] = useState(true);
@@ -868,7 +872,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
     primeSpeechEngine();
     if (paymentMethod === 'wallet' && !hasEnoughWalletBalance) {
       setErrorMsg(
-        `Saldo GoPay insuficiente (${formatBRL(walletBalance)}). Deposite via Pix na GoPay ou escolha Dinheiro.`
+        `Saldo GoPay insuficiente (${formatBRL(walletBalance)}). Deposite via Pix na GoPay, pague direto via Pix ou escolha Dinheiro.`
+      );
+      return;
+    }
+    if (paymentMethod === 'pix' && platformConfig.mp_auto_pix_enabled === false && pixBlockedNow) {
+      setErrorMsg(
+        nightDutyStatus.isActive
+          ? `Plantão Noturno da Melissa (${nightDutyStatus.startTime} às ${nightDutyStatus.endTime}): Pix Manual Admin pausado. Ative o Pix Automático 24h ou pague com Saldo GoPay / Dinheiro.`
+          : `Pix Manual Admin disponível das ${depositWindow.startTime} às ${depositWindow.endTime}. Use Saldo GoPay ou Dinheiro.`
       );
       return;
     }
@@ -901,8 +913,15 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
         void loadNotificationsAndCoupons();
       }
       onRideUpsert(created);
+      if (created.payment_method === 'pix') {
+        setPixModalRide(created);
+      }
       speakPtBr(
-        isDelivery
+        created.payment_method === 'pix'
+          ? isDelivery
+            ? 'Pedido de entrega enviado! Pague com o Pix na tela para confirmar instantaneamente.'
+            : 'Corrida solicitada! Pague com o Pix na tela para liberar sua viagem automaticamente.'
+          : isDelivery
           ? 'Pedido de entrega enviado! Já estou buscando um entregador próximo para você.'
           : 'Chamando um motorista para você agora! Já te aviso assim que ele aceitar.'
       );
@@ -1007,9 +1026,11 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
 
   const handleChooseCompletedPix = async (ride: Ride) => {
     setPostRidePaymentError(null);
-    if (nightDutyStatus.isActive) {
+    if (platformConfig.mp_auto_pix_enabled === false && pixBlockedNow) {
       setPostRidePaymentError(
-        `Plantão Noturno da Melissa (${nightDutyStatus.startTime} às ${nightDutyStatus.endTime}): pagamentos manuais via Pix ficam pausados. Use Saldo GoPay ou Dinheiro.`
+        nightDutyStatus.isActive
+          ? `Plantão Noturno da Melissa (${nightDutyStatus.startTime} às ${nightDutyStatus.endTime}): pagamentos manuais via Pix ficam pausados. Use Saldo GoPay ou Dinheiro.`
+          : `Pix Manual Admin disponível das ${depositWindow.startTime} às ${depositWindow.endTime}. Use Saldo GoPay ou Dinheiro.`
       );
       return;
     }
@@ -1300,6 +1321,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     <img
                       src={brandLogoUrl}
                       alt={siteName}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleBrandImageError(e)}
                       className="h-9 w-9 rounded-xl object-cover shadow-xs"
                     />
                     <h2 className="font-display text-3xl font-extrabold tracking-tight text-[#0F172A]">
@@ -1325,6 +1348,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       <img
                         src={resolveCategoryVehicleImage('delivery_moto', platformConfig)}
                         alt="Entrega Moto"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e, 'delivery_moto')}
                         className="h-20 w-28 object-contain"
                       />
                       <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB] shadow-sm border border-[#BFDBFE]">
@@ -1351,6 +1376,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       <img
                         src={resolveCategoryVehicleImage('delivery_car', platformConfig)}
                         alt="Entrega Carro"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e, 'delivery_car')}
                         className="h-20 w-28 object-contain"
                       />
                       <span className="absolute bottom-1 left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB] shadow-sm border border-[#BFDBFE]">
@@ -1543,6 +1570,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <img
                   src={brandLogoUrl}
                   alt={siteName}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleBrandImageError(e)}
                   className="h-7 w-7 rounded-lg object-cover shrink-0"
                 />
                 <span className="font-display text-sm font-extrabold text-[#0F172A]">
@@ -1849,6 +1878,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <img
                   src={resolveCategoryVehicleImage('pop', platformConfig)}
                   alt={t.rides_tab}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleBrandImageError(e, 'pop')}
                   className="h-7 w-9 object-contain"
                 />
                 <span className="text-[10px] font-extrabold text-[#0F172A] truncate w-full">{t.rides_tab}</span>
@@ -1868,6 +1899,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <img
                   src={resolveCategoryVehicleImage('delivery_moto', platformConfig)}
                   alt={t.deliveries_tab}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleBrandImageError(e, 'delivery_moto')}
                   className="h-7 w-9 object-contain"
                 />
                 <span className="text-[10px] font-extrabold text-[#0F172A] truncate w-full">{t.deliveries_tab}</span>
@@ -2218,6 +2251,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                             <img
                               src={imgSrc}
                               alt={cat.label}
+                              referrerPolicy="no-referrer"
+                              onError={(e) => handleBrandImageError(e, cat.category)}
                               className="h-12 w-14 shrink-0 rounded-xl object-contain bg-white"
                             />
                             <div className="min-w-0">
@@ -2383,14 +2418,23 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   </div>
                 )}
 
-                {/* Payment Method: EXCLUSIVAMENTE GoPay vs Dinheiro */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Payment Method: GoPay, Pix (Auto 24h / Admin) e Dinheiro */}
+                <div className="grid grid-cols-3 gap-2">
                   {[
                     {
                       id: 'wallet' as PaymentMethod,
                       label: 'GoPay',
                       sub: `${t.wallet_balance}: ${formatBRL(walletBalance)}`,
                       icon: Wallet,
+                    },
+                    {
+                      id: 'pix' as PaymentMethod,
+                      label: 'Pix',
+                      sub:
+                        platformConfig.mp_auto_pix_enabled !== false
+                          ? 'Auto 24h'
+                          : 'Manual Admin',
+                      icon: QrCode,
                     },
                     {
                       id: 'cash' as PaymentMethod,
@@ -2409,18 +2453,18 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           setPaymentMethod(pm.id);
                           setErrorMsg(null);
                         }}
-                        className={`min-h-[58px] min-w-0 w-full flex flex-col items-center justify-center gap-0.5 rounded-xl border px-2.5 py-2 transition ${
+                        className={`min-h-[58px] min-w-0 w-full flex flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2 transition ${
                           active
                             ? 'border-[#2563EB] bg-[#2563EB] text-white shadow-sm'
                             : 'border-[#E2E8F0] bg-[#F4F6F9] text-[#475569]'
                         }`}
                       >
-                        <div className="flex items-center justify-center gap-1.5 text-xs font-extrabold max-w-full">
-                          <PmIcon className="h-4 w-4 shrink-0" />
+                        <div className="flex items-center justify-center gap-1 text-xs font-extrabold max-w-full">
+                          <PmIcon className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{pm.label}</span>
                         </div>
                         <span
-                          className={`text-[11px] font-mono-num font-bold truncate max-w-full ${
+                          className={`text-[10px] font-mono-num font-bold truncate max-w-full ${
                             active ? 'text-white/90' : 'text-[#475569]'
                           }`}
                         >
@@ -2431,6 +2475,25 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   })}
                 </div>
 
+                {paymentMethod === 'pix' && (
+                  <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-[#059669]">
+                        {platformConfig.mp_auto_pix_enabled !== false
+                          ? 'Pix Automático 24h (Mercado Pago) + Opção Admin'
+                          : 'Pix Manual (Aprovação Admin)'}
+                      </p>
+                      <p className="text-[11px] text-[#047857]">
+                        {platformConfig.mp_auto_pix_enabled !== false
+                          ? 'Ao chamar a corrida, o QR Code Pix abre na hora e confirma automaticamente em segundos.'
+                          : pixBlockedNow
+                          ? `Pix Manual pausado agora (${nightDutyStatus.isActive ? `${nightDutyStatus.startTime}–${nightDutyStatus.endTime}` : `${depositWindow.startTime}–${depositWindow.endTime}`}). Use GoPay ou Dinheiro.`
+                          : 'Ao chamar a corrida, envie o Pix e aguarde confirmação do Admin.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {paymentMethod === 'wallet' && !hasEnoughWalletBalance && (
                   <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5 text-xs">
                     <div className="min-w-0">
@@ -2438,37 +2501,46 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         Saldo GoPay insuficiente ({formatBRL(walletBalance)})
                       </p>
                       <p className="text-[11px] text-[#2563EB]">
-                        {!pixBlockedNow ? (
+                        {platformConfig.mp_auto_pix_enabled !== false || !pixBlockedNow ? (
                           <>
                             Deposite{' '}
                             <strong className="font-mono-num">
                               {formatBRL(totalFareWithDebt - walletBalance)}
                             </strong>{' '}
-                            na carteira GoPay via Pix ou pague em Dinheiro.
+                            na GoPay via Pix, pague direto com <strong>Pix</strong> ou escolha <strong>Dinheiro</strong>.
                           </>
                         ) : nightDutyStatus.isActive ? (
                           <>
                             Plantão Noturno da Melissa ({nightDutyStatus.startTime} às{' '}
-                            {nightDutyStatus.endTime}): depósitos Pix pausados na madrugada. Quem já tem saldo GoPay usa normal; caso contrário, escolha{' '}
+                            {nightDutyStatus.endTime}): depósitos manuais pausados na madrugada. Quem já tem saldo GoPay usa normal; caso contrário, escolha{' '}
                             <strong>Dinheiro</strong>.
                           </>
                         ) : (
                           <>
-                            Depósitos Pix pausados fora do horário ({depositWindow.startTime} às{' '}
+                            Depósitos manuais pausados fora do horário ({depositWindow.startTime} às{' '}
                             {depositWindow.endTime}). Quem já tem saldo usa normal; use{' '}
                             <strong>Dinheiro</strong> agora.
                           </>
                         )}
                       </p>
                     </div>
-                    {!pixBlockedNow ? (
-                      <button
-                        type="button"
-                        onClick={() => openWallet('deposit')}
-                        className="min-h-[38px] shrink-0 rounded-xl bg-[#2563EB] px-3 text-[11px] font-extrabold text-white whitespace-nowrap"
-                      >
-                        Depositar GoPay
-                      </button>
+                    {platformConfig.mp_auto_pix_enabled !== false || !pixBlockedNow ? (
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openWallet('deposit')}
+                          className="min-h-[34px] rounded-xl bg-[#2563EB] px-2.5 text-[11px] font-extrabold text-white whitespace-nowrap"
+                        >
+                          Depositar GoPay
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('pix')}
+                          className="min-h-[30px] rounded-xl border border-[#10B981] bg-white px-2.5 text-[10px] font-extrabold text-[#059669] whitespace-nowrap"
+                        >
+                          Pagar via Pix
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="button"
@@ -2484,7 +2556,13 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <button
                   type="button"
                   onClick={handleRequestRide}
-                  disabled={submitting || (paymentMethod === 'wallet' && !hasEnoughWalletBalance)}
+                  disabled={
+                    submitting ||
+                    (paymentMethod === 'wallet' && !hasEnoughWalletBalance) ||
+                    (paymentMethod === 'pix' &&
+                      platformConfig.mp_auto_pix_enabled === false &&
+                      pixBlockedNow)
+                  }
                   className="aurora-accent-flow min-h-[52px] w-full rounded-2xl text-base font-extrabold text-white shadow-md active:scale-[0.98] transition disabled:opacity-50"
                 >
                   {submitting
@@ -2582,7 +2660,25 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-2">
+                    {unpaidCompletedRide.payment_method === 'pix' && (
+                      <div className="flex items-center justify-between gap-2.5 rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-3 text-xs">
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-[#059669]">Pagamento via Pix selecionado</p>
+                          <p className="mt-0.5 text-[11px] text-[#047857]">
+                            Gere o QR Code Mercado Pago Auto 24h ou envie pelo Pix Manual Admin.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPixModalRide(unpaidCompletedRide)}
+                          className="shrink-0 rounded-xl bg-[#10B981] px-3 py-2 text-[11px] font-extrabold text-white whitespace-nowrap"
+                        >
+                          Abrir QR Pix
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2">
                       <button
                         type="button"
                         disabled={Boolean(postRidePaymentBusy) || !canPayWithWallet}
@@ -2593,14 +2689,33 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                             : 'border-[#E2E8F0] bg-[#F1F5F9] text-[#475569]'
                         }`}
                       >
-                        <QrCode className="h-5 w-5 shrink-0" />
+                        <Wallet className="h-5 w-5 shrink-0" />
                         <span className="text-xs font-extrabold leading-tight">
                           {t.pay_with_gopay}
                         </span>
                         <span className="font-mono-num text-[10px] font-bold opacity-85 truncate max-w-full">
                           {unpaidCompletedRide.payment_method === 'wallet'
-                            ? 'Saldo reservado'
+                            ? 'Reservado'
                             : formatBRL(walletBalance)}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={Boolean(postRidePaymentBusy)}
+                        onClick={() => handleChooseCompletedPix(unpaidCompletedRide)}
+                        className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-2xl border p-2 text-center transition active:scale-[0.98] disabled:opacity-55 ${
+                          unpaidCompletedRide.payment_method === 'pix'
+                            ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8] shadow-sm'
+                            : 'border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F4F6F9]'
+                        }`}
+                      >
+                        <QrCode className="h-5 w-5 shrink-0" />
+                        <span className="text-xs font-extrabold leading-tight">
+                          {postRidePaymentBusy === 'pix' ? t.saving : 'Pix'}
+                        </span>
+                        <span className="text-[10px] font-bold opacity-80">
+                          {platformConfig.mp_auto_pix_enabled !== false ? 'Auto 24h' : 'Via Admin'}
                         </span>
                       </button>
 
@@ -2625,19 +2740,19 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                     {!canPayWithWallet && (
                       <div className="flex items-center justify-between gap-2 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-[11px]">
                         <span className="font-semibold text-[#0F172A]">
-                          {!pixBlockedNow
-                            ? `Saldo GoPay insuficiente (${formatBRL(walletBalance)}).`
+                          {platformConfig.mp_auto_pix_enabled !== false || !pixBlockedNow
+                            ? `Saldo GoPay insuficiente (${formatBRL(walletBalance)}). Pague direto via Pix Auto 24h ou deposite.`
                             : nightDutyStatus.isActive
                             ? `Plantão Noturno da Melissa (${nightDutyStatus.startTime}–${nightDutyStatus.endTime}): apenas Saldo GoPay ou Dinheiro nesta faixa.`
-                            : `Depósitos Pix das ${depositWindow.startTime} às ${depositWindow.endTime}. Selecione Dinheiro para pagar ao motorista.`}
+                            : `Pix Manual das ${depositWindow.startTime} às ${depositWindow.endTime}. Selecione Dinheiro para pagar ao motorista.`}
                         </span>
-                        {!pixBlockedNow ? (
+                        {platformConfig.mp_auto_pix_enabled !== false || !pixBlockedNow ? (
                           <button
                             type="button"
-                            onClick={() => openWallet('deposit')}
+                            onClick={() => handleChooseCompletedPix(unpaidCompletedRide)}
                             className="shrink-0 rounded-xl bg-[#2563EB] px-2.5 py-1.5 font-extrabold text-white whitespace-nowrap"
                           >
-                            Depositar GoPay
+                            Pagar via Pix
                           </button>
                         ) : (
                           <button
@@ -2686,6 +2801,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   <img
                     src={resolveCategoryVehicleImage(activeRide.category, platformConfig)}
                     alt={CATEGORY_LABELS[activeRide.category]}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handleBrandImageError(e, activeRide.category)}
                     className="h-11 w-14 rounded-xl object-cover bg-white border border-[#E2E8F0] shrink-0"
                   />
                   <div className="min-w-0">
@@ -2701,6 +2818,24 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                   {formatBRL(activeRide.estimated_fare)}
                 </span>
               </div>
+
+              {activeRide.payment_method === 'pix' && activeRide.payment_status === 'pending' && (
+                <button
+                  type="button"
+                  onClick={() => setPixModalRide(activeRide)}
+                  className="aurora-accent-flow flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-sm active:scale-[0.98] transition"
+                >
+                  <QrCode className="h-4 w-4" />
+                  Pagar com Pix agora ({formatBRL(activeRide.final_fare ?? activeRide.estimated_fare)})
+                </button>
+              )}
+
+              {activeRide.payment_method === 'pix' && activeRide.payment_status === 'paid_pix' && (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-2.5 text-xs font-extrabold text-[#059669]">
+                  <CheckCircle2 className="h-4 w-4 text-[#10B981]" />
+                  Pagamento Pix confirmado! Aguardando motorista aceitar.
+                </div>
+              )}
 
               <button
                 type="button"
@@ -2800,6 +2935,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
                           {activeRide.payment_method === 'wallet' ? (
                             <Wallet className="h-4 w-4" />
+                          ) : activeRide.payment_method === 'pix' ? (
+                            <QrCode className="h-4 w-4" />
                           ) : (
                             <Banknote className="h-4 w-4" />
                           )}
@@ -2832,10 +2969,17 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                           Pagar Pix
                         </button>
                       ) : (
-                        <span className="shrink-0 rounded-full bg-[#F1F5F9] px-3 py-1 text-xs font-bold text-[#475569]">
-                          {activeRide.payment_status === 'paid' ||
+                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                          activeRide.payment_status === 'paid' ||
                           activeRide.payment_status === 'paid_wallet' ||
                           activeRide.payment_status === 'paid_pix'
+                            ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
+                            : 'bg-[#F1F5F9] text-[#475569]'
+                        }`}>
+                          {activeRide.payment_status === 'paid_pix'
+                            ? 'Pix Confirmado!'
+                            : activeRide.payment_status === 'paid' ||
+                              activeRide.payment_status === 'paid_wallet'
                             ? 'Pago'
                             : 'Ao chegar'}
                         </span>
@@ -3045,6 +3189,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                       <img
                         src={resolveCategoryVehicleImage(activeRide.category, platformConfig)}
                         alt={CATEGORY_LABELS[activeRide.category]}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e, activeRide.category)}
                         className="h-14 w-22 object-contain"
                       />
                       <div className="-ml-4 rounded-full border-2 border-[#2563EB] shadow-md">
@@ -3150,6 +3296,14 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                         <QrCode className="h-4 w-4" />
                         Pagar com Pix da Plataforma ({formatBRL(currentFareTotal)})
                       </button>
+                    )}
+
+                  {activeRide.payment_method === 'pix' &&
+                    activeRide.payment_status === 'paid_pix' && (
+                      <div className="flex items-center justify-center gap-2 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] py-2 px-3 text-xs font-extrabold text-[#059669] text-center">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-[#10B981]" />
+                        Pix confirmado! Sua viagem já está paga.
+                      </div>
                     )}
 
                   {/* Action Row: "Alguma observação?" + Phone + Cancel */}
@@ -3641,6 +3795,8 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
                 <img
                   src={brandLogoUrl}
                   alt={siteName}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleBrandImageError(e)}
                   className="h-8 w-8 rounded-lg object-cover border border-[#E2E8F0] shrink-0"
                 />
                 <span className="font-display text-sm font-extrabold text-[#0F172A] truncate">
@@ -4435,9 +4591,12 @@ export const PassengerView: React.FC<PassengerViewProps> = ({
               discount_amount: 0,
             });
             onRideUpsert(created);
+            if (created.payment_method === 'pix') {
+              setPixModalRide(created);
+            }
             return {
               ok: true,
-              summary: `${CATEGORY_LABELS[targetCategory]} para ${resolvedDest.address.split('·')[0].trim()} · ${formatBRL(totalFare)} (${targetPayment === 'wallet' ? 'GoPay' : 'Dinheiro'}). Buscando parceiro próximo!`,
+              summary: `${CATEGORY_LABELS[targetCategory]} para ${resolvedDest.address.split('·')[0].trim()} · ${formatBRL(totalFare)} (${targetPayment === 'wallet' ? 'GoPay' : targetPayment === 'pix' ? 'Pix' : 'Dinheiro'}). Buscando parceiro próximo!`,
             };
           }}
         />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo } from '../lib/brandAssets';
 import { useTranslation } from '../lib/i18n';
 import type { PlatformConfig } from '../types/mobility';
 
@@ -60,6 +60,7 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ plat
               src={brandLogoUrl}
               alt={brandName}
               referrerPolicy="no-referrer"
+              onError={(e) => handleBrandImageError(e)}
               className="h-full w-full object-cover"
             />
           </motion.div>

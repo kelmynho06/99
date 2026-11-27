@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Eraser, Printer, Wallet, X } from 'lucide-react';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import { handleBrandImageError, resolveBrandLogo } from '../lib/brandAssets';
 import { formatBRL } from '../lib/geo';
 import { getPeriodRangeLabel, isDateInPeriod } from '../lib/periodFilter';
 import type {
@@ -193,6 +193,8 @@ export const AdminSettlementReceiptModal: React.FC<AdminSettlementReceiptModalPr
               <img
                 src={resolveBrandLogo(platformConfig)}
                 alt={platformConfig.site_name}
+                referrerPolicy="no-referrer"
+                onError={(e) => handleBrandImageError(e)}
                 className="h-12 w-12 rounded-xl object-cover border border-neutral-300"
               />
               <div>

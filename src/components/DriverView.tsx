@@ -84,7 +84,7 @@ import {
   toggleDriverOnlineStatus,
 } from '../lib/mobilityApi';
 import { logAuditEvent } from '../lib/audit';
-import { resolveBrandLogo } from '../lib/brandAssets';
+import { handleBrandImageError, normalizeImageUrl, resolveBrandLogo } from '../lib/brandAssets';
 import { useTranslation } from '../lib/i18n';
 import {
   clearOfflineActiveRideCache,
@@ -254,6 +254,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
   const [pixConfirmedSuccess, setPixConfirmedSuccess] = useState(false);
   const [walletCheckoutSuccess, setWalletCheckoutSuccess] = useState(false);
   const [copiedCheckoutPix, setCopiedCheckoutPix] = useState(false);
+  const [manualQrImgError, setManualQrImgError] = useState(false);
   const [copied66PayKey, setCopied66PayKey] = useState(false);
   const [waitNowMs, setWaitNowMs] = useState<number>(() => Date.now());
 
@@ -2407,7 +2408,7 @@ export const DriverView: React.FC<DriverViewProps> = ({
                           {t.checkout_waiting_admin_headline}
                         </p>
                         <p className="mt-0.5 font-normal text-[#475569]">
-                          {t.checkout_waiting_admin_desc}
+                          {t.checkout_waiting_admin_desc} O sistema libera automaticamente assim que o Pix Automático 24h (Mercado Pago) ou o Admin confirmar.
                         </p>
                       </div>
                     </div>
@@ -2444,15 +2445,21 @@ export const DriverView: React.FC<DriverViewProps> = ({
                         key={checkoutPixCycle}
                         className="rounded-2xl bg-white p-2.5 border border-[#E2E8F0] shrink-0 shadow-xs"
                       >
-                        {platformConfig.platform_pix_qr_url ? (
-                          <img
-                            src={platformConfig.platform_pix_qr_url}
-                            alt={t.checkout_qr_admin_platform}
-                            className="h-32 w-32 sm:h-36 sm:w-36 object-contain rounded-lg"
-                          />
-                        ) : (
-                          <PixQrSvg payload={checkoutEmvPayload} size={132} />
-                        )}
+                        {(() => {
+                          const manualQrUrl = normalizeImageUrl(platformConfig.platform_pix_qr_url);
+                          if (manualQrUrl && !manualQrImgError) {
+                            return (
+                              <img
+                                src={manualQrUrl}
+                                alt={t.checkout_qr_admin_platform}
+                                referrerPolicy="no-referrer"
+                                onError={() => setManualQrImgError(true)}
+                                className="h-32 w-32 sm:h-36 sm:w-36 object-contain rounded-lg"
+                              />
+                            );
+                          }
+                          return <PixQrSvg payload={checkoutEmvPayload} size={132} />;
+                        })()}
                       </div>
                       <div className="min-w-0 flex-1 w-full space-y-1.5 text-center sm:text-left">
                         <p className="text-[10px] font-bold text-[#059669]">
@@ -2712,6 +2719,8 @@ export const DriverView: React.FC<DriverViewProps> = ({
               <img
                 src={resolveBrandLogo(platformConfig)}
                 alt={platformConfig.site_name || 'Go Driver Mobilidade'}
+                referrerPolicy="no-referrer"
+                onError={(e) => handleBrandImageError(e)}
                 className="h-8 w-8 rounded-lg object-cover border border-[#E2E8F0] shrink-0"
               />
               <span className="font-display text-sm font-extrabold text-[#0F172A] truncate">

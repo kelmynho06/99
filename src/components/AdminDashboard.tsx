@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext';
 import { fetchAuditLogsFromSupabase } from '../lib/audit';
-import { resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
+import { handleBrandImageError, normalizeImageUrl, resolveBrandLogo, resolveCategoryVehicleImage } from '../lib/brandAssets';
 import { getCurrentGpsPosition } from '../lib/capacitorDevice';
 import { formatBRL } from '../lib/geo';
 import {
@@ -1858,6 +1858,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <img
               src={resolveBrandLogo(platformConfig)}
               alt={platformConfig.site_name || 'Go Driver Mobilidade'}
+              referrerPolicy="no-referrer"
+              onError={(e) => handleBrandImageError(e)}
               className="h-10 w-10 shrink-0 rounded-xl object-cover border border-[#E2E8F0] shadow-xs"
             />
             <div className="min-w-0">
@@ -1939,6 +1941,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <img
                   src={resolveBrandLogo(platformConfig)}
                   alt={platformConfig.site_name || 'Go Driver Mobilidade'}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleBrandImageError(e)}
                   className="h-10 w-10 rounded-xl object-cover border border-[#E2E8F0] shrink-0"
                 />
                 <div className="min-w-0">
@@ -2786,7 +2790,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {isAuto ? 'Auto Mercado Pago' : 'Manual Admin'}
                             </span>
                             <span className="rounded-md bg-white border border-[#E2E8F0] px-1.5 py-0.5 text-[10px] font-bold text-[#475569] uppercase">
-                              {p.tipo}
+                              {p.tipo === 'corrida' || p.tipo === 'pagamento_corrida'
+                                ? 'Corrida Pix'
+                                : 'Recarga GoPay'}
                             </span>
                             <span
                               className={`rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase ${
@@ -3223,8 +3229,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {platformConfig.platform_pix_qr_url ? (
                     <div className="flex items-center gap-3">
                       <img
-                        src={platformConfig.platform_pix_qr_url}
+                        src={normalizeImageUrl(platformConfig.platform_pix_qr_url) || resolveBrandLogo(platformConfig)}
                         alt="QR Code Pix Oficial"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e)}
                         className="h-16 w-16 rounded-xl border border-[#E2E8F0] bg-white object-contain p-1 shrink-0"
                       />
                       <p className="text-[11px] text-[#475569]">
@@ -4691,6 +4699,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <img
                         src={resolveBrandLogo(platformConfig)}
                         alt="Logo do Site"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e)}
                         className="h-12 w-12 rounded-xl object-cover border border-[#E2E8F0] bg-white shrink-0"
                       />
                       <div className="min-w-0">
@@ -4760,6 +4770,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <img
                           src={resolveCategoryVehicleImage(item.category, platformConfig)}
                           alt={item.label}
+                          referrerPolicy="no-referrer"
+                          onError={(e) => handleBrandImageError(e, item.category)}
                           className="h-11 w-14 rounded-xl object-cover border border-[#E2E8F0] bg-white shrink-0"
                         />
                         <div className="min-w-0">
@@ -5183,8 +5195,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <img
-                        src={platformConfig.pwa_icon_url || resolveBrandLogo(platformConfig)}
+                        src={normalizeImageUrl(platformConfig.pwa_icon_url) || resolveBrandLogo(platformConfig)}
                         alt="Ícone PWA"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e)}
                         className="h-12 w-12 rounded-xl object-cover border border-[#E2E8F0] bg-white shrink-0"
                       />
                       <div className="min-w-0">
@@ -5241,8 +5255,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <img
-                        src={platformConfig.apk_icon_url || resolveBrandLogo(platformConfig)}
+                        src={normalizeImageUrl(platformConfig.apk_icon_url) || resolveBrandLogo(platformConfig)}
                         alt="Ícone APK"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleBrandImageError(e)}
                         className="h-12 w-12 rounded-xl object-cover border border-[#E2E8F0] bg-white shrink-0"
                       />
                       <div className="min-w-0">
@@ -5346,7 +5362,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Incremental Mínimo (Somente Alterações)
                   </p>
                   <p className={`text-[10px] ${sqlViewMode === 'delta' ? 'text-white/85' : 'text-[#475569]'}`}>
-                    Notificações lidas (lida/read_at), RLS e RPC sem recriar tabelas existentes
+                    Pix Auto 24h + Corridas (recarga_carteira / pagamento_corrida), Realtime FULL, Notificações lidas, RLS e RPCs sem recriar tabelas
                   </p>
                 </button>
                 <button
@@ -5362,7 +5378,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     SQL Completo (Todas as Tabelas)
                   </p>
                   <p className={`text-[10px] ${sqlViewMode === 'complete' ? 'text-white/85' : 'text-[#475569]'}`}>
-                    Restauração total do banco do zero (schema + todas as migrações 1–12)
+                    Restauração total do banco do zero (schema + todas as migrações atualizadas)
                   </p>
                 </button>
               </div>
@@ -5370,6 +5386,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <pre className="max-h-96 overflow-auto rounded-xl bg-[#0F172A] p-4 text-[11px] font-mono text-slate-100 leading-relaxed">
                 {activeSqlText || 'Carregando SQL...'}
               </pre>
+            </div>
+
+            <div className="rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-5 shadow-xs space-y-3">
+              <div className="flex items-center gap-2.5">
+                <Zap className="h-5 w-5 text-[#2563EB] shrink-0" />
+                <h3 className="font-display text-base font-extrabold text-[#0F172A]">
+                  Tutorial Atualizado · Deploy Cloudflare Workers + Pix Mercado Pago 24h + Supabase
+                </h3>
+              </div>
+              <ol className="space-y-2 text-xs text-[#1E293B] list-decimal pl-5 leading-relaxed">
+                <li>
+                  <strong>1. Banco Supabase (Incremental):</strong> Clique em <em>Copiar SQL</em> acima no modo <strong>SQL Incremental Mínimo</strong> e execute no <strong>Supabase → SQL Editor</strong>. Ele garante os tipos <span className="font-mono-num font-bold">recarga_carteira</span> e <span className="font-mono-num font-bold">pagamento_corrida</span>, Realtime (<span className="font-mono-num">REPLICA IDENTITY FULL</span>) em <span className="font-mono-num">pagamentos_pix</span> e <span className="font-mono-num">rides</span>, e as RPCs <span className="font-mono-num">process_mercadopago_pix_approved</span> e <span className="font-mono-num">admin_approve_pagamento_pix</span>.
+                </li>
+                <li>
+                  <strong>2. Variáveis no Cloudflare Workers (<span className="font-mono-num">99.rikelmygbrl.workers.dev</span>):</strong> Confirme no Worker <span className="font-mono-num font-bold">99</span> os segredos/variáveis <span className="font-mono-num font-bold">MP_ACCESS_TOKEN</span>, <span className="font-mono-num font-bold">MP_WEBHOOK_SECRET</span>, <span className="font-mono-num font-bold">SUPABASE_URL</span>, <span className="font-mono-num font-bold">SUPABASE_SERVICE_ROLE_KEY</span> e no build <span className="font-mono-num font-bold">VITE_GEMINI_API_KEY</span>.
+                </li>
+                <li>
+                  <strong>3. Webhook no Mercado Pago Developers:</strong> Configure a URL de notificação para{' '}
+                  <span className="font-mono-num font-bold bg-white px-1.5 py-0.5 rounded border border-[#BFDBFE]">
+                    https://99.rikelmygbrl.workers.dev/api/mp-webhook
+                  </span>{' '}
+                  marcando o tópico <strong>Pagamentos (payment)</strong>. O Worker já responde CORS e trata <span className="font-mono-num">/api/*</span> via <span className="font-mono-num">run_worker_first = ["/api/*"]</span> no <span className="font-mono-num">wrangler.toml</span>.
+                </li>
+                <li>
+                  <strong>4. Publicação / Redeploy:</strong> Rode <span className="font-mono-num font-bold">npm run build && npx wrangler deploy</span> (ou acione o build no Cloudflare) e teste a saúde da rota em <span className="font-mono-num">/api/health</span>.
+                </li>
+                <li>
+                  <strong>5. Logos &amp; Imagens (Google Drive):</strong> Links compartilhados do Google Drive inseridos na identidade visual ou QR Code são convertidos automaticamente para <span className="font-mono-num">lh3.googleusercontent.com/d/&lt;ID&gt;</span> com fallback seguro local caso o arquivo esteja privado ou offline.
+                </li>
+              </ol>
             </div>
           </section>
         )}
